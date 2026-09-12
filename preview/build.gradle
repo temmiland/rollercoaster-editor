@@ -1,0 +1,23 @@
+plugins {
+    id 'application'
+}
+
+group = 'land.temmi'
+version = '0.1.0'
+
+application {
+    mainClass = 'land.temmi.rollercoaster.editor.preview.PreviewMain'
+}
+
+dependencies {
+    implementation project(':preview-protocol')
+    implementation 'land.temmi:rollercoaster:0.1.0'
+    implementation libs.gdx.backend.lwjgl3
+    implementation "com.badlogicgames.gdx:gdx-platform:${libs.versions.gdx.get()}:natives-desktop"
+}
+
+tasks.named('run') {
+    if (System.getProperty('os.name').toLowerCase().contains('mac')) {
+        jvmArgs += ['-XstartOnFirstThread']
+    }
+}
