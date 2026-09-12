@@ -1,0 +1,14 @@
+## Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+## Editor state and generated exports
+.editor/
+export/
+
+## IDE and OS files
+.idea/
+*.iml
+.DS_Store
