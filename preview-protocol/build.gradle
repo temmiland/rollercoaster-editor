@@ -1,0 +1,28 @@
+plugins {
+    id 'java-library'
+}
+
+group = 'land.temmi'
+version = '0.1.0'
+
+dependencies {
+    api libs.gdx.core
+}
+
+sourceSets {
+    smokeTest {
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+configurations {
+    smokeTestImplementation.extendsFrom implementation
+}
+
+tasks.register('protocolSmokeTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks message codec roundtrips and handshake rules without a socket.'
+    classpath = sourceSets.smokeTest.runtimeClasspath
+    mainClass = 'land.temmi.rollercoaster.editor.protocol.ProtocolSmokeTest'
+}
