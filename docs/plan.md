@@ -1,8 +1,8 @@
 # Rollercoaster Editor — Umsetzungsplan
 
-Status: Planung. Der Editor wird ein eigenes Repository neben `rollercoaster`,
-`example-game` und `trackside`. Dieser Plan implementiert weder den Editor noch Änderungen
-an der Engine. Trackside-Inhalte sind zunächst außerhalb des Arbeitsumfangs.
+Status: Phase 1 begonnen. Der Editor ist ein eigenes Repository neben `rollercoaster`,
+`example-game` und `trackside`. Dieser Plan implementiert keine Änderungen an der Engine.
+Trackside-Inhalte sind zunächst außerhalb des Arbeitsumfangs.
 
 ## Ziel und erster vollständiger Arbeitsablauf
 
@@ -241,13 +241,20 @@ weder Originalquellen überschreiben noch den letzten gültigen Export beschädi
 
 ### Phase 1 — Projektkern und Desktop-Prototyp
 
-- Gradle-Module, Launcher und Engine-Anbindung anlegen.
-- Projekt anlegen/öffnen, Speichern unter, relative Pfade und zuletzt geöffnete Projekte.
-- Dokumentmodell und Commands für Änderungen; Undo/Redo, Dirty-Status und Autosave.
-- UI mit Assetliste, Kartenansicht, Eigenschaften und Diagnosen.
-- Vorschauprozess starten, verbinden, überwachen und neu starten; Protokollversion prüfen.
-- Freie Editor-Kamera sowie Vorschau mit Spielkamera; korrekte Maus-/Viewport-Koordinaten,
-  Picking-Treffer als Nachricht zurück an die UI.
+- [x] Gradle-Module (`preview-protocol`, `preview`, `editor`, `platforms/desktop`) und Launcher
+  angelegt; `platforms/desktop:run` startet den Editor, der die Vorschau als Subprozess startet.
+- [x] Vorschauprozess verbinden und Protokollversion prüfen: `Hello`/`HelloAck`-Handshake über
+  einen lokalen Socket, newline-getrenntes JSON mit Klassen-Tags (`preview-protocol`).
+- [x] Vorschau nutzt dieselbe Renderpipeline und Beleuchtung wie das Spiel
+  (`ModelBatch`/`WorldShaderProvider`/`LightingEnvironment`) über einer platzhalterhaften,
+  beleuchteten Szene; freie Kamera per `CameraInputController`.
+- [x] Überwachen und neu starten: Diagnosen-Panel protokolliert Status, Menü "Vorschau ▸ Neu
+  verbinden" startet den Subprozess neu.
+- [ ] Vorschau mit Spielkamera (statt freier Kamera) und Picking-Treffer als Nachricht zurück an
+  die UI - noch offen, da es dafür ein geladenes Dokument braucht.
+- [ ] UI mit Assetliste, Kartenansicht und Eigenschaften - Layout steht, Inhalte fehlen noch.
+- [ ] Projekt anlegen/öffnen, Speichern unter, relative Pfade und zuletzt geöffnete Projekte.
+- [ ] Dokumentmodell und Commands für Änderungen; Undo/Redo, Dirty-Status und Autosave.
 
 Abnahme: Ein kleines Dokument lässt sich ändern, rückgängig machen, speichern, verschieben
 und erneut öffnen, ohne Datenverlust oder kaputte Referenzen.
