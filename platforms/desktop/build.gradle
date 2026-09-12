@@ -1,0 +1,29 @@
+plugins {
+    id 'application'
+}
+
+group = 'land.temmi'
+version = '0.1.0'
+
+application {
+    mainClass = 'land.temmi.rollercoaster.editor.desktop.EditorLauncher'
+}
+
+dependencies {
+    implementation project(':editor')
+}
+
+// The editor's JVM must never carry gdx-backend-lwjgl3 on its own classpath - that's the whole
+// point of the process split (see docs/plan.md). So :preview is wired here as a build-time
+// classpath source only, not as a dependency of this module's code.
+def previewJarTask = project(':preview').tasks.named('jar')
+def previewRuntimeClasspath = project(':preview').configurations.getByName('runtimeClasspath')
+
+tasks.named('run', JavaExec) {
+    dependsOn previewJarTask
+    inputs.files(previewRuntimeClasspath)
+    doFirst {
+        def files = previewJarTask.get().outputs.files.files + previewRuntimeClasspath.files
+        systemProperty 'trackside.editor.previewClasspath', files.collect { it.absolutePath }.join(File.pathSeparator)
+    }
+}
