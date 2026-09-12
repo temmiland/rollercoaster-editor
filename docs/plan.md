@@ -52,10 +52,29 @@ deren Runtime-Verhalten geprüft und exportierbar ist.
 
 ## Technischer Vorschlag
 
-Desktop-Anwendung mit libGDX/LWJGL3, Scene2D UI und derselben Renderpipeline wie das Spiel.
-Dadurch können Picking, Terrainvorschau und Testmodus ohne zweite Renderimplementierung
-aufgebaut werden. Die UI-Eignung für Dateiauswahl, Docking und große Assetlisten wird im ersten
-Prototyp geprüft, bevor zusätzliche UI-Bibliotheken festgelegt werden.
+Die Editor-UI ist eine gewöhnliche Java-Desktop-Anwendung. Die 3D-Vorschau läuft als
+**eigener Prozess** mit libGDX/LWJGL3 in einem externen Fenster und benutzt dieselbe
+Renderpipeline und Beleuchtung wie das Spiel.
+
+Diese Trennung ist keine Stilfrage, sondern erzwungen: LWJGL3 braucht auf macOS
+`-XstartOnFirstThread`, und AWT/Swing braucht denselben Thread für seinen NSApplication-Runloop.
+Beides im selben Prozess hängt sich auf — geprüft: eine JVM mit `-XstartOnFirstThread` bekommt
+kein Swing-Fenster mehr. JavaFX hat über das Glass-Toolkit dieselbe Bindung, und libGDX liefert
+seit dem LWJGL3-Backend keine AWT-Canvas-Klasse mehr, in die man den Viewport einbetten könnte.
+Ein eingebetteter Viewport wäre also ein eigenes libGDX-Backend auf `lwjgl3-awt` — genau auf der
+Zielplattform am unzuverlässigsten.
+
+Folgen für den Entwurf:
+
+- Die UI-Seite rendert kein 3D. Auswahl, Eigenschaften, Assetlisten, Diagnosen und die
+  2D-Kartenansicht leben im UI-Prozess.
+- Der Vorschauprozess bekommt das Dokument als Daten und meldet Ereignisse zurück: Picking-Treffer,
+  Kameralage, Testlaufzustand. Der Kanal ist ein Implementierungsdetail (lokaler Socket genügt),
+  aber das Protokoll gehört versioniert wie jedes andere Dokumentformat.
+- Der Vorschauprozess ist zustandsarm und jederzeit neu startbar. Stürzt er ab, bleibt der Editor
+  bedienbar; das ist ein Vorteil der Trennung, kein Notbehelf.
+- Kein Editor-Zustand wird ausschließlich in der Vorschau gehalten. Die Wahrheit liegt im
+  Dokumentmodell des UI-Prozesses.
 
 Vorgesehene Gradle-Module:
 
@@ -64,13 +83,36 @@ rollercoaster-editor/
   docs/                       Architektur, Datenverträge und Bedienung
   document/                   Editor-Dokumente, Commands, Historie und Serialisierung
   asset-pipeline/             Import, Atlas-Packing, Validierung und Export
-  editor/                     UI, Werkzeuge, Engine-Vorschau und Testmodus
-  platforms/desktop/          Desktop-Launcher und Distribution
+  editor/                     Java-Desktop-UI, Werkzeuge und Projektverwaltung
+  preview-protocol/           Nachrichtenformat zwischen UI und Vorschau
+  preview/                    libGDX/LWJGL3-Vorschauprozess und Testmodus
+  platforms/desktop/          Launcher und Distribution beider Prozesse
 ```
 
-`document` und die nichtgrafischen Teile der Asset-Pipeline müssen ohne OpenGL testbar sein.
-Desktop-Code darf ein modernes JVM-Level verwenden; wiederverwendete Engine-Klassen behalten
-das von Android/iOS benötigte Sprachlevel. Mobile Editor-Oberflächen sind zunächst nicht geplant.
+`document`, `preview-protocol` und die nichtgrafischen Teile der Asset-Pipeline müssen ohne
+OpenGL testbar sein. Desktop-Code darf ein modernes JVM-Level verwenden; wiederverwendete
+Engine-Klassen behalten das von Android/iOS benötigte Sprachlevel. Mobile Editor-Oberflächen
+sind nicht geplant.
+
+### Beleuchtung in der Vorschau
+
+Die Vorschau nutzt die Engine-Beleuchtung unverändert: `LightingEnvironment` (Umgebungslicht,
+Sonnenrichtung/-farbe/-intensität), `PointLightSource` (Position, Farbe, Intensität, Reichweite,
+Schaltzustand) und `DayNightCycle` (Tageszeit, Sekunden pro Tag, Pause). Zwei harte Grenzen
+gehören in die Editorvalidierung, nicht erst in den Export:
+
+- `LightingEnvironment.MAX_POINT_LIGHTS` ist 8, und Punkt- **und** Spotlichter teilen sich dieses
+  Budget. Mehr Lichter pro Karte muss der Editor abweisen oder sichtbar nach Relevanz beschneiden,
+  statt sie still zu verlieren.
+- Ein Spotlicht ist dieselbe `PointLightSource` mit `setSpot(richtung, innenWinkel, außenWinkel)`;
+  die Winkel sind volle Kegelwinkel in Grad, `außen > innen` und höchstens 180. Der Editor bietet
+  Position, Richtung, beide Winkel, Farbe, Intensität, Reichweite und Schaltzustand an und
+  schaltet mit `setPoint()` zurück.
+- Schatten sind in der Engine noch in Arbeit. Das Editorfeld dafür bleibt aus, bis die Runtime
+  eine stabile Schnittstelle hat — ein Schalter ohne Wirkung ist schlimmer als keiner.
+
+Der Editor setzt Tageszeit und Schaltzustände für reproduzierbare Tests direkt; der laufende
+Tagesverlauf ist dabei pausierbar.
 
 ## Gemeinsame Datenverträge vor der Implementierung
 
@@ -100,22 +142,70 @@ Projektverwaltung und editorfähige Auflösung externer Assets müssen erst ents
 - Modellmaße werden aus dem Import abgeleitet und ihre Beziehung zu Maßstab, Höhe, Anker und
   Kollisionsform explizit gemacht. Kollision darf kein zweites unabhängig gepflegtes Abbild
   derselben Modellplatzierung werden.
+- Das `source`-Feld des Modellmanifests kodiert bereits das **Format** (`gltf:`/`glb:`) und wird
+  gegen die Dateiendung geprüft. Der Asset-Resolver braucht für den **Ort** einen eigenen Kanal;
+  heute landet jeder Pfad hart auf `Gdx.files.classpath`.
+- Ein Sprite-Atlas ist wie ein Tileset auf **eine** Seite beschränkt: `BillboardRenderer`
+  verlangt, dass alle Regionen zur selben `Texture` gehören. Der Editor muss das beim Packen
+  erzwingen, nicht erst beim Laden scheitern.
+- Die Texturorientierung ist festgelegt: die Oberkante eines Billboards bildet auf `region.getV()`
+  ab, also auf die **obere** Bildkante. Ein Atlas wird normal orientiert gepackt.
+- Picking gegen die Spielkamera muss `PixelCamera.snapToPixelGrid` berücksichtigen. Das Snapping
+  verändert `projection`/`combined` nach `camera.update()`, während `invProjectionView` — die
+  Grundlage von `unproject` — und das Frustum nur *in* `update()` neu berechnet werden. Ohne
+  Korrektur liegt der Cursor systematisch bis zu ein Low-Res-Pixel daneben, bei Faktor 4 also
+  vier Bildschirmpixel. Entweder die Vorschau pickt gegen die freie Editorkamera ohne Snap, oder
+  die Engine bekommt einen Aufruf, der die invertierte Matrix nach dem Snap nachzieht.
 
-### Abstimmung mit den laufenden Terrain-Arbeiten
+### Terrain-Vertrag der Engine
 
-Rampen und Terrain-Kollision werden aktuell in `rollercoaster` bearbeitet. Vor Phase 3 wird
-deren fertiger Vertrag übernommen. Dieser Plan legt keine konkurrierenden Rampenfelder fest.
-Benötigt werden Antworten beziehungsweise APIs für:
+Der Vertrag steht in `rollercoaster` und wird vom Editor aufgerufen, nicht nachgebaut.
 
-1. Terrainform, Orientierung, Höhenrepräsentation und Verbindung benachbarter Tiles.
-2. Oberflächenhöhe an einer Weltposition, auch innerhalb einer Rampe.
-3. Bewegungsprüfung von einer Position zur nächsten: Richtung, Höhenwechsel, gesperrte Kanten
-   und Terrainform statt ausschließlich eines booleschen Zielfeldes.
-4. Platzierung von Props auf flachen und geneigten Flächen: Bezugshöhe, zusätzlicher Höhenversatz,
-   Stellfläche und Anforderungen an einen ebenen Untergrund.
-5. Zusammenspiel abgeleiteter Terrain-Kollision, Modell-Kollision und manueller Map-Sperren.
-6. Aktualisierung betroffener Chunks, Nachbarchunks, Kollisionsdaten und Culling-Grenzen nach
-   einer Änderung. Ein vollständiger Neuaufbau ist als erste korrekte Variante zulässig.
+- **`TileShape`** — `FLAT` und `RAMP_NORTH/EAST/SOUTH/WEST`. Eine Rampe überbrückt genau ein
+  Level über die Tile-Tiefe. Die gespeicherte Höhe eines Tiles ist seine Oberflächenhöhe **in der
+  Tile-Mitte**; bei einer Rampe also der Mittelwert, nicht Ober- oder Unterkante. Form und
+  Begehbarkeit hängen am Tile-Typ (`TilePrototype`), damit Geometrie und Regel nicht
+  auseinanderlaufen können.
+- **Drei Terrainarten** wie gefordert: begehbare Rampe (`RAMP_*`, `walkable`), nicht begehbare
+  Rampe (`RAMP_*`, nicht `walkable` — sie steigt sichtbar an, ist aber Kulisse) und Klippe, die
+  sich aus dem Höhenunterschied zwischen Nachbarn ergibt und keine eigene Kachelart braucht.
+- **`TerrainSurface`** — `heightAt(worldX, worldZ)` liefert die Oberflächenhöhe an beliebiger
+  Weltposition, innerhalb einer Rampe interpoliert; dazu `heightAtCenter` und `heightAtEdge`.
+  Positionen außerhalb der Karte klemmen auf das Randtile, damit ein Editor-Cursor jenseits der
+  Kante weiterhin einen brauchbaren Wert liefert. Tile `(x, z)` deckt Welt-X `[x-1, x]` und
+  Welt-Z `[z-1, z]` ab, seine Mitte liegt also bei `(x-0.5, z-0.5)`.
+- **`TerrainRules`** — eine einzige Bewegungsregel für Runtime und Editor. `step(fromX, fromZ,
+  dx, dz)` liefert `ALLOWED`, `OUTSIDE_MAP`, `BLOCKED` oder `TOO_STEEP`; `canStep` ist die
+  boolesche Kurzform, die `GridActor` benutzt. Geprüft wird **an der gemeinsamen Kante**, nicht
+  zwischen Tile-Mitten: nahtlos anschließende Rampen unterscheiden sich dort um 0, eine Klippe um
+  ein volles Level. `maxStepHeight` (Standard 0,5) ist damit eine Aussage über Klettern, nicht
+  über Kachelabstand. Der Editor nutzt denselben Aufruf für Begehbarkeits-Overlays und
+  Diagnosetexte.
+- **Props** stehen auf der interpolierten Oberfläche unter ihrer Ankerkachel, nicht auf deren
+  Stufenhöhe. `ModelDefinition.alignToSlope` kippt ein Prop optional in die Hangneigung;
+  ohne das Flag bleibt es aufrecht.
+- **Kollision hängt am Modell.** Der Fußabdruck aus dem Modellmanifest wird beim Platzieren in
+  die Kollision der Karte geschrieben, statt gegen sie geprüft zu werden. Kartendokumente müssen
+  Prop-Kacheln nicht mehr von Hand sperren. Rotationen drehen den Fußabdruck mit und nehmen seine
+  achsparallelen Grenzen — bei 90-Grad-Schritten exakt, dazwischen konservativ. Der manuelle
+  Kollisionslayer bleibt daneben bestehen und ist additiv.
+- **Chunk-Aktualisierung** ist weiterhin ein vollständiger Neuaufbau.
+
+- **Form ist Kartendatum, Aussehen ist Kacheltyp.** Die optionale Kartenebene `shape` trägt pro
+  Zelle `flat` oder `ramp_north/east/south/west`. Der Editor dreht eine Rampe also, ohne die
+  Kachel zu tauschen, und dieselbe Form lässt sich mit einem begehbaren und einem nicht begehbaren
+  Kacheltyp benutzen.
+- **`ChunkMesher` erzeugt die Geometrie** aus Höhen und Formen, statt Prototyp-Meshes zu kopieren.
+  Deckflächen laufen durch die vier Eckhöhen, Seitenflächen entstehen nur an Kanten, an denen der
+  Nachbar tiefer liegt. Damit stellt ein exportiertes Tileset erstmals Klippen und Rampen dar,
+  Innenflächen entfallen ersatzlos, und der Kartenrand bekommt einen Skirt der Tiefe
+  `borderDepth`. Ein Kacheltyp (`TileSurface`) beschreibt nur noch Farbe beziehungsweise
+  Atlasregion für oben und für die Seiten sowie die Begehbarkeit; fehlt die Seitenregion, gilt die
+  Oberseite.
+
+Damit ist der frühere Blocker für die Abnahme von Phase 3 aufgelöst. Der Editor muss dafür
+liefern: eine Formebene im Kartendokument, Ober- **und** Seitenregion je Kachel im Tileset-Export
+(`side` ist optional) sowie `walkable` je Kacheltyp.
 
 Der Editor zeigt diese Regeln an und ruft sie für Vorschau und Testlauf auf. Er dupliziert
 weder Rampengeometrie noch Bewegungskollision. Ein Haus auf ungeeignetem Untergrund erhält eine
@@ -155,7 +245,9 @@ weder Originalquellen überschreiben noch den letzten gültigen Export beschädi
 - Projekt anlegen/öffnen, Speichern unter, relative Pfade und zuletzt geöffnete Projekte.
 - Dokumentmodell und Commands für Änderungen; Undo/Redo, Dirty-Status und Autosave.
 - UI mit Assetliste, Kartenansicht, Eigenschaften und Diagnosen.
-- Freie Editor-Kamera sowie Vorschau mit Spielkamera; korrekte Maus-/Viewport-Koordinaten.
+- Vorschauprozess starten, verbinden, überwachen und neu starten; Protokollversion prüfen.
+- Freie Editor-Kamera sowie Vorschau mit Spielkamera; korrekte Maus-/Viewport-Koordinaten,
+  Picking-Treffer als Nachricht zurück an die UI.
 
 Abnahme: Ein kleines Dokument lässt sich ändern, rückgängig machen, speichern, verschieben
 und erneut öffnen, ohne Datenverlust oder kaputte Referenzen.
@@ -177,7 +269,8 @@ Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle 
 - Karten anlegen, Größen ändern und Tilesets zuordnen.
 - Malen, Löschen, Pipette, Füllen, Rechteckauswahl, Kopieren und Einfügen.
 - Ein Pinselstrich entspricht einer Undo-Aktion; Vorschau aktualisiert sich während der Arbeit.
-- Höhen ändern, Plateaus und Rampen setzen und ihre Orientierung bearbeiten.
+- Höhen ändern, Plateaus und Rampen setzen und ihre Orientierung über die Formebene bearbeiten;
+  begehbare und nicht begehbare Rampen unterscheiden sich nur im Kacheltyp.
 - Terrain, Gitter, Begehbarkeit, Kanten und manuelle Sperren getrennt ein-/ausblenden.
 - Picking auf der tatsächlichen Terrainoberfläche; Tile-Mitte und Cursor stimmen auch bei
   geneigter Kamera, erhöhten Tiles und Rampen überein.
@@ -212,7 +305,7 @@ Ein einfacher Übergang funktioniert in Vorschau und Export, sobald seine Runtim
 - Event- und Dialogabläufe einzeln auslösen, Flags zurücksetzen und Tageszeit sowie Lichtzustände
   für reproduzierbare Tests vorgeben.
 - Diagnosen mit anklickbarer Map-Position beziehungsweise Asset-ID.
-- Nichtquadratische Karten, fehlende Assets, doppelte IDs, ungültige Regionen, unbekannte
+- Fehlende Assets, doppelte IDs, ungültige Regionen, unbekannte
   Versionen und unauflösbare Verweise werden vor dem Export erkannt.
 - Example Game lädt das exportierte Paket ohne prozedurale `ExampleMap`-Sonderbehandlung.
 
@@ -242,9 +335,11 @@ Build allein weist weder Editorbedienung noch Terrain-/Kollisionskorrektheit nac
 
 ## Entscheidungen vor den jeweiligen Phasen
 
-- Vor Phase 1: UI-Prototyp bewerten und Editor-/Engine-Abhängigkeitsrichtung festlegen.
+- Vor Phase 1: Java-UI-Toolkit wählen und das Nachrichtenprotokoll zur Vorschau festlegen.
+  Die Prozesstrennung selbst ist entschieden und nicht mehr offen.
 - Vor Phase 2: Asset-Resolver, schreibbare Dokumente, IDs, Atlas- und Versionsvertrag festlegen.
-- Vor Phase 3: abgeschlossene Rampen-/Terrain-Kollisions-API übernehmen und gemeinsam prüfen.
+- Vor Phase 3: Terrain-Vertrag ist vollständig übernommen; offen bleibt nur die Abstimmung mit
+  dem Schattensystem, sobald dessen Runtime steht.
 - Vor Phase 4: Entity-, Sprite- und Interaktionsschemas mit der Runtime abstimmen.
 - Vor Phase 6: realistische Referenzkartengröße und messbares Reaktionszeitbudget festlegen.
 
