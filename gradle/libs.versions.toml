@@ -1,0 +1,9 @@
+[versions]
+gdx = "1.14.2"
+
+# Whole repo is desktop-only - no Android/iOS target, so no Java 8 ceiling applies.
+java = "21"
+
+[libraries]
+gdx-core = { module = "com.badlogicgames.gdx:gdx", version.ref = "gdx" }
+gdx-backend-lwjgl3 = { module = "com.badlogicgames.gdx:gdx-backend-lwjgl3", version.ref = "gdx" }

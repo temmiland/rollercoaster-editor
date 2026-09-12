@@ -1,0 +1,24 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+        maven { url = uri('https://jitpack.io') }
+    }
+}
+
+rootProject.name = 'rollercoaster-editor'
+
+include 'preview-protocol'
+include 'preview'
+include 'editor'
+include 'platforms:desktop'
+
+project(':platforms:desktop').projectDir = file('platforms/desktop')
+
+includeBuild('../rollercoaster')
