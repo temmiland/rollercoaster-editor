@@ -7,6 +7,7 @@ import land.temmi.rollercoaster.editor.protocol.MessageChannel;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.util.function.Consumer;
 
 /** Connects to the editor, performs the version handshake, and watches for disconnection. */
 public final class PreviewConnection implements AutoCloseable {
@@ -39,18 +40,19 @@ public final class PreviewConnection implements AutoCloseable {
         return new PreviewConnection(channel);
     }
 
-    /** Starts a background reader thread and calls the listener once the editor disconnects. */
-    public void watch(DisconnectListener listener) {
+    /** Starts a background reader thread: dispatches every message, then calls onDisconnected once. */
+    public void watch(Consumer<Object> onMessage, DisconnectListener onDisconnected) {
         Thread reader = new Thread(() -> {
             try {
-                while (channel.receive() != null) {
-                    // No further message types expected yet.
+                Object message;
+                while ((message = channel.receive()) != null) {
+                    onMessage.accept(message);
                 }
             } catch (IOException ignored) {
                 // Falls through to the disconnect handling below.
             }
             connected = false;
-            listener.onDisconnected();
+            onDisconnected.onDisconnected();
         }, "preview-connection-reader");
         reader.setDaemon(true);
         reader.start();

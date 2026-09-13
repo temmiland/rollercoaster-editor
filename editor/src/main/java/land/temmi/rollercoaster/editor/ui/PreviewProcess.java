@@ -3,6 +3,8 @@ package land.temmi.rollercoaster.editor.ui;
 import land.temmi.rollercoaster.editor.protocol.Hello;
 import land.temmi.rollercoaster.editor.protocol.HelloAck;
 import land.temmi.rollercoaster.editor.protocol.MessageChannel;
+import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
+import land.temmi.rollercoaster.editor.protocol.ShowSampleLevel;
 
 import java.io.File;
 import java.io.IOException;
@@ -26,10 +28,29 @@ public final class PreviewProcess {
 
     private Process process;
     private ServerSocket serverSocket;
+    private volatile MessageChannel channel;
+    private volatile boolean levelOpen;
 
     public PreviewProcess(String previewClasspath, StatusListener listener) {
         this.previewClasspath = previewClasspath;
         this.listener = listener;
+    }
+
+    /** Tells the preview whether to show the open project or its generic default scene. */
+    public synchronized void setLevelOpen(boolean levelOpen) {
+        if (this.levelOpen == levelOpen) return;
+        this.levelOpen = levelOpen;
+        sendLevelState();
+    }
+
+    private void sendLevelState() {
+        MessageChannel current = channel;
+        if (current == null) return;
+        try {
+            current.send(levelOpen ? new ShowSampleLevel() : new ShowGenericScene());
+        } catch (IOException e) {
+            listener.onPreviewStatusChanged(Status.DISCONNECTED, e.getMessage());
+        }
     }
 
     public synchronized void start() {
@@ -91,10 +112,10 @@ public final class PreviewProcess {
 
     private void acceptAndHandshake(ServerSocket serverSocket) {
         try (Socket socket = serverSocket.accept();
-             MessageChannel channel = new MessageChannel(socket)) {
-            Object message = channel.receive();
+             MessageChannel established = new MessageChannel(socket)) {
+            Object message = established.receive();
             if (!(message instanceof Hello)) {
-                channel.send(new HelloAck(false, "Expected Hello, got " + message));
+                established.send(new HelloAck(false, "Expected Hello, got " + message));
                 listener.onPreviewStatusChanged(Status.FAILED, "Unexpected first message: " + message);
                 return;
             }
@@ -102,19 +123,23 @@ public final class PreviewProcess {
             if (hello.protocolVersion != MessageChannel.PROTOCOL_VERSION) {
                 String reason = "protocol version mismatch: editor=" + MessageChannel.PROTOCOL_VERSION
                     + " preview=" + hello.protocolVersion;
-                channel.send(new HelloAck(false, reason));
+                established.send(new HelloAck(false, reason));
                 listener.onPreviewStatusChanged(Status.FAILED, reason);
                 return;
             }
-            channel.send(new HelloAck(true, null));
+            established.send(new HelloAck(true, null));
+            channel = established;
+            sendLevelState();
             listener.onPreviewStatusChanged(Status.CONNECTED, null);
 
-            while (channel.receive() != null) {
+            while (established.receive() != null) {
                 // No further message types expected yet.
             }
             listener.onPreviewStatusChanged(Status.DISCONNECTED, "Preview closed the connection");
         } catch (IOException e) {
             listener.onPreviewStatusChanged(Status.DISCONNECTED, e.getMessage());
+        } finally {
+            channel = null;
         }
     }
 
