@@ -2,6 +2,7 @@ package land.temmi.rollercoaster.editor.preview;
 
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.InputMultiplexer;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
@@ -14,8 +15,10 @@ import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.utils.CameraInputController;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.graphics.g3d.utils.shapebuilders.BoxShapeBuilder;
+import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
 import land.temmi.rollercoaster.asset.ModelCatalog;
+import land.temmi.rollercoaster.editor.protocol.PickResult;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
 import land.temmi.rollercoaster.editor.protocol.ShowSampleLevel;
 import land.temmi.rollercoaster.render.DayNightCycle;
@@ -60,7 +63,9 @@ public final class PreviewApplication extends ApplicationAdapter {
     public void create() {
         camera = new PerspectiveCamera(60f, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         cameraController = new CameraInputController(camera);
-        Gdx.input.setInputProcessor(cameraController);
+        ClickPicker clickPicker = new ClickPicker(camera, this::onPick);
+        InputMultiplexer inputMultiplexer = new InputMultiplexer(clickPicker, cameraController);
+        Gdx.input.setInputProcessor(inputMultiplexer);
 
         lighting = new LightingEnvironment();
         dayNightCycle = new DayNightCycle(lighting).setSecondsPerDay(90f);
@@ -70,6 +75,10 @@ public final class PreviewApplication extends ApplicationAdapter {
         showGenericScene();
 
         connection.watch(this::onMessage, () -> Gdx.app.postRunnable(() -> Gdx.app.exit()));
+    }
+
+    private void onPick(Vector3 worldHit) {
+        connection.send(new PickResult(worldHit.x, worldHit.y, worldHit.z));
     }
 
     private void onMessage(Object message) {

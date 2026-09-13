@@ -62,6 +62,15 @@ public final class PreviewConnection implements AutoCloseable {
         return connected;
     }
 
+    /** Best-effort: a failed send means the connection is already going down, which the reader
+     * thread's disconnect handling will report. */
+    public void send(Object message) {
+        try {
+            channel.send(message);
+        } catch (IOException ignored) {
+        }
+    }
+
     @Override
     public void close() throws IOException {
         channel.close();

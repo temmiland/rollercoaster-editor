@@ -3,6 +3,7 @@ package land.temmi.rollercoaster.editor.ui;
 import land.temmi.rollercoaster.editor.protocol.Hello;
 import land.temmi.rollercoaster.editor.protocol.HelloAck;
 import land.temmi.rollercoaster.editor.protocol.MessageChannel;
+import land.temmi.rollercoaster.editor.protocol.PickResult;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
 import land.temmi.rollercoaster.editor.protocol.ShowSampleLevel;
 
@@ -23,17 +24,23 @@ public final class PreviewProcess {
         void onPreviewStatusChanged(Status status, String detail);
     }
 
+    public interface PickListener {
+        void onPick(float worldX, float worldY, float worldZ);
+    }
+
     private final String previewClasspath;
     private final StatusListener listener;
+    private final PickListener pickListener;
 
     private Process process;
     private ServerSocket serverSocket;
     private volatile MessageChannel channel;
     private volatile boolean levelOpen;
 
-    public PreviewProcess(String previewClasspath, StatusListener listener) {
+    public PreviewProcess(String previewClasspath, StatusListener listener, PickListener pickListener) {
         this.previewClasspath = previewClasspath;
         this.listener = listener;
+        this.pickListener = pickListener;
     }
 
     /** Tells the preview whether to show the open project or its generic default scene. */
@@ -132,8 +139,12 @@ public final class PreviewProcess {
             sendLevelState();
             listener.onPreviewStatusChanged(Status.CONNECTED, null);
 
-            while (established.receive() != null) {
-                // No further message types expected yet.
+            Object incoming;
+            while ((incoming = established.receive()) != null) {
+                if (incoming instanceof PickResult) {
+                    PickResult pick = (PickResult) incoming;
+                    pickListener.onPick(pick.worldX, pick.worldY, pick.worldZ);
+                }
             }
             listener.onPreviewStatusChanged(Status.DISCONNECTED, "Preview closed the connection");
         } catch (IOException e) {

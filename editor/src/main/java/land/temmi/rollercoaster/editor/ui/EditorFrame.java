@@ -31,6 +31,7 @@ import java.nio.file.Paths;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 
 /** Main editor window. Asset list and map view are empty until Phase 2/3 fill them in. */
 public final class EditorFrame extends JFrame {
@@ -328,6 +329,11 @@ public final class EditorFrame extends JFrame {
             });
             recentMenu.add(item);
         }
+    }
+
+    public void onPick(float worldX, float worldY, float worldZ) {
+        SwingUtilities.invokeLater(() -> diagnostics.append(LocalTime.now().format(TIMESTAMP)
+            + String.format(Locale.ROOT, "  Pick: (%.2f, %.2f, %.2f)%n", worldX, worldY, worldZ)));
     }
 
     public void onPreviewStatusChanged(PreviewProcess.Status status, String detail) {

@@ -19,7 +19,7 @@ public final class EditorApplication {
             });
 
             frame[0] = new EditorFrame(() -> previewProcess[0].restart(), projectController[0], recentProjects);
-            previewProcess[0] = new PreviewProcess(previewClasspath, frame[0]::onPreviewStatusChanged);
+            previewProcess[0] = new PreviewProcess(previewClasspath, frame[0]::onPreviewStatusChanged, frame[0]::onPick);
 
             frame[0].setVisible(true);
             frame[0].refreshProjectUi();
