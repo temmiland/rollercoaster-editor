@@ -3,7 +3,12 @@ package land.temmi.rollercoaster.editor.asset;
 import com.badlogic.gdx.files.FileHandle;
 import land.temmi.rollercoaster.asset.ModelDefinition;
 import land.temmi.rollercoaster.asset.ModelManifest;
+import land.temmi.rollercoaster.world.LoadedMap;
+import land.temmi.rollercoaster.world.MapLoader;
 import land.temmi.rollercoaster.world.TileDefinition;
+import land.temmi.rollercoaster.world.TileShape;
+import land.temmi.rollercoaster.world.TileSurface;
+import land.temmi.rollercoaster.world.Tileset;
 import land.temmi.rollercoaster.world.TilesetManifest;
 
 import java.awt.Color;
@@ -26,9 +31,56 @@ public final class AssetPipelineSmokeTest {
         verifyRejectsDuplicateIds();
         verifyRejectsOversizedTileset();
         verifyModelManifestExportRoundtrip();
+        verifyMapExportRoundtrip();
+        verifyRejectsUnpaintedMap();
         System.out.println("PASS: tile packing and tileset export read back correctly "
             + "by the real TilesetManifest parser, model manifest export read back by the real "
-            + "ModelManifest parser, with clear errors for bad input");
+            + "ModelManifest parser, map export read back by the real MapLoader parser, "
+            + "with clear errors for bad input");
+    }
+
+    private static void verifyMapExportRoundtrip() throws IOException {
+        int width = 3;
+        int depth = 2;
+        String[] tiles = {"grass", "grass", "grass", "grass", "grass", "grass"};
+        float[] heights = {0f, 0.5f, 0f, 0f, 0f, 0f};
+        String[] shapes = {"flat", "ramp_east", "flat", "flat", "flat", "flat"};
+        boolean[] collision = {false, false, false, false, false, true};
+
+        Path directory = Files.createTempDirectory("trackside-editor-map");
+        MapExport.write("valley", width, depth, "overworld", tiles, heights, shapes, collision, directory);
+
+        Path mapFile = directory.resolve("valley.json");
+        if (!Files.exists(mapFile)) throw new AssertionError("Map JSON was not written");
+
+        Tileset tileset = new Tileset().add(new TileSurface("grass"));
+        LoadedMap loaded = new MapLoader().load(new FileHandle(mapFile.toFile()), tileset);
+        if (!"valley".equals(loaded.name)) throw new AssertionError("Map name did not round-trip");
+        if (loaded.tiles.getWidth() != width || loaded.tiles.getDepth() != depth) {
+            throw new AssertionError("Map size did not round-trip");
+        }
+        if (loaded.tiles.getHeight(1, 0) != 0.5f || loaded.tiles.getShape(1, 0) != TileShape.RAMP_EAST) {
+            throw new AssertionError("Terrain shape/height did not round-trip");
+        }
+        if (!loaded.tiles.isBlocked(2, 1)) throw new AssertionError("Collision layer did not round-trip");
+        if (loaded.tiles.isBlocked(0, 0)) throw new AssertionError("Unblocked cells should round-trip as unblocked");
+        if (loaded.props.size != 0 || loaded.entities.size != 0) {
+            throw new AssertionError("A freshly exported map should have no props or entities yet");
+        }
+    }
+
+    private static void verifyRejectsUnpaintedMap() throws IOException {
+        String[] tiles = new String[4];
+        float[] heights = new float[4];
+        String[] shapes = {"flat", "flat", "flat", "flat"};
+        boolean[] collision = new boolean[4];
+        Path directory = Files.createTempDirectory("trackside-editor-map-empty");
+        try {
+            MapExport.write("empty", 2, 2, "overworld", tiles, heights, shapes, collision, directory);
+            throw new AssertionError("Exporting a map with unpainted cells should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected.
+        }
     }
 
     private static void verifyModelManifestExportRoundtrip() throws IOException {
