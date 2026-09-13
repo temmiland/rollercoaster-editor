@@ -393,8 +393,14 @@ Steilkanten und gesperrte Flächen verhalten sich genauso wie im exportierten Sp
   und Übersetzungs-IDs prüfen.
 - Events mit Auslösern, Bedingungen und Aktionen verknüpfen; Dialoge, Kartenwechsel, Flags,
   NPCs, Türen und Lichtquellen als Ziele unterstützen.
-- Sonnenverlauf, Umgebungslicht sowie Punkt- und Spotlichter pro Karte bearbeiten; Position,
-  Höhe, Farbe, Intensität, Reichweite und Schaltzustand in der Vorschau zeigen.
+- [x] Punkt- und Spotlichter pro Karte bearbeiten: `MapLight` (Engine) und `MapLoader` lesen ein
+  optionales `lights`-Array, spiegelbildlich zu Props/Entities - der Aufrufer entscheidet, was
+  daraus wird, genau wie bei Entities. Der Editor prüft das gemeinsame 8-Licht-Budget der Engine
+  bereits beim Platzieren, nicht erst beim Export. Die Vorschau wendet Position, Farbe, Intensität,
+  Reichweite und Schaltzustand über `LightingEnvironment`/`PointLightSource` an; ein zurückgewiesenes
+  `ShowMap` lässt die zuvor sichtbare Beleuchtung unangetastet. **Sonnenverlauf und Umgebungslicht
+  bleiben unautorisierbar** - die Engine wählt sie weiterhin aus einem festen `LightingSituation`-
+  Tagesverlauf, nicht aus Kartendaten; das wäre eine eigene, größere Änderung.
 - Eigenschaften aus registrierten Entity-/Interaktionsschemas anzeigen; Referenzen auf
   Zielkarte, Zielpunkt, Dialogknoten und Licht-ID prüfen.
 - Spielregeln bleiben in der Engine beziehungsweise im Spiel. Fehlende Runtime-Unterstützung
