@@ -1,0 +1,34 @@
+plugins {
+    id 'java-library'
+}
+
+group = 'land.temmi'
+version = '0.1.0'
+
+dependencies {
+    api libs.gdx.core
+}
+
+sourceSets {
+    smokeTest {
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+configurations {
+    smokeTestImplementation.extendsFrom implementation
+}
+
+dependencies {
+    // Only the smoke test needs the engine - it verifies the export against the real parser.
+    // The exporter itself stays engine-independent, since it just writes files.
+    smokeTestImplementation 'land.temmi:rollercoaster:0.1.0'
+}
+
+tasks.register('assetPipelineSmokeTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks tile packing and the tileset export against the real TilesetManifest parser.'
+    classpath = sourceSets.smokeTest.runtimeClasspath
+    mainClass = 'land.temmi.rollercoaster.editor.asset.AssetPipelineSmokeTest'
+}

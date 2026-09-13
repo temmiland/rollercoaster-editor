@@ -15,6 +15,7 @@ dependencyResolutionManagement {
 rootProject.name = 'rollercoaster-editor'
 
 include 'document'
+include 'asset-pipeline'
 include 'preview-protocol'
 include 'preview'
 include 'editor'
