@@ -18,6 +18,7 @@ import com.badlogic.gdx.graphics.g3d.utils.shapebuilders.BoxShapeBuilder;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
 import land.temmi.rollercoaster.asset.ModelCatalog;
+import land.temmi.rollercoaster.editor.protocol.ComputeModelBounds;
 import land.temmi.rollercoaster.editor.protocol.PickResult;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
 import land.temmi.rollercoaster.editor.protocol.ShowSampleLevel;
@@ -86,6 +87,9 @@ public final class PreviewApplication extends ApplicationAdapter {
             Gdx.app.postRunnable(this::showLevelScene);
         } else if (message instanceof ShowGenericScene) {
             Gdx.app.postRunnable(this::showGenericScene);
+        } else if (message instanceof ComputeModelBounds) {
+            String path = ((ComputeModelBounds) message).modelFilePath;
+            Gdx.app.postRunnable(() -> connection.send(ModelBoundsService.compute(path)));
         }
     }
 
