@@ -18,7 +18,6 @@ import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
 import java.awt.BorderLayout;
-import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Toolkit;
 import java.awt.event.FocusAdapter;
@@ -52,6 +51,7 @@ public final class EditorFrame extends JFrame {
     private final JMenuItem undoMenuItem = new JMenuItem("Rückgängig");
     private final JMenuItem redoMenuItem = new JMenuItem("Wiederholen");
     private final AssetsPanel assetsPanel;
+    private final MapPanel mapPanel;
 
     public EditorFrame(Runnable onRestartPreviewRequested, ProjectController projectController,
                        RecentProjects recentProjects,
@@ -60,6 +60,7 @@ public final class EditorFrame extends JFrame {
         this.projectController = projectController;
         this.recentProjects = recentProjects;
         this.assetsPanel = new AssetsPanel(projectController, modelBoundsComputer);
+        this.mapPanel = new MapPanel(projectController);
 
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
@@ -126,26 +127,18 @@ public final class EditorFrame extends JFrame {
     }
 
     private JSplitPane buildContent() {
-        JPanel map = placeholderPanel("Karte");
         JPanel properties = buildPropertiesPanel();
         JPanel diagnosticsPanel = buildDiagnosticsPanel();
 
         JSplitPane rightSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, properties, diagnosticsPanel);
         rightSplit.setResizeWeight(0.4);
 
-        JSplitPane centerSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, assetsPanel, map);
+        JSplitPane centerSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, assetsPanel, mapPanel);
         centerSplit.setResizeWeight(0.3);
 
         JSplitPane mainSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, centerSplit, rightSplit);
         mainSplit.setResizeWeight(0.7);
         return mainSplit;
-    }
-
-    private JPanel placeholderPanel(String title) {
-        JPanel panel = new JPanel();
-        panel.setBorder(BorderFactory.createTitledBorder(title));
-        panel.setPreferredSize(new Dimension(200, 200));
-        return panel;
     }
 
     private JPanel buildPropertiesPanel() {
@@ -316,6 +309,7 @@ public final class EditorFrame extends JFrame {
 
         refreshRecentMenu();
         assetsPanel.refresh();
+        mapPanel.refresh();
     }
 
     private void refreshRecentMenu() {
