@@ -340,8 +340,11 @@ Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle 
   in 3D befahren sehen, nicht nur als Dreieck im Grid. Props/Entities fehlen der Vorschau noch
   (Phase 4), Kollisions-Overlay ebenso.
 - [ ] Terrain, Gitter, Begehbarkeit, Kanten und manuelle Sperren getrennt ein-/ausblenden.
-- [ ] Picking auf der tatsächlichen Terrainoberfläche; Tile-Mitte und Cursor stimmen auch bei
-  geneigter Kamera, erhöhten Tiles und Rampen überein.
+- [x] Picking auf der tatsächlichen Terrainoberfläche: `ClickPicker` marschiert den Pick-Strahl
+  gegen `TerrainSurface.heightAt` und verfeinert den Treffer per Bisektion, statt immer die
+  Y=0-Ebene zu schneiden - ohne echtes Terrain (generische Platzhalterszene) bleibt die Ebene der
+  Ersatz. Da die Vorschau die freie Kamera nutzt, nicht `PixelCamera`, entfällt die im Vertrag
+  beschriebene Snap-Korrektur; das war die einzige vor Phase 3 offene Entscheidung dazu.
 
 Abnahme: Eine Ebene führt über eine Rampe auf ein Plateau. Der Testspieler erreicht das Plateau;
 Steilkanten und gesperrte Flächen verhalten sich genauso wie im exportierten Spiel.
