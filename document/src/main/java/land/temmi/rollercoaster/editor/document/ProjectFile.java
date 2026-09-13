@@ -177,6 +177,25 @@ public final class ProjectFile {
                         map.addEntity(mapEntity);
                     }
                 }
+                JsonValue lights = mapValue.get("lights");
+                if (lights != null) {
+                    for (JsonValue light = lights.child; light != null; light = light.next) {
+                        JsonValue color = requiredArray(light, "color", 3);
+                        boolean spot = light.getBoolean("spot", false);
+                        JsonValue direction = light.get("direction");
+                        MapLightAsset mapLight = new MapLightAsset(requireString(light, "instanceId"),
+                            light.getFloat("x", 0f), light.getFloat("y", 0f), light.getFloat("z", 0f),
+                            color.getFloat(0), color.getFloat(1), color.getFloat(2),
+                            light.getFloat("intensity", 1f), light.getFloat("range", 4f),
+                            light.getBoolean("enabled", true), spot,
+                            direction == null ? 0f : direction.getFloat(0),
+                            direction == null ? -1f : direction.getFloat(1),
+                            direction == null ? 0f : direction.getFloat(2),
+                            light.getFloat("innerAngle", 0f), light.getFloat("outerAngle", 0f));
+                        map.requireLightPosition(mapLight);
+                        map.addLight(mapLight);
+                    }
+                }
                 document.addMap(map);
             }
         }
@@ -359,6 +378,34 @@ public final class ProjectFile {
                 if (entity.spriteId != null) writer.set("sprite", entity.spriteId);
                 writer.set("x", entity.x);
                 writer.set("z", entity.z);
+                writer.pop();
+            }
+            writer.pop();
+            writer.array("lights");
+            for (MapLightAsset light : map.getLights()) {
+                writer.object();
+                writer.set("instanceId", light.instanceId);
+                writer.set("x", light.x);
+                writer.set("y", light.y);
+                writer.set("z", light.z);
+                writer.array("color");
+                writer.value(light.colorR);
+                writer.value(light.colorG);
+                writer.value(light.colorB);
+                writer.pop();
+                writer.set("intensity", light.intensity);
+                writer.set("range", light.range);
+                writer.set("enabled", light.enabled);
+                writer.set("spot", light.spot);
+                if (light.spot) {
+                    writer.array("direction");
+                    writer.value(light.directionX);
+                    writer.value(light.directionY);
+                    writer.value(light.directionZ);
+                    writer.pop();
+                    writer.set("innerAngle", light.innerAngle);
+                    writer.set("outerAngle", light.outerAngle);
+                }
                 writer.pop();
             }
             writer.pop();

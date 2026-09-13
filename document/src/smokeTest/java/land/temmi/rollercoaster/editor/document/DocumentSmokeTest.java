@@ -22,9 +22,10 @@ public final class DocumentSmokeTest {
         verifyMapCommandsAndTerrainGrid();
         verifyMapRoundtrip();
         verifyPropCommandsAndRoundtrip();
+        verifyLightCommandsAndRoundtrip();
         System.out.println("PASS: undo/redo, dirty tracking after a branching edit, an atomic project.json "
             + "roundtrip across a moved directory, texture/tileset commands with referential integrity, "
-            + "model import/export, map terrain painting, and prop placement");
+            + "model import/export, map terrain painting, prop placement, and map lighting");
     }
 
     private static void verifyUndoRedoAndDirtyTracking() {
@@ -511,6 +512,87 @@ public final class DocumentSmokeTest {
         ModelAsset reloadedModel = ProjectFile.load(directory).findModel("house");
         if (!reloadedModel.getDependencyFileNames().equals(List.of("house.bin"))) {
             throw new AssertionError("Model dependencies did not round-trip");
+        }
+    }
+
+    private static void verifyLightCommandsAndRoundtrip() throws IOException {
+        ProjectDocument document = new ProjectDocument("Beleuchtete Welt");
+        CommandHistory history = new CommandHistory(document);
+        document.addTexture(new TextureAsset("grass", "grass.png"));
+        TilesetAsset tileset = new TilesetAsset("overworld");
+        tileset.addTile(new TileEntry("grass", "grass", true));
+        document.addTileset(tileset);
+        history.perform(new CreateMapCommand("valley", 4, 3, "overworld"));
+        MapAsset map = document.findMap("valley");
+
+        MapLightAsset lamp = new MapLightAsset("lamp-1", 2f, 1.5f, 1f, 1f, 0.9f, 0.7f, 1f, 4f, true);
+        history.perform(new PlaceLightCommand("valley", lamp));
+        if (map.findLight("lamp-1") == null) throw new AssertionError("Light placement did not apply");
+
+        try {
+            history.perform(new PlaceLightCommand("valley",
+                new MapLightAsset("outside", 4f, 1.5f, 1f, 1f, 1f, 1f, 1f, 4f, true)));
+            throw new AssertionError("Placing a light outside its map should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: the position has to remain within the map grid.
+        }
+
+        try {
+            new MapLightAsset("bad-spot", 1f, 1f, 1f, 1f, 1f, 1f, 1f, 4f, true, true, 0f, -1f, 0f, 30f, 20f);
+            throw new AssertionError("A spot light with outer <= inner angle should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: the cone must widen from inner to outer.
+        }
+
+        history.perform(new UpdateLightCommand("valley", lamp,
+            new MapLightAsset("lamp-1", 2f, 2f, 1f, 1f, 1f, 1f, 2f, 5f, false)));
+        MapLightAsset updated = map.findLight("lamp-1");
+        if (updated.y != 2f || updated.intensity != 2f || updated.range != 5f || updated.enabled) {
+            throw new AssertionError("Light update did not apply");
+        }
+        history.undo();
+        MapLightAsset restored = map.findLight("lamp-1");
+        if (restored.y != 1.5f || restored.intensity != 1f || !restored.enabled) {
+            throw new AssertionError("Undo did not restore the previous light");
+        }
+
+        MapLightAsset spot = new MapLightAsset("spot-1", 1f, 3f, 1f, 1f, 1f, 1f, 1f, 6f, true,
+            true, 0f, -1f, 0f, 20f, 35f);
+        history.perform(new PlaceLightCommand("valley", spot));
+
+        for (int i = 0; i < MapAsset.MAX_LIGHTS - 2; i++) {
+            history.perform(new PlaceLightCommand("valley",
+                new MapLightAsset("filler-" + i, 0f, 1f, 0f, 1f, 1f, 1f, 1f, 1f, true)));
+        }
+        if (map.getLights().size() != MapAsset.MAX_LIGHTS) {
+            throw new AssertionError("Expected exactly " + MapAsset.MAX_LIGHTS + " lights, got " + map.getLights().size());
+        }
+        try {
+            history.perform(new PlaceLightCommand("valley",
+                new MapLightAsset("one-too-many", 0f, 1f, 0f, 1f, 1f, 1f, 1f, 1f, true)));
+            throw new AssertionError("Exceeding the engine's shared point/spot light budget should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: LightingEnvironment.MAX_POINT_LIGHTS is 8, shared by point and spot lights.
+        }
+
+        history.perform(new RemoveLightCommand("valley", spot));
+        if (map.findLight("spot-1") != null) throw new AssertionError("Light removal did not apply");
+        history.undo();
+        if (map.findLight("spot-1") == null) throw new AssertionError("Undo did not restore the removed light");
+
+        Path directory = Files.createTempDirectory("trackside-editor-project-lights");
+        ProjectFile.save(document, directory);
+        MapAsset reloadedMap = ProjectFile.load(directory).findMap("valley");
+        MapLightAsset reloadedLamp = reloadedMap.findLight("lamp-1");
+        if (reloadedLamp == null || reloadedLamp.x != 2f || reloadedLamp.y != 1.5f || reloadedLamp.z != 1f
+            || reloadedLamp.colorR != 1f || reloadedLamp.colorG != 0.9f || reloadedLamp.colorB != 0.7f
+            || reloadedLamp.intensity != 1f || reloadedLamp.range != 4f || !reloadedLamp.enabled || reloadedLamp.spot) {
+            throw new AssertionError("Point light did not round-trip");
+        }
+        MapLightAsset reloadedSpot = reloadedMap.findLight("spot-1");
+        if (reloadedSpot == null || !reloadedSpot.spot || reloadedSpot.innerAngle != 20f
+            || reloadedSpot.outerAngle != 35f || reloadedSpot.directionY != -1f) {
+            throw new AssertionError("Spot light did not round-trip");
         }
     }
 

@@ -13,6 +13,8 @@ import java.util.List;
 public final class MapAsset {
     public static final float LEVEL_HEIGHT = 1f;
     private static final float HEIGHT_EPSILON = 0.0001f;
+    /** Mirrors {@code LightingEnvironment.MAX_POINT_LIGHTS}; point and spot lights share the budget. */
+    public static final int MAX_LIGHTS = 8;
 
     public final String id;
     public int width;
@@ -25,6 +27,7 @@ public final class MapAsset {
     private boolean[] collision;
     private final List<MapProp> props = new ArrayList<>();
     private final List<MapEntityAsset> entities = new ArrayList<>();
+    private final List<MapLightAsset> lights = new ArrayList<>();
 
     public MapAsset(String id, int width, int depth, String tilesetId) {
         if (id == null || id.trim().isEmpty()) throw new IllegalArgumentException("Map id is required");
@@ -86,6 +89,17 @@ public final class MapAsset {
         return null;
     }
 
+    public List<MapLightAsset> getLights() {
+        return Collections.unmodifiableList(lights);
+    }
+
+    public MapLightAsset findLight(String instanceId) {
+        for (MapLightAsset light : lights) {
+            if (light.instanceId.equals(instanceId)) return light;
+        }
+        return null;
+    }
+
     /** Package-private: mutation goes through a {@link Command} so undo/redo stays consistent. */
     void addProp(MapProp prop) {
         if (findProp(prop.instanceId) != null) throw new IllegalArgumentException("Duplicate prop instance id: " + prop.instanceId);
@@ -124,6 +138,36 @@ public final class MapAsset {
         throw new IllegalArgumentException("No such entity: " + instanceId);
     }
 
+    void addLight(MapLightAsset light) {
+        if (findLight(light.instanceId) != null) {
+            throw new IllegalArgumentException("Duplicate light instance id: " + light.instanceId);
+        }
+        if (lights.size() >= MAX_LIGHTS) {
+            throw new IllegalArgumentException(
+                "Map '" + id + "' already has " + MAX_LIGHTS + " lights, the engine's shared point/spot budget");
+        }
+        lights.add(light);
+    }
+
+    void removeLight(String instanceId) {
+        if (!lights.removeIf(light -> light.instanceId.equals(instanceId))) {
+            throw new IllegalArgumentException("No such light: " + instanceId);
+        }
+    }
+
+    void replaceLight(String instanceId, MapLightAsset replacement) {
+        if (replacement == null || !instanceId.equals(replacement.instanceId)) {
+            throw new IllegalArgumentException("Replacement light must keep instance ID '" + instanceId + "'");
+        }
+        for (int i = 0; i < lights.size(); i++) {
+            if (lights.get(i).instanceId.equals(instanceId)) {
+                lights.set(i, replacement);
+                return;
+            }
+        }
+        throw new IllegalArgumentException("No such light: " + instanceId);
+    }
+
     /** Restorable grid contents used by {@link ResizeMapCommand}. */
     static final class State {
         private final int width;
@@ -154,6 +198,11 @@ public final class MapAsset {
         for (MapEntityAsset entity : entities) {
             if (entity.x >= newWidth || entity.z >= newDepth) {
                 throw new IllegalArgumentException("Resizing map '" + id + "' would remove entity '" + entity.instanceId + "'");
+            }
+        }
+        for (MapLightAsset light : lights) {
+            if (light.x >= newWidth || light.z >= newDepth) {
+                throw new IllegalArgumentException("Resizing map '" + id + "' would remove light '" + light.instanceId + "'");
             }
         }
         State previous = new State(this);
@@ -201,6 +250,13 @@ public final class MapAsset {
     void requireEntityPosition(MapEntityAsset entity) {
         if (!contains(entity.x, entity.z)) {
             throw new IllegalArgumentException("Entity '" + entity.instanceId + "' is outside map '" + id + "'");
+        }
+    }
+
+    /** Lights use grid coordinates like props; height is unconstrained. */
+    void requireLightPosition(MapLightAsset light) {
+        if (light.x < 0f || light.x >= width || light.z < 0f || light.z >= depth) {
+            throw new IllegalArgumentException("Light '" + light.instanceId + "' is outside map '" + id + "'");
         }
     }
 
