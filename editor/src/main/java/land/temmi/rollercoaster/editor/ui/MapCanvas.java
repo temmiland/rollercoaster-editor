@@ -46,7 +46,9 @@ final class MapCanvas extends JPanel {
     private static final int CELL_SIZE = 28;
     private static final Color EMPTY_COLOR = new Color(60, 60, 60);
     private static final Color BLOCKED_TINT = new Color(220, 30, 30, 130);
+    private static final Color UNWALKABLE_TINT = new Color(40, 80, 220, 100);
     private static final Color GRID_LINE = new Color(20, 20, 20);
+    private static final Color EDGE_LINE = new Color(255, 180, 30);
     private static final Color PROP_OUTLINE = Color.WHITE;
     private static final Color SELECTED_PROP_OUTLINE = new Color(255, 220, 40);
 
@@ -62,7 +64,13 @@ final class MapCanvas extends JPanel {
     private String paintTileId;
     private float terrainTargetHeight;
     private TileShape terrainTargetShape = TileShape.FLAT;
+    private Map<String, Boolean> tileWalkability = Map.of();
     private String selectedPropInstanceId;
+    private boolean showTerrain = true;
+    private boolean showGrid = true;
+    private boolean showWalkability;
+    private boolean showEdges;
+    private boolean showManualCollision = true;
     private Boolean collisionStrokeValue;
     private boolean propPlacedThisPress;
     private int lastPaintedX = -1;
@@ -125,6 +133,20 @@ final class MapCanvas extends JPanel {
 
     void setSelectedPropInstanceId(String instanceId) {
         selectedPropInstanceId = instanceId;
+        repaint();
+    }
+
+    void setTileWalkability(Map<String, Boolean> tileWalkability) {
+        this.tileWalkability = new LinkedHashMap<>(tileWalkability);
+        repaint();
+    }
+
+    void setOverlays(boolean terrain, boolean grid, boolean walkability, boolean edges, boolean manualCollision) {
+        showTerrain = terrain;
+        showGrid = grid;
+        showWalkability = walkability;
+        showEdges = edges;
+        showManualCollision = manualCollision;
         repaint();
     }
 
@@ -207,22 +229,78 @@ final class MapCanvas extends JPanel {
                 PaintCollisionCommand.Edit collisionEdit = pendingCollisionEdits.get(key);
                 boolean blocked = collisionEdit != null ? collisionEdit.newBlocked : map.isBlocked(x, z);
                 PaintTerrainCommand.Edit terrainEdit = pendingTerrainEdits.get(key);
+                float height = terrainEdit != null ? terrainEdit.newHeight : map.getHeight(x, z);
                 TileShape shape = terrainEdit != null ? terrainEdit.newShape : map.getShape(x, z);
 
                 int px = x * CELL_SIZE;
                 int py = z * CELL_SIZE;
                 g.setColor(tileId == null ? EMPTY_COLOR : colorFor(tileId));
                 g.fillRect(px, py, CELL_SIZE, CELL_SIZE);
-                if (blocked) {
+                if (showManualCollision && blocked) {
                     g.setColor(BLOCKED_TINT);
                     g.fillRect(px, py, CELL_SIZE, CELL_SIZE);
                 }
-                if (shape != TileShape.FLAT) drawRampIndicator(g, px, py, shape);
-                g.setColor(GRID_LINE);
-                g.drawRect(px, py, CELL_SIZE, CELL_SIZE);
+                if (showWalkability && tileId != null && !tileWalkability.getOrDefault(tileId, true)) {
+                    g.setColor(UNWALKABLE_TINT);
+                    g.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+                }
+                if (showTerrain) drawTerrain(g, px, py, height, shape);
+                if (showGrid) {
+                    g.setColor(GRID_LINE);
+                    g.drawRect(px, py, CELL_SIZE, CELL_SIZE);
+                }
             }
         }
+        if (showEdges) drawEdges(g);
         for (MapProp prop : map.getProps()) drawProp(g, prop, prop.instanceId.equals(selectedPropInstanceId));
+    }
+
+    private static void drawTerrain(Graphics g, int px, int py, float height, TileShape shape) {
+        if (shape != TileShape.FLAT) drawRampIndicator(g, px, py, shape);
+        g.setColor(Color.WHITE);
+        g.drawString(String.format("%.1f", height), px + 3, py + CELL_SIZE - 4);
+    }
+
+    private void drawEdges(Graphics g) {
+        g.setColor(EDGE_LINE);
+        for (int z = 0; z < map.depth; z++) {
+            for (int x = 0; x < map.width; x++) {
+                if (x == 0 && isHeightEdge(x, z, -1, 0)) {
+                    g.drawLine(x * CELL_SIZE, z * CELL_SIZE, x * CELL_SIZE, (z + 1) * CELL_SIZE);
+                }
+                if (z == 0 && isHeightEdge(x, z, 0, -1)) {
+                    g.drawLine(x * CELL_SIZE, z * CELL_SIZE, (x + 1) * CELL_SIZE, z * CELL_SIZE);
+                }
+                if (isHeightEdge(x, z, 1, 0)) {
+                    int edgeX = (x + 1) * CELL_SIZE;
+                    g.drawLine(edgeX, z * CELL_SIZE, edgeX, (z + 1) * CELL_SIZE);
+                }
+                if (isHeightEdge(x, z, 0, 1)) {
+                    int edgeZ = (z + 1) * CELL_SIZE;
+                    g.drawLine(x * CELL_SIZE, edgeZ, (x + 1) * CELL_SIZE, edgeZ);
+                }
+            }
+        }
+    }
+
+    private boolean isHeightEdge(int x, int z, int dx, int dz) {
+        float current = edgeHeight(map.getHeight(x, z), map.getShape(x, z), dx, dz);
+        int neighborX = x + dx;
+        int neighborZ = z + dz;
+        float neighbor = map.contains(neighborX, neighborZ)
+            ? edgeHeight(map.getHeight(neighborX, neighborZ), map.getShape(neighborX, neighborZ), -dx, -dz)
+            : 0f;
+        return Math.abs(current - neighbor) > 0.001f;
+    }
+
+    private static float edgeHeight(float height, TileShape shape, int dx, int dz) {
+        return switch (shape) {
+            case RAMP_NORTH -> height - dz * 0.5f;
+            case RAMP_EAST -> height + dx * 0.5f;
+            case RAMP_SOUTH -> height + dz * 0.5f;
+            case RAMP_WEST -> height - dx * 0.5f;
+            case FLAT -> height;
+        };
     }
 
     private static void drawProp(Graphics g, MapProp prop, boolean selected) {

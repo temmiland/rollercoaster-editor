@@ -13,6 +13,7 @@ import land.temmi.rollercoaster.editor.protocol.ShowMapResult;
 
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
+import javax.swing.JCheckBox;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -35,6 +36,8 @@ import java.awt.GridLayout;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
@@ -65,6 +68,11 @@ final class MapPanel extends JPanel {
     private final JToggleButton propsTool = new JToggleButton("Props platzieren");
     private final JSpinner levelSpinner = new JSpinner(new SpinnerNumberModel(0, -20, 20, 1));
     private final JComboBox<TileShape> shapeCombo = new JComboBox<>(TileShape.values());
+    private final JCheckBox terrainOverlay = new JCheckBox("Terrain", true);
+    private final JCheckBox gridOverlay = new JCheckBox("Gitter", true);
+    private final JCheckBox walkabilityOverlay = new JCheckBox("Begehbarkeit");
+    private final JCheckBox edgesOverlay = new JCheckBox("Kanten");
+    private final JCheckBox manualCollisionOverlay = new JCheckBox("Manuelle Sperren", true);
     private final JLabel hoverLabel = new JLabel(" ");
 
     MapPanel(ProjectController projectController, PreviewMapRequester previewMapRequester) {
@@ -96,7 +104,13 @@ final class MapPanel extends JPanel {
         propsTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.PROPS));
         levelSpinner.addChangeListener(e -> updateTerrainTarget());
         shapeCombo.addActionListener(e -> updateTerrainTarget());
+        terrainOverlay.addActionListener(e -> updateOverlays());
+        gridOverlay.addActionListener(e -> updateOverlays());
+        walkabilityOverlay.addActionListener(e -> updateOverlays());
+        edgesOverlay.addActionListener(e -> updateOverlays());
+        manualCollisionOverlay.addActionListener(e -> updateOverlays());
         updateTerrainTarget();
+        updateOverlays();
 
         add(buildMapListPanel(), BorderLayout.WEST);
         add(buildCenterPanel(), BorderLayout.CENTER);
@@ -200,6 +214,11 @@ final class MapPanel extends JPanel {
         toolbar.add(new JLabel("Level:"));
         toolbar.add(levelSpinner);
         toolbar.add(shapeCombo);
+        toolbar.add(terrainOverlay);
+        toolbar.add(gridOverlay);
+        toolbar.add(walkabilityOverlay);
+        toolbar.add(edgesOverlay);
+        toolbar.add(manualCollisionOverlay);
         panel.add(toolbar, BorderLayout.NORTH);
 
         JTabbedPane palettePanel = new JTabbedPane();
@@ -250,10 +269,17 @@ final class MapPanel extends JPanel {
         hoverLabel.setText(" ");
 
         paletteListModel.clear();
+        Map<String, Boolean> tileWalkability = new LinkedHashMap<>();
         if (selected != null) {
             TilesetAsset tileset = findTileset(selected.tilesetId);
-            if (tileset != null) tileset.getTiles().forEach(paletteListModel::addElement);
+            if (tileset != null) {
+                for (TileEntry tile : tileset.getTiles()) {
+                    paletteListModel.addElement(tile);
+                    tileWalkability.put(tile.id, tile.walkable);
+                }
+            }
         }
+        canvas.setTileWalkability(tileWalkability);
 
         MapProp selectedProp = placedPropsList.getSelectedValue();
         placedPropsListModel.clear();
@@ -362,6 +388,11 @@ final class MapPanel extends JPanel {
         TileShape shape = (TileShape) shapeCombo.getSelectedItem();
         float height = shape.isRamp() ? level - 0.5f : level;
         canvas.setTerrainTarget(height, shape);
+    }
+
+    private void updateOverlays() {
+        canvas.setOverlays(terrainOverlay.isSelected(), gridOverlay.isSelected(), walkabilityOverlay.isSelected(),
+            edgesOverlay.isSelected(), manualCollisionOverlay.isSelected());
     }
 
     private TilesetAsset findTileset(String id) {

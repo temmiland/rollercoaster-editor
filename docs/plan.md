@@ -347,7 +347,10 @@ Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle 
   in 3D befahren sehen, nicht nur als Dreieck im Grid. Props erscheinen als modell-ID-gefärbte
   Platzhalterboxen; das echte GLTF-Laden aus dem Projektordner braucht noch den Asset-Resolver.
   Entities und ein Kollisions-Overlay fehlen weiterhin.
-- [ ] Terrain, Gitter, Begehbarkeit, Kanten und manuelle Sperren getrennt ein-/ausblenden.
+- [x] Terrain, Gitter, Begehbarkeit, Kanten und manuelle Sperren getrennt ein-/ausblenden:
+  Die Kartenleiste steuert jeden Layer einzeln. Terrain zeigt Höhe und Rampenrichtung,
+  Begehbarkeit hebt nicht begehbare Tiletypen hervor, Kanten markieren Höhenunterschiede an
+  Tilegrenzen und manuelle Sperren bleiben von der modellbasierten Laufbarkeit getrennt.
 - [x] Picking auf der tatsächlichen Terrainoberfläche: `ClickPicker` marschiert den Pick-Strahl
   gegen `TerrainSurface.heightAt` und verfeinert den Treffer per Bisektion, statt immer die
   Y=0-Ebene zu schneiden - ohne echtes Terrain (generische Platzhalterszene) bleibt die Ebene der
