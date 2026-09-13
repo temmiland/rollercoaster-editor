@@ -1,6 +1,8 @@
 package land.temmi.rollercoaster.editor.asset;
 
 import com.badlogic.gdx.files.FileHandle;
+import land.temmi.rollercoaster.asset.ModelDefinition;
+import land.temmi.rollercoaster.asset.ModelManifest;
 import land.temmi.rollercoaster.world.TileDefinition;
 import land.temmi.rollercoaster.world.TilesetManifest;
 
@@ -23,8 +25,35 @@ public final class AssetPipelineSmokeTest {
         verifyRejectsMismatchedSideSize();
         verifyRejectsDuplicateIds();
         verifyRejectsOversizedTileset();
+        verifyModelManifestExportRoundtrip();
         System.out.println("PASS: tile packing and tileset export read back correctly "
-            + "by the real TilesetManifest parser, with clear errors for bad input");
+            + "by the real TilesetManifest parser, model manifest export read back by the real "
+            + "ModelManifest parser, with clear errors for bad input");
+    }
+
+    private static void verifyModelManifestExportRoundtrip() throws IOException {
+        ModelManifestExport.Entry house = new ModelManifestExport.Entry("house", "gltf:models/house.gltf",
+            -0.5f, 0f, -0.5f, 1f, 4f,
+            -1.8f, 0f, -1.3f, 2.8f, 4f, 2.3f,
+            -2, 2, -2, 1, false, false, 0f);
+
+        Path directory = Files.createTempDirectory("trackside-editor-models");
+        ModelManifestExport.write(List.of(house), directory);
+
+        Path manifestFile = directory.resolve(ModelManifestExport.FILE_NAME);
+        if (!Files.exists(manifestFile)) throw new AssertionError("models.json was not written");
+
+        com.badlogic.gdx.utils.Array<ModelDefinition> definitions =
+            ModelManifest.load(new FileHandle(manifestFile.toFile()));
+        if (definitions.size != 1) throw new AssertionError("Expected 1 model in the manifest");
+        ModelDefinition definition = definitions.first();
+        if (!"house".equals(definition.id) || !"gltf:models/house.gltf".equals(definition.source)) {
+            throw new AssertionError("Model id/source did not round-trip");
+        }
+        if (definition.boundsMaxX != 2.8f || definition.collisionMinX != -2 || definition.collisionMaxZ != 1) {
+            throw new AssertionError("Model bounds/collision did not round-trip");
+        }
+        if (definition.height != 4f) throw new AssertionError("Model height did not round-trip");
     }
 
     private static void verifyPackAndExportRoundtrip() throws IOException {
