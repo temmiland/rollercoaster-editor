@@ -205,6 +205,14 @@ public final class ProjectDocument {
     }
 
     void removeMap(String id) {
+        for (MapAsset map : maps) {
+            for (MapTransitionAsset transition : map.getTransitions()) {
+                if (transition.targetMapId.equals(id)) {
+                    throw new IllegalArgumentException("Map '" + id + "' is still the target of transition '"
+                        + transition.instanceId + "' on map '" + map.id + "'");
+                }
+            }
+        }
         if (!maps.removeIf(map -> map.id.equals(id))) {
             throw new IllegalArgumentException("No such map: " + id);
         }

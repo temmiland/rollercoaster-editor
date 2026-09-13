@@ -196,6 +196,17 @@ public final class ProjectFile {
                         map.addLight(mapLight);
                     }
                 }
+                JsonValue transitions = mapValue.get("transitions");
+                if (transitions != null) {
+                    for (JsonValue transition = transitions.child; transition != null; transition = transition.next) {
+                        MapTransitionAsset mapTransition = new MapTransitionAsset(
+                            requireString(transition, "instanceId"), transition.getInt("x", 0),
+                            transition.getInt("z", 0), requireString(transition, "targetMap"),
+                            transition.getInt("targetX", 0), transition.getInt("targetZ", 0));
+                        map.requireTransitionPosition(mapTransition);
+                        map.addTransition(mapTransition);
+                    }
+                }
                 document.addMap(map);
             }
         }
@@ -406,6 +417,18 @@ public final class ProjectFile {
                     writer.set("innerAngle", light.innerAngle);
                     writer.set("outerAngle", light.outerAngle);
                 }
+                writer.pop();
+            }
+            writer.pop();
+            writer.array("transitions");
+            for (MapTransitionAsset transition : map.getTransitions()) {
+                writer.object();
+                writer.set("instanceId", transition.instanceId);
+                writer.set("x", transition.x);
+                writer.set("z", transition.z);
+                writer.set("targetMap", transition.targetMapId);
+                writer.set("targetX", transition.targetX);
+                writer.set("targetZ", transition.targetZ);
                 writer.pop();
             }
             writer.pop();

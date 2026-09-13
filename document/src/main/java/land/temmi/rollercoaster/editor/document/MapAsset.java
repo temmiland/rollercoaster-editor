@@ -28,6 +28,7 @@ public final class MapAsset {
     private final List<MapProp> props = new ArrayList<>();
     private final List<MapEntityAsset> entities = new ArrayList<>();
     private final List<MapLightAsset> lights = new ArrayList<>();
+    private final List<MapTransitionAsset> transitions = new ArrayList<>();
 
     public MapAsset(String id, int width, int depth, String tilesetId) {
         if (id == null || id.trim().isEmpty()) throw new IllegalArgumentException("Map id is required");
@@ -100,6 +101,17 @@ public final class MapAsset {
         return null;
     }
 
+    public List<MapTransitionAsset> getTransitions() {
+        return Collections.unmodifiableList(transitions);
+    }
+
+    public MapTransitionAsset findTransition(String instanceId) {
+        for (MapTransitionAsset transition : transitions) {
+            if (transition.instanceId.equals(instanceId)) return transition;
+        }
+        return null;
+    }
+
     /** Package-private: mutation goes through a {@link Command} so undo/redo stays consistent. */
     void addProp(MapProp prop) {
         if (findProp(prop.instanceId) != null) throw new IllegalArgumentException("Duplicate prop instance id: " + prop.instanceId);
@@ -168,6 +180,32 @@ public final class MapAsset {
         throw new IllegalArgumentException("No such light: " + instanceId);
     }
 
+    void addTransition(MapTransitionAsset transition) {
+        if (findTransition(transition.instanceId) != null) {
+            throw new IllegalArgumentException("Duplicate transition instance id: " + transition.instanceId);
+        }
+        transitions.add(transition);
+    }
+
+    void removeTransition(String instanceId) {
+        if (!transitions.removeIf(transition -> transition.instanceId.equals(instanceId))) {
+            throw new IllegalArgumentException("No such transition: " + instanceId);
+        }
+    }
+
+    void replaceTransition(String instanceId, MapTransitionAsset replacement) {
+        if (replacement == null || !instanceId.equals(replacement.instanceId)) {
+            throw new IllegalArgumentException("Replacement transition must keep instance ID '" + instanceId + "'");
+        }
+        for (int i = 0; i < transitions.size(); i++) {
+            if (transitions.get(i).instanceId.equals(instanceId)) {
+                transitions.set(i, replacement);
+                return;
+            }
+        }
+        throw new IllegalArgumentException("No such transition: " + instanceId);
+    }
+
     /** Restorable grid contents used by {@link ResizeMapCommand}. */
     static final class State {
         private final int width;
@@ -203,6 +241,12 @@ public final class MapAsset {
         for (MapLightAsset light : lights) {
             if (light.x >= newWidth || light.z >= newDepth) {
                 throw new IllegalArgumentException("Resizing map '" + id + "' would remove light '" + light.instanceId + "'");
+            }
+        }
+        for (MapTransitionAsset transition : transitions) {
+            if (transition.x >= newWidth || transition.z >= newDepth) {
+                throw new IllegalArgumentException(
+                    "Resizing map '" + id + "' would remove transition '" + transition.instanceId + "'");
             }
         }
         State previous = new State(this);
@@ -257,6 +301,13 @@ public final class MapAsset {
     void requireLightPosition(MapLightAsset light) {
         if (light.x < 0f || light.x >= width || light.z < 0f || light.z >= depth) {
             throw new IllegalArgumentException("Light '" + light.instanceId + "' is outside map '" + id + "'");
+        }
+    }
+
+    /** Transitions are placed on whole cells, like entities. */
+    void requireTransitionPosition(MapTransitionAsset transition) {
+        if (!contains(transition.x, transition.z)) {
+            throw new IllegalArgumentException("Transition '" + transition.instanceId + "' is outside map '" + id + "'");
         }
     }
 

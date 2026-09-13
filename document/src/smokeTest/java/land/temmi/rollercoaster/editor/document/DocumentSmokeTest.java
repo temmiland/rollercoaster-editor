@@ -23,9 +23,10 @@ public final class DocumentSmokeTest {
         verifyMapRoundtrip();
         verifyPropCommandsAndRoundtrip();
         verifyLightCommandsAndRoundtrip();
+        verifyTransitionCommandsAndRoundtrip();
         System.out.println("PASS: undo/redo, dirty tracking after a branching edit, an atomic project.json "
             + "roundtrip across a moved directory, texture/tileset commands with referential integrity, "
-            + "model import/export, map terrain painting, prop placement, and map lighting");
+            + "model import/export, map terrain painting, prop placement, map lighting, and map transitions");
     }
 
     private static void verifyUndoRedoAndDirtyTracking() {
@@ -593,6 +594,71 @@ public final class DocumentSmokeTest {
         if (reloadedSpot == null || !reloadedSpot.spot || reloadedSpot.innerAngle != 20f
             || reloadedSpot.outerAngle != 35f || reloadedSpot.directionY != -1f) {
             throw new AssertionError("Spot light did not round-trip");
+        }
+    }
+
+    private static void verifyTransitionCommandsAndRoundtrip() throws IOException {
+        ProjectDocument document = new ProjectDocument("Verbundene Welt");
+        CommandHistory history = new CommandHistory(document);
+        document.addTexture(new TextureAsset("grass", "grass.png"));
+        TilesetAsset tileset = new TilesetAsset("overworld");
+        tileset.addTile(new TileEntry("grass", "grass", true));
+        document.addTileset(tileset);
+        history.perform(new CreateMapCommand("valley", 4, 3, "overworld"));
+        history.perform(new CreateMapCommand("cave", 3, 3, "overworld"));
+        MapAsset valley = document.findMap("valley");
+
+        try {
+            history.perform(new PlaceTransitionCommand("valley",
+                new MapTransitionAsset("to-nowhere", 1, 1, "unknown-map", 0, 0)));
+            throw new AssertionError("A transition targeting an unknown map should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: "unknown-map" is not a registered map.
+        }
+
+        try {
+            history.perform(new PlaceTransitionCommand("valley",
+                new MapTransitionAsset("outside", 9, 1, "cave", 0, 0)));
+            throw new AssertionError("Placing a transition outside its map should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: the tile has to remain within the map grid.
+        }
+
+        MapTransitionAsset toCave = new MapTransitionAsset("to-cave", 1, 1, "cave", 0, 0);
+        history.perform(new PlaceTransitionCommand("valley", toCave));
+        if (valley.findTransition("to-cave") == null) throw new AssertionError("Transition placement did not apply");
+
+        history.perform(new UpdateTransitionCommand("valley", toCave,
+            new MapTransitionAsset("to-cave", 1, 1, "cave", 2, 2)));
+        MapTransitionAsset updated = valley.findTransition("to-cave");
+        if (updated.targetX != 2 || updated.targetZ != 2) throw new AssertionError("Transition update did not apply");
+        history.undo();
+        MapTransitionAsset restored = valley.findTransition("to-cave");
+        if (restored.targetX != 0 || restored.targetZ != 0) {
+            throw new AssertionError("Undo did not restore the previous transition");
+        }
+
+        try {
+            history.perform(new RemoveMapCommand(document.findMap("cave")));
+            throw new AssertionError("Removing a map still targeted by a transition should fail");
+        } catch (IllegalArgumentException expected) {
+            if (!expected.getMessage().contains("to-cave")) {
+                throw new AssertionError("The blocked removal should name the offending transition", expected);
+            }
+        }
+
+        history.perform(new RemoveTransitionCommand("valley", toCave));
+        if (valley.findTransition("to-cave") != null) throw new AssertionError("Transition removal did not apply");
+        history.undo();
+        if (valley.findTransition("to-cave") == null) throw new AssertionError("Undo did not restore the removed transition");
+
+        Path directory = Files.createTempDirectory("trackside-editor-project-transitions");
+        ProjectFile.save(document, directory);
+        MapAsset reloadedValley = ProjectFile.load(directory).findMap("valley");
+        MapTransitionAsset reloaded = reloadedValley.findTransition("to-cave");
+        if (reloaded == null || reloaded.x != 1 || reloaded.z != 1 || !"cave".equals(reloaded.targetMapId)
+            || reloaded.targetX != 0 || reloaded.targetZ != 0) {
+            throw new AssertionError("Transition did not round-trip");
         }
     }
 
