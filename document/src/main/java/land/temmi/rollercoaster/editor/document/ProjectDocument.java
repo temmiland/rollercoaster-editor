@@ -56,7 +56,7 @@ public final class ProjectDocument {
     void removeTexture(String id) {
         for (TilesetAsset tileset : tilesets) {
             for (TileEntry tile : tileset.getTiles()) {
-                if (tile.textureId.equals(id)) {
+                if (tile.textureId.equals(id) || id.equals(tile.sideTextureId)) {
                     throw new IllegalArgumentException(
                         "Texture '" + id + "' is still used by tile '" + tile.id + "' in tileset '" + tileset.id + "'");
                 }

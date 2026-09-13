@@ -18,7 +18,9 @@ import java.util.List;
 public final class AssetPipelineSmokeTest {
     public static void main(String[] args) throws IOException {
         verifyPackAndExportRoundtrip();
+        verifyExplicitSideRegionRoundtrip();
         verifyRejectsMismatchedTileSize();
+        verifyRejectsMismatchedSideSize();
         verifyRejectsDuplicateIds();
         verifyRejectsOversizedTileset();
         System.out.println("PASS: tile packing and tileset export read back correctly "
@@ -53,16 +55,40 @@ public final class AssetPipelineSmokeTest {
 
         for (TilePacker.PackedTile expected : packed.tiles) {
             TileDefinition actual = find(manifest, expected.id);
-            if (actual.atlasX != expected.x || actual.atlasY != expected.y
-                || actual.atlasWidth != expected.width || actual.atlasHeight != expected.height) {
+            if (actual.atlasX != expected.top.x || actual.atlasY != expected.top.y
+                || actual.atlasWidth != expected.top.width || actual.atlasHeight != expected.top.height) {
                 throw new AssertionError("Region mismatch for '" + expected.id + "'");
             }
             if (actual.walkable != expected.walkable) throw new AssertionError("Walkable flag mismatch for '" + expected.id + "'");
-            // No side region was exported, so TilesetManifest must fall back to the top region.
+            // No side image was given, so TilesetManifest must fall back to the top region.
             if (actual.sideX != actual.atlasX || actual.sideY != actual.atlasY
                 || actual.sideWidth != actual.atlasWidth || actual.sideHeight != actual.atlasHeight) {
                 throw new AssertionError("Side region should default to the top region for '" + expected.id + "'");
             }
+        }
+    }
+
+    private static void verifyExplicitSideRegionRoundtrip() throws IOException {
+        List<TileSource> sources = List.of(
+            new TileSource("cliff", solidColor(16, 16, Color.GREEN), solidColor(16, 16, Color.DARK_GRAY), true));
+
+        TilePacker.PackedTileset packed = TilePacker.pack(sources);
+        TilePacker.PackedTile tile = packed.tiles.get(0);
+        if (tile.side == null) throw new AssertionError("Side region was not packed");
+        if (tile.side.x == tile.top.x && tile.side.y == tile.top.y) {
+            throw new AssertionError("Side region should be packed at a different atlas position than top");
+        }
+
+        Path directory = Files.createTempDirectory("trackside-editor-tileset-side");
+        TilesetExport.write(packed, "cliffside", "cliffside.png", directory);
+        TilesetManifest manifest = TilesetManifest.load(new FileHandle(directory.resolve("cliffside.json").toFile()));
+        TileDefinition definition = find(manifest, "cliff");
+        if (definition.sideX != tile.side.x || definition.sideY != tile.side.y
+            || definition.sideWidth != tile.side.width || definition.sideHeight != tile.side.height) {
+            throw new AssertionError("Side region did not round-trip through the manifest");
+        }
+        if (definition.sideX == definition.atlasX && definition.sideY == definition.atlasY) {
+            throw new AssertionError("Side region collapsed to the top region in the manifest");
         }
     }
 
@@ -73,6 +99,17 @@ public final class AssetPipelineSmokeTest {
         try {
             TilePacker.pack(sources);
             throw new AssertionError("Packing mismatched tile sizes should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected.
+        }
+    }
+
+    private static void verifyRejectsMismatchedSideSize() {
+        List<TileSource> sources = List.of(
+            new TileSource("cliff", solidColor(16, 16, Color.GREEN), solidColor(16, 32, Color.DARK_GRAY), true));
+        try {
+            TilePacker.pack(sources);
+            throw new AssertionError("Packing a side image sized differently than the top should fail");
         } catch (IllegalArgumentException expected) {
             // Expected.
         }

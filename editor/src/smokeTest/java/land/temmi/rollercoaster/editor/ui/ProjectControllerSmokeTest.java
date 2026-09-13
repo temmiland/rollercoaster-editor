@@ -4,6 +4,7 @@ import com.badlogic.gdx.files.FileHandle;
 import land.temmi.rollercoaster.editor.document.ProjectDocument;
 import land.temmi.rollercoaster.editor.document.ProjectFile;
 import land.temmi.rollercoaster.editor.document.TextureAsset;
+import land.temmi.rollercoaster.world.TileDefinition;
 import land.temmi.rollercoaster.world.TilesetManifest;
 
 import java.awt.Color;
@@ -24,8 +25,10 @@ public final class ProjectControllerSmokeTest {
         verifyOpenProjectReadsWhatWasSaved();
         verifyOperationsRequireAnOpenProject();
         verifyTextureImportAndTilesetExport();
+        verifyExportWithSideTexture();
         System.out.println("PASS: ProjectController new/rename/save/undo/redo, autosave detection and restore, "
-            + "saveAs isolation, and a texture-import-to-tileset-export roundtrip read back by the real parser");
+            + "saveAs isolation, a texture-import-to-tileset-export roundtrip read back by the real parser, "
+            + "and a separately packed side texture");
     }
 
     private static void verifyNewRenameSaveUndoRedo() throws IOException {
@@ -118,7 +121,7 @@ public final class ProjectControllerSmokeTest {
         if (controller.getTextures().size() != 1) throw new AssertionError("Texture was not added to the document");
 
         controller.createTileset("overworld");
-        controller.addTile("overworld", "grass", grass.id, true);
+        controller.addTile("overworld", "grass", grass.id, null, true);
         if (controller.getTilesets().get(0).getTiles().size() != 1) throw new AssertionError("Tile was not added");
 
         try {
@@ -146,6 +149,25 @@ public final class ProjectControllerSmokeTest {
         controller.undo(); // undoes importTexture
         if (!controller.getTextures().isEmpty() || !controller.getTilesets().isEmpty()) {
             throw new AssertionError("Undo did not fully unwind the texture/tileset edits");
+        }
+    }
+
+    private static void verifyExportWithSideTexture() throws IOException {
+        Path projectDirectory = Files.createTempDirectory("trackside-editor-controller-side-texture");
+        ProjectController controller = new ProjectController(() -> { });
+        controller.newProject(projectDirectory, "Cliff World");
+
+        TextureAsset grass = controller.importTexture(solidColorPng("grass", 16, 16, Color.GREEN), "grass");
+        TextureAsset cliff = controller.importTexture(solidColorPng("cliff", 16, 16, Color.DARK_GRAY), "cliff");
+        controller.createTileset("overworld");
+        controller.addTile("overworld", "plateau", grass.id, cliff.id, true);
+        controller.exportTileset("overworld");
+
+        TilesetManifest manifest = TilesetManifest.load(
+            new FileHandle(projectDirectory.resolve("catalogs/overworld.json").toFile()));
+        TileDefinition definition = manifest.tiles.first();
+        if (definition.sideX == definition.atlasX && definition.sideY == definition.atlasY) {
+            throw new AssertionError("Side texture should pack to a different atlas region than the top");
         }
     }
 

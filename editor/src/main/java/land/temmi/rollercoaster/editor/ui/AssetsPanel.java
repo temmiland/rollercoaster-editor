@@ -40,8 +40,9 @@ final class AssetsPanel extends JPanel {
 
         textureList.setCellRenderer(labelRenderer(t -> t.id + "  (" + t.fileName + ")"));
         tilesetList.setCellRenderer(labelRenderer(t -> t.id + "  (" + t.getTiles().size() + " Tiles)"));
-        tileList.setCellRenderer(labelRenderer(
-            t -> t.id + " -> " + t.textureId + (t.walkable ? "" : "  (nicht begehbar)")));
+        tileList.setCellRenderer(labelRenderer(t -> t.id + " -> " + t.textureId
+            + (t.sideTextureId != null ? " / Seite: " + t.sideTextureId : "")
+            + (t.walkable ? "" : "  (nicht begehbar)")));
         tilesetList.addListSelectionListener(e -> refreshTiles());
 
         JTabbedPane tabs = new JTabbedPane();
@@ -184,15 +185,26 @@ final class AssetsPanel extends JPanel {
             JOptionPane.showMessageDialog(this, "Bitte zuerst eine Textur importieren.");
             return;
         }
-        TextureAsset texture = (TextureAsset) JOptionPane.showInputDialog(this, "Textur:", "Tile hinzufügen",
+        TextureAsset texture = (TextureAsset) JOptionPane.showInputDialog(this, "Textur (Oberseite):", "Tile hinzufügen",
             JOptionPane.PLAIN_MESSAGE, null, textures.toArray(), textures.get(0));
         if (texture == null) return;
         String id = JOptionPane.showInputDialog(this, "Tile-ID:", texture.id);
         if (id == null || id.trim().isEmpty()) return;
+
+        String sideTextureId = null;
+        boolean useOwnSide = JOptionPane.showConfirmDialog(this, "Eigene Seitentextur verwenden?", "Tile hinzufügen",
+            JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION;
+        if (useOwnSide) {
+            TextureAsset sideTexture = (TextureAsset) JOptionPane.showInputDialog(this, "Textur (Seite):",
+                "Tile hinzufügen", JOptionPane.PLAIN_MESSAGE, null, textures.toArray(), texture);
+            if (sideTexture == null) return;
+            sideTextureId = sideTexture.id;
+        }
+
         boolean walkable = JOptionPane.showConfirmDialog(this, "Begehbar?", "Tile hinzufügen",
             JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION;
         try {
-            projectController.addTile(tileset.id, id.trim(), texture.id, walkable);
+            projectController.addTile(tileset.id, id.trim(), texture.id, sideTextureId, walkable);
             refresh();
         } catch (IllegalArgumentException e) {
             showError("Tile konnte nicht hinzugefügt werden", e);

@@ -44,17 +44,22 @@ public final class TilesetExport {
         for (TilePacker.PackedTile tile : packed.tiles) {
             writer.object();
             writer.set("id", tile.id);
-            writer.array("region");
-            writer.value(tile.x);
-            writer.value(tile.y);
-            writer.value(tile.width);
-            writer.value(tile.height);
-            writer.pop();
+            writeRegion(writer, "region", tile.top);
+            if (tile.side != null) writeRegion(writer, "side", tile.side);
             writer.set("walkable", tile.walkable);
             writer.pop();
         }
         writer.pop();
         writer.pop();
         return buffer.toString();
+    }
+
+    private static void writeRegion(JsonWriter writer, String name, TilePacker.Region region) throws IOException {
+        writer.array(name);
+        writer.value(region.x);
+        writer.value(region.y);
+        writer.value(region.width);
+        writer.value(region.height);
+        writer.pop();
     }
 }

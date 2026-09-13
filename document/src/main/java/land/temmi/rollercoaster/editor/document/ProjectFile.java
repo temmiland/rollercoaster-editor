@@ -50,7 +50,7 @@ public final class ProjectFile {
                 if (tiles != null) {
                     for (JsonValue tile = tiles.child; tile != null; tile = tile.next) {
                         asset.addTile(new TileEntry(requireString(tile, "id"), requireString(tile, "texture"),
-                            tile.getBoolean("walkable", true)));
+                            tile.getString("sideTexture", null), tile.getBoolean("walkable", true)));
                     }
                 }
                 document.addTileset(asset);
@@ -100,6 +100,7 @@ public final class ProjectFile {
                 writer.object();
                 writer.set("id", tile.id);
                 writer.set("texture", tile.textureId);
+                if (tile.sideTextureId != null) writer.set("sideTexture", tile.sideTextureId);
                 writer.set("walkable", tile.walkable);
                 writer.pop();
             }

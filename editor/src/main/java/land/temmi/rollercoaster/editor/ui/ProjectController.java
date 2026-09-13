@@ -188,9 +188,9 @@ public final class ProjectController {
         listener.onProjectChanged();
     }
 
-    public void addTile(String tilesetId, String tileId, String textureId, boolean walkable) {
+    public void addTile(String tilesetId, String tileId, String textureId, String sideTextureId, boolean walkable) {
         requireOpen();
-        history.perform(new AddTileCommand(tilesetId, new TileEntry(tileId, textureId, walkable)));
+        history.perform(new AddTileCommand(tilesetId, new TileEntry(tileId, textureId, sideTextureId, walkable)));
         listener.onProjectChanged();
     }
 
@@ -209,14 +209,20 @@ public final class ProjectController {
 
         List<TileSource> sources = new ArrayList<>();
         for (TileEntry tile : tileset.getTiles()) {
-            TextureAsset texture = history.getDocument().findTexture(tile.textureId);
-            if (texture == null) {
-                throw new IOException("Tile '" + tile.id + "' references unknown texture '" + tile.textureId + "'");
-            }
-            sources.add(TileSource.load(tile.id, texturesDirectory().resolve(texture.fileName), tile.walkable));
+            Path topFile = requireTextureFile(tile.id, tile.textureId);
+            Path sideFile = tile.sideTextureId == null ? null : requireTextureFile(tile.id, tile.sideTextureId);
+            sources.add(TileSource.load(tile.id, topFile, sideFile, tile.walkable));
         }
         TilePacker.PackedTileset packed = TilePacker.pack(sources);
         TilesetExport.write(packed, tilesetId, tilesetId + ".png", catalogsDirectory());
+    }
+
+    private Path requireTextureFile(String tileId, String textureId) throws IOException {
+        TextureAsset texture = history.getDocument().findTexture(textureId);
+        if (texture == null) {
+            throw new IOException("Tile '" + tileId + "' references unknown texture '" + textureId + "'");
+        }
+        return texturesDirectory().resolve(texture.fileName);
     }
 
     private Path texturesDirectory() {

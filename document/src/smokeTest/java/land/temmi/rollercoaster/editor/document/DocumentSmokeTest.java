@@ -12,6 +12,8 @@ public final class DocumentSmokeTest {
         verifyRejectsUnknownVersion();
         verifyTextureAndTilesetCommands();
         verifyTextureAndTilesetRoundtrip();
+        verifySideTextureRoundtrip();
+        verifyRemoveTextureBlockedBySideReference();
         System.out.println("PASS: undo/redo, dirty tracking after a branching edit, an atomic project.json "
             + "roundtrip across a moved directory, and texture/tileset commands with referential integrity");
     }
@@ -146,6 +148,39 @@ public final class DocumentSmokeTest {
         if (reloadedTile == null || !"grass".equals(reloadedTile.textureId) || !reloadedTile.walkable) {
             throw new AssertionError("Tile entry did not round-trip");
         }
+        if (reloadedTile.sideTextureId != null) {
+            throw new AssertionError("A tile with no side texture should round-trip as null, not a placeholder");
+        }
+    }
+
+    private static void verifyRemoveTextureBlockedBySideReference() {
+        ProjectDocument document = new ProjectDocument("Welt");
+        document.addTexture(new TextureAsset("grass", "grass.png"));
+        document.addTexture(new TextureAsset("cliff", "cliff.png"));
+        TilesetAsset tileset = new TilesetAsset("overworld");
+        tileset.addTile(new TileEntry("plateau", "grass", "cliff", true));
+        document.addTileset(tileset);
+
+        try {
+            document.removeTexture("cliff");
+            throw new AssertionError("Removing a texture only used as a side texture should still fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected.
+        }
+    }
+
+    private static void verifySideTextureRoundtrip() throws IOException {
+        ProjectDocument document = new ProjectDocument("Welt mit Seitentextur");
+        document.addTexture(new TextureAsset("grass", "grass.png"));
+        document.addTexture(new TextureAsset("cliff", "cliff.png"));
+        TilesetAsset tileset = new TilesetAsset("overworld");
+        tileset.addTile(new TileEntry("plateau", "grass", "cliff", true));
+        document.addTileset(tileset);
+
+        Path directory = Files.createTempDirectory("trackside-editor-project-side-texture");
+        ProjectFile.save(document, directory);
+        TileEntry reloaded = ProjectFile.load(directory).findTileset("overworld").findTile("plateau");
+        if (!"cliff".equals(reloaded.sideTextureId)) throw new AssertionError("Side texture id did not round-trip");
     }
 
     private static void verifyRejectsUnknownVersion() throws IOException {
