@@ -250,11 +250,19 @@ weder Originalquellen überschreiben noch den letzten gültigen Export beschädi
   beleuchteten Szene; freie Kamera per `CameraInputController`.
 - [x] Überwachen und neu starten: Diagnosen-Panel protokolliert Status, Menü "Vorschau ▸ Neu
   verbinden" startet den Subprozess neu.
+- [x] Dokumentmodell und Commands für Änderungen (`document`-Modul): `ProjectDocument` mutiert
+  nur über `Command.execute/undo`, `CommandHistory` verfolgt Undo/Redo und Dirty-Status über die
+  Stack-Tiefe (bleibt korrekt dirty, wenn eine neue Änderung den gespeicherten Redo-Zweig verwirft).
+- [x] Projekt anlegen/öffnen, Speichern unter und zuletzt geöffnete Projekte (`ProjectController`,
+  `RecentProjects`); `project.json` wird atomar über eine Sibling-Temp-Datei geschrieben und weist
+  unbekannte Formatversionen mit klarer Meldung ab.
+- [x] Autosave alle 30s nach `<projekt>/.editor/`, getrennt vom letzten expliziten Speicherstand;
+  beim Öffnen wird eine neuere automatische Sicherung erkannt und zur Wiederherstellung angeboten.
+- [ ] Relative Assetpfade - noch nicht relevant, da Phase 1 keine Assets referenziert.
 - [ ] Vorschau mit Spielkamera (statt freier Kamera) und Picking-Treffer als Nachricht zurück an
-  die UI - noch offen, da es dafür ein geladenes Dokument braucht.
-- [ ] UI mit Assetliste, Kartenansicht und Eigenschaften - Layout steht, Inhalte fehlen noch.
-- [ ] Projekt anlegen/öffnen, Speichern unter, relative Pfade und zuletzt geöffnete Projekte.
-- [ ] Dokumentmodell und Commands für Änderungen; Undo/Redo, Dirty-Status und Autosave.
+  die UI - noch offen, da es dafür ein geladenes Dokument mit echtem Karteninhalt braucht.
+- [ ] UI mit Assetliste und Kartenansicht - Layout steht, Inhalte fehlen noch (Eigenschaften-Panel
+  hat mit dem Projektnamen sein erstes echtes Feld).
 
 Abnahme: Ein kleines Dokument lässt sich ändern, rückgängig machen, speichern, verschieben
 und erneut öffnen, ohne Datenverlust oder kaputte Referenzen.
