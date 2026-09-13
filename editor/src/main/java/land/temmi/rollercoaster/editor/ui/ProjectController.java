@@ -2,6 +2,10 @@ package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.asset.MapExport;
 import land.temmi.rollercoaster.editor.asset.ModelManifestExport;
+import land.temmi.rollercoaster.editor.asset.SpriteAtlasExport;
+import land.temmi.rollercoaster.editor.asset.SpriteFrameSource;
+import land.temmi.rollercoaster.editor.asset.SpriteManifestExport;
+import land.temmi.rollercoaster.editor.asset.SpritePacker;
 import land.temmi.rollercoaster.editor.asset.TilePacker;
 import land.temmi.rollercoaster.editor.asset.TileSource;
 import land.temmi.rollercoaster.editor.asset.TilesetExport;
@@ -31,14 +35,22 @@ import land.temmi.rollercoaster.editor.document.RemoveTilesetCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTileCommand;
 import land.temmi.rollercoaster.editor.document.RenameProjectCommand;
 import land.temmi.rollercoaster.editor.document.ResizeMapCommand;
+import land.temmi.rollercoaster.editor.document.ImportSpriteCommand;
+import land.temmi.rollercoaster.editor.document.RemoveSpriteCommand;
+import land.temmi.rollercoaster.editor.document.SpriteAnimationAsset;
+import land.temmi.rollercoaster.editor.document.SpriteAsset;
+import land.temmi.rollercoaster.editor.document.SpriteDirection;
 import land.temmi.rollercoaster.editor.document.TextureAsset;
 import land.temmi.rollercoaster.editor.document.TileEntry;
 import land.temmi.rollercoaster.editor.document.TilesetAsset;
 import land.temmi.rollercoaster.editor.document.TransformPropCommand;
 import land.temmi.rollercoaster.editor.document.UpdateModelCommand;
+import land.temmi.rollercoaster.editor.document.UpdateSpriteCommand;
 import land.temmi.rollercoaster.editor.document.UpdateEntityCommand;
 
 import javax.swing.Timer;
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -63,6 +75,7 @@ public final class ProjectController {
     private static final String AUTOSAVE_DIRECTORY_NAME = ".editor";
     private static final String TEXTURES_DIRECTORY_NAME = "sources/textures";
     private static final String MODELS_DIRECTORY_NAME = "sources/models";
+    private static final String SPRITES_DIRECTORY_NAME = "sources/sprites";
     private static final String CATALOGS_DIRECTORY_NAME = "catalogs";
     private static final String MAPS_DIRECTORY_NAME = "maps";
 
@@ -228,7 +241,7 @@ public final class ProjectController {
     }
 
     /** Packs a tileset's tiles into an atlas and writes texture + manifest to catalogs/. */
-    public void exportTileset(String tilesetId) throws IOException {
+    public Path exportTileset(String tilesetId) throws IOException {
         requireOpen();
         TilesetAsset tileset = history.getDocument().findTileset(tilesetId);
         if (tileset == null) throw new IOException("No such tileset: " + tilesetId);
@@ -242,6 +255,7 @@ public final class ProjectController {
         }
         TilePacker.PackedTileset packed = TilePacker.pack(sources);
         TilesetExport.write(packed, tilesetId, tilesetId + ".png", catalogsDirectory());
+        return catalogsDirectory().resolve(tilesetId + ".json");
     }
 
     public List<ModelAsset> getModels() {
@@ -382,6 +396,75 @@ public final class ProjectController {
         return catalogsDirectory().resolve(ModelManifestExport.FILE_NAME);
     }
 
+    public List<SpriteAsset> getSprites() {
+        requireOpen();
+        return history.getDocument().getSprites();
+    }
+
+    /** Copies one directional sprite sheet into sources/sprites/ and registers its grid metadata. */
+    public SpriteAsset importSprite(Path sourceImageFile, SpriteAsset asset) throws IOException {
+        requireOpen();
+        if (!sourceImageFile.getFileName().toString().equals(asset.fileName)) {
+            throw new IllegalArgumentException("Sprite file name must match its selected source file");
+        }
+        validateSpriteSheet(sourceImageFile, asset);
+        Files.createDirectories(spritesDirectory());
+        Path destination = spritesDirectory().resolve(asset.fileName);
+        if (Files.exists(destination)) {
+            throw new IOException("A sprite file named '" + asset.fileName + "' is already in this project");
+        }
+        Files.copy(sourceImageFile, destination);
+        history.perform(new ImportSpriteCommand(asset));
+        listener.onProjectChanged();
+        return asset;
+    }
+
+    public void removeSprite(SpriteAsset asset) {
+        requireOpen();
+        history.perform(new RemoveSpriteCommand(asset));
+        listener.onProjectChanged();
+    }
+
+    public void updateSprite(SpriteAsset previous, SpriteAsset replacement) throws IOException {
+        requireOpen();
+        if (!previous.id.equals(replacement.id)) throw new IllegalArgumentException("Sprite ID cannot be changed");
+        validateSpriteSheet(spritesDirectory().resolve(replacement.fileName), replacement);
+        history.perform(new UpdateSpriteCommand(previous, replacement));
+        listener.onProjectChanged();
+    }
+
+    /** Packs all registered sheet frames into one texture-atlas page and writes sprites.json. */
+    public Path exportSprites() throws IOException {
+        requireOpen();
+        List<SpriteAsset> sprites = history.getDocument().getSprites();
+        if (sprites.isEmpty()) throw new IOException("No sprites to export");
+        List<SpriteFrameSource> frames = new ArrayList<>();
+        List<SpriteManifestExport.Entry> entries = new ArrayList<>();
+        for (SpriteAsset sprite : sprites) {
+            BufferedImage sheet = loadSpriteSheet(sprite);
+            int frameWidth = sheet.getWidth() / sprite.columns;
+            int frameHeight = sheet.getHeight() / sprite.rows;
+            int frameCount = sprite.columns * sprite.rows;
+            for (int index = 0; index < frameCount; index++) {
+                int x = index % sprite.columns * frameWidth;
+                int y = index / sprite.columns * frameHeight;
+                frames.add(new SpriteFrameSource(regionId(sprite, index), sheet.getSubimage(x, y, frameWidth, frameHeight)));
+            }
+            java.util.Map<String, SpriteManifestExport.Direction> directions = new java.util.LinkedHashMap<>();
+            for (SpriteDirection direction : SpriteDirection.values()) {
+                SpriteAnimationAsset animation = sprite.direction(direction);
+                List<String> walkRegions = new ArrayList<>();
+                for (int frame : animation.getWalkFrames()) walkRegions.add(regionId(sprite, frame));
+                directions.put(direction.toId(), new SpriteManifestExport.Direction(regionId(sprite, animation.idleFrame), walkRegions));
+            }
+            entries.add(new SpriteManifestExport.Entry(sprite.id, sprite.worldHeight, sprite.frameDuration,
+                sprite.footOffset, directions));
+        }
+        SpritePacker.PackedSpriteAtlas packed = SpritePacker.pack(frames);
+        SpriteAtlasExport.write(packed, "sprites.atlas", "sprites.png", catalogsDirectory());
+        return SpriteManifestExport.write(entries, "sprites.atlas", catalogsDirectory());
+    }
+
     public List<MapAsset> getMaps() {
         requireOpen();
         return history.getDocument().getMaps();
@@ -495,8 +578,33 @@ public final class ProjectController {
         listener.onProjectChanged();
     }
 
+    private BufferedImage loadSpriteSheet(SpriteAsset sprite) throws IOException {
+        Path file = spritesDirectory().resolve(sprite.fileName);
+        validateSpriteSheet(file, sprite);
+        BufferedImage image = ImageIO.read(file.toFile());
+        if (image == null) throw new IOException("Not a readable sprite image: " + sprite.fileName);
+        return image;
+    }
+
+    private static void validateSpriteSheet(Path file, SpriteAsset sprite) throws IOException {
+        BufferedImage image = ImageIO.read(file.toFile());
+        if (image == null) throw new IOException("Not a readable sprite image: " + file);
+        if (image.getWidth() % sprite.columns != 0 || image.getHeight() % sprite.rows != 0) {
+            throw new IOException("Sprite sheet '" + sprite.fileName + "' is " + image.getWidth() + "x" + image.getHeight()
+                + "px and cannot be split into " + sprite.columns + "x" + sprite.rows + " frames");
+        }
+    }
+
+    private static String regionId(SpriteAsset sprite, int frameIndex) {
+        return sprite.id + "-frame-" + frameIndex;
+    }
+
     private Path modelsDirectory() {
         return projectDirectory.resolve(MODELS_DIRECTORY_NAME);
+    }
+
+    private Path spritesDirectory() {
+        return projectDirectory.resolve(SPRITES_DIRECTORY_NAME);
     }
 
     private void copyModelFile(String fileName, Path outputDirectory) throws IOException {

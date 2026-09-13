@@ -2,15 +2,27 @@ package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.asset.MapExport;
 import land.temmi.rollercoaster.editor.asset.ModelManifestExport;
+import land.temmi.rollercoaster.editor.asset.TilePacker;
+import land.temmi.rollercoaster.editor.asset.TileSource;
+import land.temmi.rollercoaster.editor.asset.TilesetExport;
+import land.temmi.rollercoaster.editor.asset.SpriteAtlasExport;
+import land.temmi.rollercoaster.editor.asset.SpriteFrameSource;
+import land.temmi.rollercoaster.editor.asset.SpriteManifestExport;
+import land.temmi.rollercoaster.editor.asset.SpritePacker;
 import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
 import land.temmi.rollercoaster.editor.protocol.ShowMapResult;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.awt.Color;
+import java.awt.Graphics;
+import java.awt.image.BufferedImage;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Spawns the real preview subprocess and asks it to compute bounds for a real sample GLTF file -
@@ -63,12 +75,33 @@ public final class PreviewProcessSmokeTest {
             MapExport.write("valley", 2, 2, "overworld",
                 new String[] {"grass", "grass", "grass", "grass"}, new float[] {0f, 0f, 0f, 0f},
                 new String[] {"flat", "flat", "flat", "flat"}, new boolean[] {false, false, false, false},
-                java.util.List.of(new MapExport.Prop("house", 1f, 1f, 0f, 0f)), java.util.List.of(), mapDirectory);
+                java.util.List.of(new MapExport.Prop("house", 1f, 1f, 0f, 0f)),
+                java.util.List.of(new MapExport.Entity("npc-1", "npc", "npc", 0, 0)), mapDirectory);
+            BufferedImage tile = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+            Graphics graphics = tile.getGraphics();
+            try {
+                graphics.setColor(Color.GREEN);
+                graphics.fillRect(0, 0, 16, 16);
+            } finally {
+                graphics.dispose();
+            }
+            TilesetExport.write(TilePacker.pack(java.util.List.of(new TileSource("grass", tile, true))),
+                "overworld", "overworld.png", mapDirectory);
+            SpritePacker.PackedSpriteAtlas spriteAtlas = SpritePacker.pack(
+                List.of(new SpriteFrameSource("npc-frame-0", tile)));
+            SpriteAtlasExport.write(spriteAtlas, "sprites.atlas", "sprites.png", mapDirectory);
+            Map<String, SpriteManifestExport.Direction> spriteDirections = new LinkedHashMap<>();
+            for (String direction : List.of("north", "east", "south", "west")) {
+                spriteDirections.put(direction, new SpriteManifestExport.Direction("npc-frame-0", List.of("npc-frame-0")));
+            }
+            SpriteManifestExport.write(List.of(new SpriteManifestExport.Entry("npc", 1f, 0.1f, 0f, spriteDirections)),
+                "sprites.atlas", mapDirectory);
             String mapFilePath = mapDirectory.resolve("valley.json").toAbsolutePath().toString();
 
             CompletableFuture<ShowMapResult> showMapFuture = process.showMap(mapFilePath, 2, 2,
-                new String[] {"grass"}, new boolean[] {true},
-                mapDirectory.resolve("models.json").toAbsolutePath().toString());
+                mapDirectory.resolve("overworld.json").toAbsolutePath().toString(),
+                mapDirectory.resolve("models.json").toAbsolutePath().toString(),
+                mapDirectory.resolve("sprites.json").toAbsolutePath().toString());
             ShowMapResult showMapResult = showMapFuture.get(20, TimeUnit.SECONDS);
             if (!showMapResult.success) throw new AssertionError("ShowMap failed: " + showMapResult.errorMessage);
             System.out.println("ShowMap succeeded for a real exported map, built through a real WorldSceneLoader");

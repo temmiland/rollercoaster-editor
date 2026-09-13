@@ -21,6 +21,9 @@ import com.badlogic.gdx.utils.Array;
 import land.temmi.rollercoaster.asset.GltfModelFactory;
 import land.temmi.rollercoaster.asset.ModelCatalog;
 import land.temmi.rollercoaster.asset.ModelManifest;
+import land.temmi.rollercoaster.asset.SpriteAtlas;
+import land.temmi.rollercoaster.asset.SpriteDefinition;
+import land.temmi.rollercoaster.asset.SpriteManifest;
 import land.temmi.rollercoaster.editor.protocol.ComputeModelBounds;
 import land.temmi.rollercoaster.editor.protocol.PickResult;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
@@ -29,10 +32,13 @@ import land.temmi.rollercoaster.editor.protocol.ShowMapResult;
 import land.temmi.rollercoaster.editor.protocol.ShowSampleLevel;
 import land.temmi.rollercoaster.render.DayNightCycle;
 import land.temmi.rollercoaster.render.LightingEnvironment;
+import land.temmi.rollercoaster.render.BillboardQuad;
+import land.temmi.rollercoaster.render.BillboardRenderer;
 import land.temmi.rollercoaster.render.WorldShaderProvider;
 import land.temmi.rollercoaster.world.TerrainSurface;
 import land.temmi.rollercoaster.world.TileSurface;
 import land.temmi.rollercoaster.world.Tileset;
+import land.temmi.rollercoaster.world.TextureTileset;
 import land.temmi.rollercoaster.world.WorldScene;
 import land.temmi.rollercoaster.world.WorldSceneLoader;
 
@@ -49,7 +55,6 @@ public final class PreviewApplication extends ApplicationAdapter {
     private static final float GENERIC_CAMERA_FAR = 200f;
     private static final float LEVEL_CAMERA_FAR = 150f;
     private static final float DOCUMENT_MAP_CAMERA_FAR = 200f;
-    private static final float DOCUMENT_TILE_SIDE_TINT = 0.72f;
 
     private enum SceneMode { GENERIC, SAMPLE_LEVEL, DOCUMENT_MAP }
 
@@ -71,6 +76,11 @@ public final class PreviewApplication extends ApplicationAdapter {
 
     private WorldScene documentScene;
     private ModelCatalog documentModelCatalog;
+    private TextureTileset documentTextureTileset;
+    private SpriteAtlas documentSpriteAtlas;
+    private BillboardQuad billboardQuad;
+    private final Array<BillboardRenderer> documentSprites = new Array<>();
+    private final Vector3 spriteRight = new Vector3();
 
     private SceneMode sceneMode = SceneMode.GENERIC;
 
@@ -89,6 +99,7 @@ public final class PreviewApplication extends ApplicationAdapter {
         lighting = new LightingEnvironment();
         dayNightCycle = new DayNightCycle(lighting).setSecondsPerDay(90f);
         modelBatch = new ModelBatch(new WorldShaderProvider(lighting));
+        billboardQuad = new BillboardQuad();
 
         buildGenericModel();
         showGenericScene();
@@ -157,28 +168,50 @@ public final class PreviewApplication extends ApplicationAdapter {
     /** Builds a real WorldScene from an exported map file - the tool that closes Phase 3's "does
      * this ramp actually let a player reach the plateau" question, not just a colored 2D grid. */
     private ShowMapResult showDocumentMap(ShowMap request) {
-        WorldScene previousScene = documentScene;
-        ModelCatalog previousCatalog = documentModelCatalog;
+        TextureTileset nextTileset = null;
+        ModelCatalog nextCatalog = null;
+        WorldScene nextScene = null;
+        SpriteAtlas nextSpriteAtlas = null;
+        Array<BillboardRenderer> nextSprites = new Array<>();
         try {
-            Tileset tileset = new Tileset();
-            for (int i = 0; i < request.tileIds.length; i++) {
-                tileset.add(new TileSurface(request.tileIds[i])
-                    .setColor(colorFor(request.tileIds[i]), DOCUMENT_TILE_SIDE_TINT)
-                    .setWalkable(request.tileWalkable[i]));
+            if (request.tilesetManifestFilePath == null) {
+                throw new IllegalArgumentException("Map preview requires an exported tileset manifest");
             }
-            ModelCatalog catalog = loadModelCatalog(request.modelManifestFilePath);
-            WorldScene scene = new WorldSceneLoader().load(
-                new FileHandle(request.mapFilePath), tileset, new Material(), catalog);
+            nextTileset = new TextureTileset(new FileHandle(request.tilesetManifestFilePath));
+            nextCatalog = loadModelCatalog(request.modelManifestFilePath);
+            nextScene = new WorldSceneLoader().load(new FileHandle(request.mapFilePath), nextTileset.getTileset(),
+                nextTileset.createMaterial(), nextCatalog);
+            if (request.spriteManifestFilePath != null) {
+                FileHandle manifestFile = new FileHandle(request.spriteManifestFilePath);
+                SpriteManifest manifest = SpriteManifest.load(manifestFile);
+                nextSpriteAtlas = new SpriteAtlas(manifestFile.parent().child(manifest.atlas));
+                TerrainSurface surface = new TerrainSurface(nextScene.getMap().tiles);
+                for (land.temmi.rollercoaster.world.MapEntity entity : nextScene.getMap().entities) {
+                    if (entity.sprite == null) continue;
+                    SpriteDefinition definition = manifest.sprite(entity.sprite);
+                    BillboardRenderer sprite = new BillboardRenderer(billboardQuad, nextSpriteAtlas.getTexture(),
+                        nextSpriteAtlas.region(definition.idleRegion(land.temmi.rollercoaster.actor.Facing.SOUTH)),
+                        definition.worldHeight);
+                    sprite.setBottomPadding(definition.footOffset);
+                    sprite.setPosition(entity.x - 0.5f, surface.heightAt(entity.x - 0.5f, entity.z - 0.5f), entity.z - 0.5f);
+                    nextSprites.add(sprite);
+                }
+            } else {
+                for (land.temmi.rollercoaster.world.MapEntity entity : nextScene.getMap().entities) {
+                    if (entity.sprite != null) throw new IllegalArgumentException("Map entity '" + entity.id
+                        + "' needs an exported sprite manifest");
+                }
+            }
 
-            documentScene = scene;
-            documentModelCatalog = catalog;
-            if (previousScene != null) {
-                previousScene.dispose();
-                previousCatalog.dispose();
-            }
+            disposeDocumentAssets();
+            documentScene = nextScene;
+            documentModelCatalog = nextCatalog;
+            documentTextureTileset = nextTileset;
+            documentSpriteAtlas = nextSpriteAtlas;
+            documentSprites.addAll(nextSprites);
 
             sceneMode = SceneMode.DOCUMENT_MAP;
-            clickPicker.setTerrainSurface(new TerrainSurface(scene.getMap().tiles));
+            clickPicker.setTerrainSurface(new TerrainSurface(nextScene.getMap().tiles));
             float cx = request.width / 2f;
             float cz = request.depth / 2f;
             float distance = Math.max(request.width, request.depth) * 1.2f + 6f;
@@ -190,15 +223,13 @@ public final class PreviewApplication extends ApplicationAdapter {
             cameraController.target.set(cx, 1f, cz);
             return ShowMapResult.ok();
         } catch (RuntimeException e) {
+            for (BillboardRenderer sprite : nextSprites) sprite.dispose();
+            if (nextScene != null) nextScene.dispose();
+            if (nextCatalog != null) nextCatalog.dispose();
+            if (nextTileset != null) nextTileset.dispose();
+            if (nextSpriteAtlas != null) nextSpriteAtlas.dispose();
             return ShowMapResult.ofError(e.getMessage());
         }
-    }
-
-    /** Matches the editor's own MapCanvas hash-to-color function, so a tile looks the same in the
-     * 2D map view and the 3D preview even without a real texture atlas. */
-    private static Color colorFor(String tileId) {
-        int hue = Math.floorMod(tileId.hashCode(), 360);
-        return new Color(0f, 0f, 0f, 1f).fromHsv(hue, 0.45f, 0.75f);
     }
 
     private static ModelCatalog loadModelCatalog(String modelManifestFilePath) {
@@ -225,7 +256,14 @@ public final class PreviewApplication extends ApplicationAdapter {
         modelBatch.begin(camera);
         switch (sceneMode) {
             case SAMPLE_LEVEL -> modelBatch.render(levelScene.getVisibleInstances(camera, visibleInstances));
-            case DOCUMENT_MAP -> modelBatch.render(documentScene.getVisibleInstances(camera, visibleInstances));
+            case DOCUMENT_MAP -> {
+                modelBatch.render(documentScene.getVisibleInstances(camera, visibleInstances));
+                spriteRight.set(camera.direction).crs(camera.up).nor();
+                for (BillboardRenderer sprite : documentSprites) {
+                    sprite.setBasis(spriteRight, camera.up);
+                    modelBatch.render(sprite);
+                }
+            }
             default -> modelBatch.render(genericInstances);
         }
         modelBatch.end();
@@ -247,12 +285,25 @@ public final class PreviewApplication extends ApplicationAdapter {
             levelModelCatalog.dispose();
         }
         if (documentScene != null) {
-            documentScene.dispose();
-            documentModelCatalog.dispose();
+            disposeDocumentAssets();
         }
+        billboardQuad.dispose();
         try {
             connection.close();
         } catch (IOException ignored) {
         }
+    }
+
+    private void disposeDocumentAssets() {
+        for (BillboardRenderer sprite : documentSprites) sprite.dispose();
+        documentSprites.clear();
+        if (documentScene != null) documentScene.dispose();
+        if (documentModelCatalog != null) documentModelCatalog.dispose();
+        if (documentTextureTileset != null) documentTextureTileset.dispose();
+        if (documentSpriteAtlas != null) documentSpriteAtlas.dispose();
+        documentScene = null;
+        documentModelCatalog = null;
+        documentTextureTileset = null;
+        documentSpriteAtlas = null;
     }
 }

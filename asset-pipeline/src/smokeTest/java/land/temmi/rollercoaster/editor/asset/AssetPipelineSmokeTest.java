@@ -3,6 +3,8 @@ package land.temmi.rollercoaster.editor.asset;
 import com.badlogic.gdx.files.FileHandle;
 import land.temmi.rollercoaster.asset.ModelDefinition;
 import land.temmi.rollercoaster.asset.ModelManifest;
+import land.temmi.rollercoaster.asset.SpriteDefinition;
+import land.temmi.rollercoaster.asset.SpriteManifest;
 import land.temmi.rollercoaster.world.LoadedMap;
 import land.temmi.rollercoaster.world.MapLoader;
 import land.temmi.rollercoaster.world.TileDefinition;
@@ -19,6 +21,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /** Checks tile packing and the tileset export against the real, reflection-free TilesetManifest
  * parser - no GL context involved, FileHandle is built directly from a java.io.File. */
@@ -31,12 +35,13 @@ public final class AssetPipelineSmokeTest {
         verifyRejectsDuplicateIds();
         verifyRejectsOversizedTileset();
         verifyModelManifestExportRoundtrip();
+        verifySpriteAtlasAndManifestRoundtrip();
         verifyMapExportRoundtrip();
         verifyMapExportWithPropsRoundtrip();
         verifyRejectsUnpaintedMap();
         System.out.println("PASS: tile packing and tileset export read back correctly "
             + "by the real TilesetManifest parser, model manifest export read back by the real "
-            + "ModelManifest parser, map export read back by the real MapLoader parser, "
+            + "ModelManifest parser, sprite export read back by the real SpriteManifest parser, map export read back by the real MapLoader parser, "
             + "with clear errors for bad input");
     }
 
@@ -68,6 +73,37 @@ public final class AssetPipelineSmokeTest {
         if (loaded.tiles.isBlocked(0, 0)) throw new AssertionError("Unblocked cells should round-trip as unblocked");
         if (loaded.props.size != 0 || loaded.entities.size != 0) {
             throw new AssertionError("A freshly exported map should have no props or entities yet");
+        }
+    }
+
+    private static void verifySpriteAtlasAndManifestRoundtrip() throws IOException {
+        List<SpriteFrameSource> frames = new ArrayList<>();
+        for (int index = 0; index < 12; index++) {
+            frames.add(new SpriteFrameSource("player-frame-" + index,
+                solidColor(16, 24, index % 2 == 0 ? Color.GREEN : Color.ORANGE)));
+        }
+        SpritePacker.PackedSpriteAtlas packed = SpritePacker.pack(frames);
+        Map<String, SpriteManifestExport.Direction> directions = new LinkedHashMap<>();
+        String[] names = {"north", "east", "south", "west"};
+        for (int index = 0; index < names.length; index++) {
+            int firstFrame = index * 3;
+            directions.put(names[index], new SpriteManifestExport.Direction("player-frame-" + firstFrame,
+                List.of("player-frame-" + (firstFrame + 1), "player-frame-" + (firstFrame + 2))));
+        }
+        Path directory = Files.createTempDirectory("trackside-editor-sprites");
+        SpriteAtlasExport.write(packed, "sprites.atlas", "sprites.png", directory);
+        SpriteManifestExport.write(List.of(new SpriteManifestExport.Entry("player", 1.5f, 0.12f, 0.1f, directions)),
+            "sprites.atlas", directory);
+        if (!Files.exists(directory.resolve("sprites.png")) || !Files.exists(directory.resolve("sprites.atlas"))) {
+            throw new AssertionError("Sprite atlas PNG or descriptor was not written");
+        }
+        SpriteManifest manifest = SpriteManifest.load(new FileHandle(directory.resolve("sprites.json").toFile()));
+        SpriteDefinition player = manifest.sprite("player");
+        if (!"sprites.atlas".equals(manifest.atlas) || player.worldHeight != 1.5f
+            || player.frameDuration != 0.12f || player.footOffset != 0.1f
+            || !"player-frame-0".equals(player.idleRegion(land.temmi.rollercoaster.actor.Facing.NORTH))
+            || player.walkRegions(land.temmi.rollercoaster.actor.Facing.WEST).length != 2) {
+            throw new AssertionError("Sprite manifest did not round-trip");
         }
     }
 

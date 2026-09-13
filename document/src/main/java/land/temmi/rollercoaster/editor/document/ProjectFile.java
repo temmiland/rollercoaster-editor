@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 
 /** Reads and writes project.json. Saves are atomic: write a sibling temp file, then rename over the target. */
@@ -89,6 +90,35 @@ public final class ProjectFile {
                     collisionMin.getInt(0), collisionMax.getInt(0), collisionMin.getInt(1), collisionMax.getInt(1),
                     model.getBoolean("alignToSlope", false), model.getBoolean("walkable", false),
                     model.getFloat("walkHeight", 0f), dependencies));
+            }
+        }
+
+        JsonValue sprites = root.get("sprites");
+        if (sprites != null) {
+            for (JsonValue sprite = sprites.child; sprite != null; sprite = sprite.next) {
+                int columns = sprite.getInt("columns");
+                int rows = sprite.getInt("rows");
+                JsonValue directionValues = required(sprite, "directions");
+                if (!directionValues.isObject()) throw new IOException("project.json sprite directions must be an object");
+                EnumMap<SpriteDirection, SpriteAnimationAsset> directions = new EnumMap<>(SpriteDirection.class);
+                for (SpriteDirection direction : SpriteDirection.values()) {
+                    JsonValue animation = required(directionValues, direction.toId());
+                    if (!animation.isObject()) {
+                        throw new IOException("project.json sprite direction must be an object: " + direction.toId());
+                    }
+                    JsonValue walkValues = required(animation, "walk");
+                    if (!walkValues.isArray()) {
+                        throw new IOException("project.json sprite walk frames must be an array: " + direction.toId());
+                    }
+                    List<Integer> walkFrames = new ArrayList<>();
+                    for (JsonValue walkFrame = walkValues.child; walkFrame != null; walkFrame = walkFrame.next) {
+                        walkFrames.add(walkFrame.asInt());
+                    }
+                    directions.put(direction, new SpriteAnimationAsset(required(animation, "idle").asInt(), walkFrames));
+                }
+                document.addSprite(new SpriteAsset(requireString(sprite, "id"), requireString(sprite, "file"),
+                    columns, rows, sprite.getFloat("height"), sprite.getFloat("frameDuration"),
+                    sprite.getFloat("footOffset", 0f), directions));
             }
         }
 
@@ -245,6 +275,31 @@ public final class ProjectFile {
             writer.set("alignToSlope", model.alignToSlope);
             writer.set("walkable", model.walkable);
             writer.set("walkHeight", model.walkHeight);
+            writer.pop();
+        }
+        writer.pop();
+
+        writer.array("sprites");
+        for (SpriteAsset sprite : document.getSprites()) {
+            writer.object();
+            writer.set("id", sprite.id);
+            writer.set("file", sprite.fileName);
+            writer.set("columns", sprite.columns);
+            writer.set("rows", sprite.rows);
+            writer.set("height", sprite.worldHeight);
+            writer.set("frameDuration", sprite.frameDuration);
+            writer.set("footOffset", sprite.footOffset);
+            writer.object("directions");
+            for (SpriteDirection direction : SpriteDirection.values()) {
+                SpriteAnimationAsset animation = sprite.direction(direction);
+                writer.object(direction.toId());
+                writer.set("idle", animation.idleFrame);
+                writer.array("walk");
+                for (int frame : animation.getWalkFrames()) writer.value(frame);
+                writer.pop();
+                writer.pop();
+            }
+            writer.pop();
             writer.pop();
         }
         writer.pop();

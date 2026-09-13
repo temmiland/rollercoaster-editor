@@ -3,6 +3,7 @@ package land.temmi.rollercoaster.editor.ui;
 import com.badlogic.gdx.files.FileHandle;
 import land.temmi.rollercoaster.asset.ModelDefinition;
 import land.temmi.rollercoaster.asset.ModelManifest;
+import land.temmi.rollercoaster.asset.SpriteManifest;
 import land.temmi.rollercoaster.editor.document.MapAsset;
 import land.temmi.rollercoaster.editor.document.MapEntityAsset;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
@@ -12,6 +13,9 @@ import land.temmi.rollercoaster.editor.document.PaintTilesCommand;
 import land.temmi.rollercoaster.editor.document.ProjectDocument;
 import land.temmi.rollercoaster.editor.document.ProjectFile;
 import land.temmi.rollercoaster.editor.document.TextureAsset;
+import land.temmi.rollercoaster.editor.document.SpriteAnimationAsset;
+import land.temmi.rollercoaster.editor.document.SpriteAsset;
+import land.temmi.rollercoaster.editor.document.SpriteDirection;
 import land.temmi.rollercoaster.editor.document.TileShape;
 import land.temmi.rollercoaster.world.LoadedMap;
 import land.temmi.rollercoaster.world.MapLoader;
@@ -29,6 +33,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.List;
 
 /** Checks ProjectController's new/open/save/saveAs and autosave-restore logic; no GUI involved. */
@@ -42,10 +47,12 @@ public final class ProjectControllerSmokeTest {
         verifyTextureImportAndTilesetExport();
         verifyExportWithSideTexture();
         verifyModelImportAndExport();
+        verifySpriteImportAndExport();
         verifyMapCreationPaintingAndExport();
         System.out.println("PASS: ProjectController new/rename/save/undo/redo, autosave detection and restore, "
             + "saveAs isolation, a texture-import-to-tileset-export roundtrip read back by the real parser, "
             + "a separately packed side texture, a model import/export roundtrip, "
+            + "a sprite-sheet import/export roundtrip, "
             + "and a map creation/paint/export roundtrip read back by the real MapLoader parser");
     }
 
@@ -265,6 +272,31 @@ public final class ProjectControllerSmokeTest {
         if (controller.getModels().isEmpty()) throw new AssertionError("Undo did not restore the model");
     }
 
+    private static void verifySpriteImportAndExport() throws IOException {
+        Path projectDirectory = Files.createTempDirectory("trackside-editor-controller-sprites");
+        ProjectController controller = new ProjectController(() -> { });
+        controller.newProject(projectDirectory, "Sprite World");
+        Path source = solidColorPng("player", 48, 96, Color.MAGENTA);
+        EnumMap<SpriteDirection, SpriteAnimationAsset> directions = new EnumMap<>(SpriteDirection.class);
+        for (SpriteDirection direction : SpriteDirection.values()) {
+            int first = direction.ordinal() * 3;
+            directions.put(direction, new SpriteAnimationAsset(first, List.of(first + 1, first + 2)));
+        }
+        SpriteAsset player = new SpriteAsset("player", "player.png", 3, 4, 1.5f, 0.12f, 0.1f, directions);
+        controller.importSprite(source, player);
+        if (!Files.exists(projectDirectory.resolve("sources/sprites/player.png"))) {
+            throw new AssertionError("Sprite import did not copy its source sheet");
+        }
+        Path manifestFile = controller.exportSprites();
+        if (!Files.exists(projectDirectory.resolve("catalogs/sprites.png"))
+            || !Files.exists(projectDirectory.resolve("catalogs/sprites.atlas"))) {
+            throw new AssertionError("Sprite export did not write its atlas page and descriptor");
+        }
+        if (SpriteManifest.load(new FileHandle(manifestFile.toFile())).sprite("player").footOffset != 0.1f) {
+            throw new AssertionError("Sprite manifest lost its foot offset");
+        }
+    }
+
     private static Path solidColorPng(String name, int width, int height, Color color) throws IOException {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         Graphics graphics = image.getGraphics();
@@ -303,7 +335,7 @@ public final class ProjectControllerSmokeTest {
             new PaintTerrainCommand.Edit(1, 0, 0f, TileShape.FLAT, 0.5f, TileShape.RAMP_EAST)));
         controller.paintCollision("valley", Collections.singletonList(
             new PaintCollisionCommand.Edit(2, 1, false, true)));
-        controller.placeEntity("valley", new MapEntityAsset("player-start", "player", "player", 0, 0));
+        controller.placeEntity("valley", new MapEntityAsset("player-start", "player", null, 0, 0));
 
         try {
             controller.exportMap("valley");

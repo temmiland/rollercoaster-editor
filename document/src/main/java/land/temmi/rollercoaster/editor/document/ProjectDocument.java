@@ -12,6 +12,7 @@ public final class ProjectDocument {
     private final List<TextureAsset> textures = new ArrayList<>();
     private final List<TilesetAsset> tilesets = new ArrayList<>();
     private final List<ModelAsset> models = new ArrayList<>();
+    private final List<SpriteAsset> sprites = new ArrayList<>();
     private final List<MapAsset> maps = new ArrayList<>();
 
     public ProjectDocument(String name) {
@@ -137,6 +138,50 @@ public final class ProjectDocument {
         throw new IllegalArgumentException("No such model: " + id);
     }
 
+    public List<SpriteAsset> getSprites() {
+        return Collections.unmodifiableList(sprites);
+    }
+
+    public SpriteAsset findSprite(String id) {
+        for (SpriteAsset sprite : sprites) {
+            if (sprite.id.equals(id)) return sprite;
+        }
+        return null;
+    }
+
+    void addSprite(SpriteAsset sprite) {
+        if (findSprite(sprite.id) != null) throw new IllegalArgumentException("Duplicate sprite id: " + sprite.id);
+        sprites.add(sprite);
+    }
+
+    void removeSprite(String id) {
+        List<String> placements = new ArrayList<>();
+        for (MapAsset map : maps) {
+            for (MapEntityAsset entity : map.getEntities()) {
+                if (id.equals(entity.spriteId)) placements.add("'" + entity.instanceId + "' on map '" + map.id + "'");
+            }
+        }
+        if (!placements.isEmpty()) {
+            throw new IllegalArgumentException("Sprite '" + id + "' is still used by " + String.join(", ", placements));
+        }
+        if (!sprites.removeIf(sprite -> sprite.id.equals(id))) {
+            throw new IllegalArgumentException("No such sprite: " + id);
+        }
+    }
+
+    void replaceSprite(String id, SpriteAsset replacement) {
+        if (replacement == null || !id.equals(replacement.id)) {
+            throw new IllegalArgumentException("Replacement sprite must keep ID '" + id + "'");
+        }
+        for (int i = 0; i < sprites.size(); i++) {
+            if (sprites.get(i).id.equals(id)) {
+                sprites.set(i, replacement);
+                return;
+            }
+        }
+        throw new IllegalArgumentException("No such sprite: " + id);
+    }
+
     public List<MapAsset> getMaps() {
         return Collections.unmodifiableList(maps);
     }
@@ -150,6 +195,12 @@ public final class ProjectDocument {
 
     void addMap(MapAsset map) {
         if (findMap(map.id) != null) throw new IllegalArgumentException("Duplicate map id: " + map.id);
+        for (MapEntityAsset entity : map.getEntities()) {
+            if (entity.spriteId != null && findSprite(entity.spriteId) == null) {
+                throw new IllegalArgumentException("Entity '" + entity.instanceId
+                    + "' references unknown sprite '" + entity.spriteId + "'");
+            }
+        }
         maps.add(map);
     }
 

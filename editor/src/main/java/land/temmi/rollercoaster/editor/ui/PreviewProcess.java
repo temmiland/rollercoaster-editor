@@ -43,6 +43,7 @@ public final class PreviewProcess {
     private volatile boolean levelOpen;
     private volatile CompletableFuture<ModelBoundsResult> pendingBoundsRequest;
     private volatile CompletableFuture<ShowMapResult> pendingShowMapRequest;
+    private volatile ShowMap latestShowMap;
 
     public PreviewProcess(String previewClasspath, StatusListener listener, PickListener pickListener) {
         this.previewClasspath = previewClasspath;
@@ -54,6 +55,12 @@ public final class PreviewProcess {
     public synchronized void setLevelOpen(boolean levelOpen) {
         if (this.levelOpen == levelOpen) return;
         this.levelOpen = levelOpen;
+        if (!levelOpen) {
+            latestShowMap = null;
+            CompletableFuture<ShowMapResult> future = pendingShowMapRequest;
+            pendingShowMapRequest = null;
+            if (future != null) future.completeExceptionally(new IOException("Project closed"));
+        }
         sendLevelState();
     }
 
@@ -81,17 +88,24 @@ public final class PreviewProcess {
 
     /** Asks the preview to render an already-exported map file, replacing whatever it currently shows. */
     public CompletableFuture<ShowMapResult> showMap(String mapFilePath, int width, int depth,
-                                                    String[] tileIds, boolean[] tileWalkable,
-                                                    String modelManifestFilePath) {
+                                                    String tilesetManifestFilePath, String modelManifestFilePath,
+                                                    String spriteManifestFilePath) {
         CompletableFuture<ShowMapResult> future = new CompletableFuture<>();
+        ShowMap request = new ShowMap(mapFilePath, width, depth, tilesetManifestFilePath,
+            modelManifestFilePath, spriteManifestFilePath);
+        latestShowMap = request;
         MessageChannel current = channel;
         if (current == null) {
-            future.completeExceptionally(new IOException("Preview is not connected"));
+            CompletableFuture<ShowMapResult> previous = pendingShowMapRequest;
+            pendingShowMapRequest = future;
+            if (previous != null && !previous.isDone()) {
+                previous.completeExceptionally(new IOException("Preview request superseded"));
+            }
             return future;
         }
         pendingShowMapRequest = future;
         try {
-            current.send(new ShowMap(mapFilePath, width, depth, tileIds, tileWalkable, modelManifestFilePath));
+            current.send(request);
         } catch (IOException e) {
             pendingShowMapRequest = null;
             future.completeExceptionally(e);
@@ -104,6 +118,18 @@ public final class PreviewProcess {
         if (current == null) return;
         try {
             current.send(levelOpen ? new ShowSampleLevel() : new ShowGenericScene());
+        } catch (IOException e) {
+            listener.onPreviewStatusChanged(Status.DISCONNECTED, e.getMessage());
+        }
+    }
+
+    /** Replays the newest document map after the preview process reconnects. */
+    private void sendLatestMap() {
+        MessageChannel current = channel;
+        ShowMap request = latestShowMap;
+        if (current == null || request == null || !levelOpen) return;
+        try {
+            current.send(request);
         } catch (IOException e) {
             listener.onPreviewStatusChanged(Status.DISCONNECTED, e.getMessage());
         }
@@ -186,6 +212,7 @@ public final class PreviewProcess {
             established.send(new HelloAck(true, null));
             channel = established;
             sendLevelState();
+            sendLatestMap();
             listener.onPreviewStatusChanged(Status.CONNECTED, null);
 
             Object incoming;

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.List;
 
 /** Checks undo/redo, dirty tracking and the project.json roundtrip; no GL context involved. */
@@ -17,6 +18,7 @@ public final class DocumentSmokeTest {
         verifySideTextureRoundtrip();
         verifyRemoveTextureBlockedBySideReference();
         verifyModelCommandsAndRoundtrip();
+        verifySpriteCommandsAndRoundtrip();
         verifyMapCommandsAndTerrainGrid();
         verifyMapRoundtrip();
         verifyPropCommandsAndRoundtrip();
@@ -238,6 +240,37 @@ public final class DocumentSmokeTest {
         }
     }
 
+    private static void verifySpriteCommandsAndRoundtrip() throws IOException {
+        ProjectDocument document = new ProjectDocument("Spritewelt");
+        CommandHistory history = new CommandHistory(document);
+        SpriteAsset player = sprite("player", "player.png", 3, 4, 1.5f, 0.12f, 0.1f);
+        history.perform(new ImportSpriteCommand(player));
+        if (document.findSprite("player") == null) throw new AssertionError("Sprite import did not apply");
+        SpriteAsset updated = sprite("player", "player.png", 3, 4, 2f, 0.2f, 0f);
+        history.perform(new UpdateSpriteCommand(player, updated));
+        if (document.findSprite("player").worldHeight != 2f) throw new AssertionError("Sprite update did not apply");
+        history.undo();
+        if (document.findSprite("player").footOffset != 0.1f) throw new AssertionError("Undo did not restore sprite settings");
+
+        Path directory = Files.createTempDirectory("trackside-editor-project-sprites");
+        ProjectFile.save(document, directory);
+        SpriteAsset reloaded = ProjectFile.load(directory).findSprite("player");
+        if (reloaded == null || reloaded.columns != 3 || reloaded.rows != 4 || reloaded.worldHeight != 1.5f
+            || reloaded.direction(SpriteDirection.WEST).getWalkFrames().size() != 2) {
+            throw new AssertionError("Sprite did not round-trip");
+        }
+    }
+
+    private static SpriteAsset sprite(String id, String file, int columns, int rows, float height,
+                                      float duration, float footOffset) {
+        EnumMap<SpriteDirection, SpriteAnimationAsset> directions = new EnumMap<>(SpriteDirection.class);
+        for (SpriteDirection direction : SpriteDirection.values()) {
+            int firstFrame = direction.ordinal() * 3;
+            directions.put(direction, new SpriteAnimationAsset(firstFrame, List.of(firstFrame + 1, firstFrame + 2)));
+        }
+        return new SpriteAsset(id, file, columns, rows, height, duration, footOffset, directions);
+    }
+
     private static void verifyMapCommandsAndTerrainGrid() {
         ProjectDocument document = new ProjectDocument("Kartenwelt");
         CommandHistory history = new CommandHistory(document);
@@ -373,18 +406,18 @@ public final class DocumentSmokeTest {
         document.addModel(ModelAsset.imported("house", "house.gltf", false,
             -1.8f, 0f, -1.3f, 2.8f, 4f, 2.3f, List.of("house.bin")));
         history.perform(new CreateMapCommand("valley", 4, 3, "overworld"));
-        MapEntityAsset playerStart = new MapEntityAsset("player-start", "player", "player", 1, 0);
+        MapEntityAsset playerStart = new MapEntityAsset("player-start", "player", null, 1, 0);
         history.perform(new PlaceEntityCommand("valley", playerStart));
         if (document.findMap("valley").findEntity("player-start") == null) {
             throw new AssertionError("Entity placement did not apply");
         }
         history.perform(new UpdateEntityCommand("valley", playerStart,
-            new MapEntityAsset("player-start", "player", "hero", 1, 1)));
-        if (!"hero".equals(document.findMap("valley").findEntity("player-start").spriteId)) {
+            new MapEntityAsset("player-start", "npc", null, 1, 1)));
+        if (!"npc".equals(document.findMap("valley").findEntity("player-start").type)) {
             throw new AssertionError("Entity update did not apply");
         }
         history.undo();
-        if (!"player".equals(document.findMap("valley").findEntity("player-start").spriteId)) {
+        if (!"player".equals(document.findMap("valley").findEntity("player-start").type)) {
             throw new AssertionError("Undo did not restore entity metadata");
         }
 
@@ -472,7 +505,7 @@ public final class DocumentSmokeTest {
         }
         MapEntityAsset reloadedStart = reloadedMap.findEntity("player-start");
         if (reloadedStart == null || !"player".equals(reloadedStart.type)
-            || !"player".equals(reloadedStart.spriteId) || reloadedStart.x != 1 || reloadedStart.z != 0) {
+            || reloadedStart.spriteId != null || reloadedStart.x != 1 || reloadedStart.z != 0) {
             throw new AssertionError("Entity did not round-trip");
         }
         ModelAsset reloadedModel = ProjectFile.load(directory).findModel("house");

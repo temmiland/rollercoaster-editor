@@ -20,8 +20,9 @@ public final class EditorApplication {
 
             frame[0] = new EditorFrame(() -> previewProcess[0].restart(), projectController[0], recentProjects,
                 path -> previewProcess[0].computeModelBounds(path),
-                (mapFilePath, width, depth, tileIds, tileWalkable, modelManifestFilePath) ->
-                    previewProcess[0].showMap(mapFilePath, width, depth, tileIds, tileWalkable, modelManifestFilePath));
+                (mapFilePath, width, depth, tilesetManifestFilePath, modelManifestFilePath, spriteManifestFilePath) ->
+                    previewProcess[0].showMap(mapFilePath, width, depth, tilesetManifestFilePath,
+                        modelManifestFilePath, spriteManifestFilePath));
             previewProcess[0] = new PreviewProcess(previewClasspath, frame[0]::onPreviewStatusChanged, frame[0]::onPick);
 
             frame[0].setVisible(true);

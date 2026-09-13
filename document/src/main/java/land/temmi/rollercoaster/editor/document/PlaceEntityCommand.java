@@ -13,6 +13,9 @@ public final class PlaceEntityCommand implements Command {
     @Override
     public void execute(ProjectDocument document) {
         MapAsset map = document.requireMap(mapId);
+        if (entity.spriteId != null && document.findSprite(entity.spriteId) == null) {
+            throw new IllegalArgumentException("Entity '" + entity.instanceId + "' references unknown sprite '" + entity.spriteId + "'");
+        }
         map.requireEntityPosition(entity);
         map.addEntity(entity);
     }

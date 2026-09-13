@@ -1,7 +1,7 @@
 # Rollercoaster Editor — Umsetzungsplan
 
-Status: Phase 1 begonnen. Der Editor ist ein eigenes Repository neben `rollercoaster`,
-`example-game` und `trackside`. Dieser Plan implementiert keine Änderungen an der Engine.
+Status: Projektkern, Karten, Modelle, Sprite-Atlanten und tile-gebundene Entities sind umgesetzt.
+Der Editor ist ein eigenes Repository neben `rollercoaster`, `example-game` und `trackside`.
 Trackside-Inhalte sind zunächst außerhalb des Arbeitsumfangs.
 
 ## Ziel und erster vollständiger Arbeitsablauf
@@ -258,7 +258,8 @@ weder Originalquellen überschreiben noch den letzten gültigen Export beschädi
   unbekannte Formatversionen mit klarer Meldung ab.
 - [x] Autosave alle 30s nach `<projekt>/.editor/`, getrennt vom letzten expliziten Speicherstand;
   beim Öffnen wird eine neuere automatische Sicherung erkannt und zur Wiederherstellung angeboten.
-- [ ] Relative Assetpfade - noch nicht relevant, da Phase 1 keine Assets referenziert.
+- [x] Relative Assetpfade: Texturen, Modelle samt Abhängigkeiten und Sprites liegen unterhalb des
+  Projektordners; ihre Exporte werden vom jeweiligen Katalog aus relativ aufgelöst.
 - [x] Picking-Treffer als Nachricht zurück an die UI: `PickResult` (Y=0-Bodenebene, echtes
   Terrain-Picking ist Phase 3). `ClickPicker` teilt sich den Input-Multiplexer mit
   `CameraInputController` und feuert nur bei einem echten Klick ohne Kamera-Drag.
@@ -267,8 +268,8 @@ weder Originalquellen überschreiben noch den letzten gültigen Export beschädi
   (das aus `example-game` kopierte Testfeld) für "ein Projekt ist offen".
 - [ ] Vorschau mit Spielkamera (statt freier Kamera) - noch offen, sinnvoll erst mit echtem
   Karteninhalt aus dem Dokument statt der `SampleScene`.
-- [ ] UI mit Assetliste und Kartenansicht - Layout steht, Inhalte fehlen noch (Eigenschaften-Panel
-  hat mit dem Projektnamen sein erstes echtes Feld).
+- [x] UI mit Assetliste und Kartenansicht: Texturen, Tilesets, Modelle und Sprite-Sheets lassen
+  sich bearbeiten; Kartenwerkzeuge, Overlays, Props und Entities arbeiten direkt auf dem Dokument.
 
 Abnahme: Ein kleines Dokument lässt sich ändern, rückgängig machen, speichern, verschieben
 und erneut öffnen, ohne Datenverlust oder kaputte Referenzen.
@@ -285,7 +286,8 @@ und erneut öffnen, ohne Datenverlust oder kaputte Referenzen.
   und "Tilesets"): kopiert in `sources/textures/`, Katalog lebt im Dokumentmodell
   (`TextureAsset`/`TilesetAsset`/`TileEntry`) mit Commands für Undo/Redo. Textur-, Tileset-,
   Tile- und Modelllisten werden nach ID sortiert; die Texturliste zeigt skalierte Vorschauen ihrer
-  Quellen. Die Kartenfläche nutzt weiterhin ID-Farben statt der Atlasbilder.
+  Quellen. Die Kartenfläche zeichnet die importierten Quellen direkt und nutzt ID-Farben nur als
+  Fallback für fehlende oder unlesbare Dateien.
 - [x] Oberflächen-/Seitenzuordnung: `TileEntry.sideTextureId` optional, `TilePacker` packt Ober-
   und Seitenbild als getrennte Atlas-Regionen (beide müssen dieselbe Größe wie die übrigen
   Tiles/Seiten im Tileset haben - dieselbe Grid-Vereinfachung wie beim generellen Packing).
@@ -343,14 +345,13 @@ Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle 
   entgegen statt einer rohen Höhe - jede Kombination, die es erzeugen kann, ist dadurch bereits
   gültig (ganze Level für flach, halbe für eine Rampe), sodass `PaintTerrainCommand` sie nie
   ablehnt. Begehbare und nicht begehbare Rampen unterscheiden sich weiterhin nur im Kacheltyp.
-- [x] Bemalte Karte dreidimensional anzeigen: "In Vorschau zeigen" exportiert die Karte und schickt
-  Dateipfad sowie Kacheltyp-Katalog (ID plus Begehbarkeit) per neuer `ShowMap`-Nachricht an den
-  Vorschauprozess. Dieser baut daraus mit `WorldSceneLoader`/`ChunkMesher` - denselben Klassen wie
-  das Spiel - eine echte Szene; Kachelfarben werden aus der ID gehasht, damit sie ohne Atlas exakt
-  zur 2D-Ansicht passen. Damit lässt sich zum ersten Mal eine in der UI gemalte Rampe tatsächlich
-  in 3D befahren sehen, nicht nur als Dreieck im Grid. Props erscheinen als modell-ID-gefärbte
-  Platzhalterboxen; das echte GLTF-Laden aus dem Projektordner braucht noch den Asset-Resolver.
-  Entities und ein Kollisions-Overlay fehlen weiterhin.
+- [x] Bemalte Karte dreidimensional und live anzeigen: `Live-Vorschau` bündelt kurz aufeinander
+  folgende Pinselstriche, exportiert danach Karte, Tileset, Modelle und bei Bedarf Sprites und
+  schickt ihre Katalogpfade per `ShowMap` an den Vorschauprozess. Dieser baut mit
+  `WorldSceneLoader`/`ChunkMesher` dieselbe Szene wie das Spiel, einschließlich echter
+  Tile-Atlasregionen, GLTF/GLB-Props und statischer Entity-Sprites. Der letzte Kartenstand wird
+  nach einer Neuverbindung der Vorschau erneut geladen; damit ist sie keine Farb- oder
+  Platzhalterannäherung mehr.
 - [x] Terrain, Gitter, Begehbarkeit, Kanten und manuelle Sperren getrennt ein-/ausblenden:
   Die Kartenleiste steuert jeden Layer einzeln. Terrain zeigt Höhe und Rampenrichtung,
   Begehbarkeit hebt nicht begehbare Tiletypen hervor, Kanten markieren Höhenunterschiede an
@@ -375,7 +376,10 @@ Steilkanten und gesperrte Flächen verhalten sich genauso wie im exportierten Sp
   bearbeiten und löschen: Die Kartenansicht markiert sie separat, und `MapExport` übergibt ID,
   Typ, optionalen Sprite und Position an den rückwärtskompatibel erweiterten `MapLoader`.
 - Terrainbezug, Höhenversatz und Kollisions-Fußabdruck sichtbar bearbeiten.
-- Sprite-Atlanten registrieren; Richtungen, Idle-/Laufsequenzen, Frame-Dauer und Fußpunkt zuordnen.
+- [x] Sprite-Atlanten registrieren; Richtungen, Idle-/Laufsequenzen, Frame-Dauer und Fußpunkt
+  zuordnen: Ein importiertes PNG-Sheet wird über Spalten/Zeilen und Frame-Indizes eingerichtet,
+  deterministisch als einzelne Atlas-Seite gepackt und als echtes `SpriteManifest` exportiert.
+  Entities können nur registrierte Sprite-IDs referenzieren.
 - Startpunkte, NPCs, Triggerflächen und Übergänge mit stabilen Instanz-IDs platzieren.
 - Dialoge mit Sprecher-, Text-, Porträt- und Antwortknoten anlegen; Verzweigungen, Bedingungen
   und Übersetzungs-IDs prüfen.

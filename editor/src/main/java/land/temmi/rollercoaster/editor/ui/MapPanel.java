@@ -31,6 +31,7 @@ import javax.swing.JToggleButton;
 import javax.swing.ListCellRenderer;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.imageio.ImageIO;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
@@ -51,8 +52,8 @@ final class MapPanel extends JPanel {
     /** Fire-and-forget from the UI's side; the returned future carries success/failure back. */
     interface PreviewMapRequester {
         CompletableFuture<ShowMapResult> showMap(String mapFilePath, int width, int depth,
-                                                 String[] tileIds, boolean[] tileWalkable,
-                                                 String modelManifestFilePath);
+                                                 String tilesetManifestFilePath, String modelManifestFilePath,
+                                                 String spriteManifestFilePath);
     }
 
     private final ProjectController projectController;
@@ -86,7 +87,12 @@ final class MapPanel extends JPanel {
     private final JCheckBox walkabilityOverlay = new JCheckBox("Begehbarkeit");
     private final JCheckBox edgesOverlay = new JCheckBox("Kanten");
     private final JCheckBox manualCollisionOverlay = new JCheckBox("Manuelle Sperren", true);
+    private final JCheckBox livePreview = new JCheckBox("Live-Vorschau", true);
     private final JLabel hoverLabel = new JLabel(" ");
+    private final Timer livePreviewTimer;
+    private boolean previewRequestInFlight;
+    private String queuedPreviewMapId;
+    private boolean queuedPreviewReportsErrors;
 
     MapPanel(ProjectController projectController, PreviewMapRequester previewMapRequester) {
         super(new BorderLayout());
@@ -95,6 +101,8 @@ final class MapPanel extends JPanel {
         setBorder(BorderFactory.createTitledBorder("Karte"));
 
         canvas = buildCanvas();
+        livePreviewTimer = new Timer(180, e -> startQueuedPreview());
+        livePreviewTimer.setRepeats(false);
 
         mapList.setCellRenderer(labelRenderer(m -> m.id + "  (" + m.width + "x" + m.depth + ")"));
         mapList.addListSelectionListener(e -> onMapSelected());
@@ -140,6 +148,14 @@ final class MapPanel extends JPanel {
         walkabilityOverlay.addActionListener(e -> updateOverlays());
         edgesOverlay.addActionListener(e -> updateOverlays());
         manualCollisionOverlay.addActionListener(e -> updateOverlays());
+        livePreview.addActionListener(e -> {
+            if (livePreview.isSelected()) {
+                scheduleLivePreview(mapList.getSelectedValue());
+            } else if (!queuedPreviewReportsErrors) {
+                livePreviewTimer.stop();
+                queuedPreviewMapId = null;
+            }
+        });
         updateTerrainTarget();
         updateOverlays();
 
@@ -237,6 +253,7 @@ final class MapPanel extends JPanel {
         exportMap.addActionListener(e -> onExportMap());
         JButton previewMap = new JButton("In Vorschau zeigen");
         previewMap.addActionListener(e -> onPreviewMap());
+        livePreview.setToolTipText("Aktualisiert die Vorschau nach jeder Änderung dieser Karte");
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
         buttons.add(newMap);
@@ -244,6 +261,7 @@ final class MapPanel extends JPanel {
         buttons.add(resizeMap);
         buttons.add(exportMap);
         buttons.add(previewMap);
+        buttons.add(livePreview);
         mapListPanel.add(buttons, BorderLayout.SOUTH);
 
         JPanel propsPanel = new JPanel(new BorderLayout());
@@ -321,6 +339,7 @@ final class MapPanel extends JPanel {
     void refresh() {
         boolean open = projectController.isOpen();
         mapList.setEnabled(open);
+        livePreview.setEnabled(open);
 
         ModelAsset selectedModel = modelPaletteList.getSelectedValue();
         modelPaletteListModel.clear();
@@ -367,6 +386,7 @@ final class MapPanel extends JPanel {
                 }
             }
         }
+        scheduleLivePreview(selected);
         canvas.setTileWalkability(tileWalkability);
         canvas.setTileImages(tileImages);
 
@@ -649,36 +669,74 @@ final class MapPanel extends JPanel {
     private void onPreviewMap() {
         MapAsset selected = mapList.getSelectedValue();
         if (selected == null) return;
+        queuePreview(selected.id, true);
+        livePreviewTimer.stop();
+        startQueuedPreview();
+    }
+
+    /** Debounces brush strokes so the preview receives only the most recent authored map state. */
+    private void scheduleLivePreview(MapAsset selected) {
+        if (selected == null) {
+            if (!queuedPreviewReportsErrors) {
+                livePreviewTimer.stop();
+                queuedPreviewMapId = null;
+            }
+            return;
+        }
+        if (!livePreview.isSelected()) return;
+        queuePreview(selected.id, false);
+        if (!previewRequestInFlight) livePreviewTimer.restart();
+    }
+
+    private void queuePreview(String mapId, boolean reportErrors) {
+        queuedPreviewMapId = mapId;
+        queuedPreviewReportsErrors |= reportErrors;
+    }
+
+    private void startQueuedPreview() {
+        if (previewRequestInFlight || queuedPreviewMapId == null) return;
+
+        String mapId = queuedPreviewMapId;
+        boolean reportErrors = queuedPreviewReportsErrors;
+        queuedPreviewMapId = null;
+        queuedPreviewReportsErrors = false;
+
+        MapAsset selected = mapList.getSelectedValue();
+        if (selected == null || !selected.id.equals(mapId)) return;
         TilesetAsset tileset = findTileset(selected.tilesetId);
         if (tileset == null) return;
 
         Path mapFile;
         Path modelManifestFile = null;
+        Path spriteManifestFile = null;
+        Path tilesetManifestFile;
         try {
             mapFile = projectController.exportMap(selected.id);
+            tilesetManifestFile = projectController.exportTileset(selected.tilesetId);
             if (!selected.getProps().isEmpty()) modelManifestFile = projectController.exportModels();
+            if (selected.getEntities().stream().anyMatch(entity -> entity.spriteId != null)) {
+                spriteManifestFile = projectController.exportSprites();
+            }
         } catch (IOException e) {
-            showError("Karte oder Modelle konnten nicht exportiert werden", e);
+            if (reportErrors) showError("Karten-Assets konnten nicht exportiert werden", e);
+            startQueuedPreview();
             return;
         }
-
-        List<TileEntry> tiles = tileset.getTiles();
-        String[] tileIds = new String[tiles.size()];
-        boolean[] tileWalkable = new boolean[tiles.size()];
-        for (int i = 0; i < tiles.size(); i++) {
-            tileIds[i] = tiles.get(i).id;
-            tileWalkable[i] = tiles.get(i).walkable;
-        }
+        previewRequestInFlight = true;
         previewMapRequester.showMap(mapFile.toAbsolutePath().toString(), selected.width, selected.depth,
-            tileIds, tileWalkable, modelManifestFile == null ? null : modelManifestFile.toAbsolutePath().toString())
+            tilesetManifestFile.toAbsolutePath().toString(),
+            modelManifestFile == null ? null : modelManifestFile.toAbsolutePath().toString(),
+            spriteManifestFile == null ? null : spriteManifestFile.toAbsolutePath().toString())
             .whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
-                if (error != null) {
+                previewRequestInFlight = false;
+                if (reportErrors && error != null) {
                     JOptionPane.showMessageDialog(this, error.getMessage(), "Vorschau fehlgeschlagen",
                         JOptionPane.ERROR_MESSAGE);
-                } else if (!result.success) {
+                } else if (reportErrors && !result.success) {
                     JOptionPane.showMessageDialog(this, result.errorMessage, "Vorschau fehlgeschlagen",
                         JOptionPane.ERROR_MESSAGE);
                 }
+                startQueuedPreview();
             }));
     }
 

@@ -18,6 +18,10 @@ public final class UpdateEntityCommand implements Command {
     @Override
     public void execute(ProjectDocument document) {
         MapAsset map = document.requireMap(mapId);
+        if (replacement.spriteId != null && document.findSprite(replacement.spriteId) == null) {
+            throw new IllegalArgumentException("Entity '" + replacement.instanceId
+                + "' references unknown sprite '" + replacement.spriteId + "'");
+        }
         map.requireEntityPosition(replacement);
         map.replaceEntity(previous.instanceId, replacement);
     }

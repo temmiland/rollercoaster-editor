@@ -1,6 +1,9 @@
 package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.document.ModelAsset;
+import land.temmi.rollercoaster.editor.document.SpriteAnimationAsset;
+import land.temmi.rollercoaster.editor.document.SpriteAsset;
+import land.temmi.rollercoaster.editor.document.SpriteDirection;
 import land.temmi.rollercoaster.editor.document.TextureAsset;
 import land.temmi.rollercoaster.editor.document.TileEntry;
 import land.temmi.rollercoaster.editor.document.TilesetAsset;
@@ -20,6 +23,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
+import javax.swing.JTextField;
 import javax.swing.ListCellRenderer;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
@@ -34,6 +38,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -53,6 +58,8 @@ final class AssetsPanel extends JPanel {
     private final JList<TileEntry> tileList = new JList<>(tileListModel);
     private final DefaultListModel<ModelAsset> modelListModel = new DefaultListModel<>();
     private final JList<ModelAsset> modelList = new JList<>(modelListModel);
+    private final DefaultListModel<SpriteAsset> spriteListModel = new DefaultListModel<>();
+    private final JList<SpriteAsset> spriteList = new JList<>(spriteListModel);
     private final Map<String, ImageIcon> textureThumbnails = new HashMap<>();
 
     AssetsPanel(ProjectController projectController,
@@ -69,12 +76,15 @@ final class AssetsPanel extends JPanel {
             + (t.walkable ? "" : "  (nicht begehbar)")));
         modelList.setCellRenderer(labelRenderer(m -> m.id + "  (" + m.fileName
             + String.format(Locale.ROOT, ", H=%.2f)", m.getHeight())));
+        spriteList.setCellRenderer(labelRenderer(sprite -> sprite.id + "  (" + sprite.fileName + ", "
+            + sprite.columns + "x" + sprite.rows + ", H=" + sprite.worldHeight + ")"));
         tilesetList.addListSelectionListener(e -> refreshTiles());
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Texturen", buildTexturesTab());
         tabs.addTab("Tilesets", buildTilesetsTab());
         tabs.addTab("Modelle", buildModelsTab());
+        tabs.addTab("Sprites", buildSpritesTab());
         add(tabs, BorderLayout.CENTER);
     }
 
@@ -147,15 +157,37 @@ final class AssetsPanel extends JPanel {
         return panel;
     }
 
+    private JPanel buildSpritesTab() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.add(new JScrollPane(spriteList), BorderLayout.CENTER);
+        JButton importButton = new JButton("Spritesheet importieren…");
+        importButton.addActionListener(e -> onImportSprite());
+        JButton propertiesButton = new JButton("Eigenschaften…");
+        propertiesButton.addActionListener(e -> onEditSprite());
+        JButton removeButton = new JButton("Entfernen");
+        removeButton.addActionListener(e -> onRemoveSprite());
+        JButton exportButton = new JButton("Exportieren");
+        exportButton.addActionListener(e -> onExportSprites());
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        buttons.add(importButton);
+        buttons.add(propertiesButton);
+        buttons.add(removeButton);
+        buttons.add(exportButton);
+        panel.add(buttons, BorderLayout.SOUTH);
+        return panel;
+    }
+
     void refresh() {
         boolean open = projectController.isOpen();
         textureList.setEnabled(open);
         tilesetList.setEnabled(open);
         tileList.setEnabled(open);
         modelList.setEnabled(open);
+        spriteList.setEnabled(open);
 
         TilesetAsset selectedTileset = tilesetList.getSelectedValue();
         ModelAsset selectedModel = modelList.getSelectedValue();
+        SpriteAsset selectedSprite = spriteList.getSelectedValue();
 
         textureListModel.clear();
         if (open) projectController.getTextures().stream().sorted(Comparator.comparing(t -> t.id))
@@ -169,6 +201,10 @@ final class AssetsPanel extends JPanel {
         if (open) projectController.getModels().stream().sorted(Comparator.comparing(m -> m.id))
             .forEach(modelListModel::addElement);
 
+        spriteListModel.clear();
+        if (open) projectController.getSprites().stream().sorted(Comparator.comparing(sprite -> sprite.id))
+            .forEach(spriteListModel::addElement);
+
         if (selectedTileset != null) {
             for (int i = 0; i < tilesetListModel.size(); i++) {
                 if (tilesetListModel.get(i).id.equals(selectedTileset.id)) {
@@ -181,6 +217,14 @@ final class AssetsPanel extends JPanel {
             for (int i = 0; i < modelListModel.size(); i++) {
                 if (modelListModel.get(i).id.equals(selectedModel.id)) {
                     modelList.setSelectedIndex(i);
+                    break;
+                }
+            }
+        }
+        if (selectedSprite != null) {
+            for (int i = 0; i < spriteListModel.size(); i++) {
+                if (spriteListModel.get(i).id.equals(selectedSprite.id)) {
+                    spriteList.setSelectedIndex(i);
                     break;
                 }
             }
@@ -484,6 +528,13 @@ final class AssetsPanel extends JPanel {
                                  boolean alignToSlope, boolean walkable, float walkHeight) {
     }
 
+    private record SpriteSettings(int columns, int rows, float worldHeight, float frameDuration,
+                                  float footOffset, Map<SpriteDirection, SpriteAnimationAsset> directions) {
+        private SpriteAsset toAsset(String id, String fileName) {
+            return new SpriteAsset(id, fileName, columns, rows, worldHeight, frameDuration, footOffset, directions);
+        }
+    }
+
     private void onExportModels() {
         try {
             projectController.exportModels();
@@ -491,6 +542,123 @@ final class AssetsPanel extends JPanel {
         } catch (IOException e) {
             showError("Modelle konnten nicht exportiert werden", e);
         }
+    }
+
+    private void onImportSprite() {
+        if (!projectController.isOpen()) return;
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Spritesheet importieren");
+        chooser.setFileFilter(new FileNameExtensionFilter("PNG-Bilder", "png"));
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        File file = chooser.getSelectedFile();
+        String id = JOptionPane.showInputDialog(this, "Sprite-ID:", stripExtension(file.getName()));
+        if (id == null || id.trim().isEmpty()) return;
+        SpriteSettings settings = askSpriteSettings("Spritesheet einrichten", null);
+        if (settings == null) return;
+        try {
+            SpriteAsset asset = settings.toAsset(id.trim(), file.getName());
+            projectController.importSprite(file.toPath(), asset);
+            refresh();
+        } catch (IOException | IllegalArgumentException e) {
+            showError("Spritesheet konnte nicht importiert werden", e);
+        }
+    }
+
+    private void onEditSprite() {
+        SpriteAsset previous = spriteList.getSelectedValue();
+        if (previous == null) return;
+        SpriteSettings settings = askSpriteSettings("Sprite-Eigenschaften", previous);
+        if (settings == null) return;
+        try {
+            projectController.updateSprite(previous, settings.toAsset(previous.id, previous.fileName));
+            refresh();
+        } catch (IOException | IllegalArgumentException e) {
+            showError("Sprite konnte nicht geändert werden", e);
+        }
+    }
+
+    private void onRemoveSprite() {
+        SpriteAsset selected = spriteList.getSelectedValue();
+        if (selected == null) return;
+        try {
+            projectController.removeSprite(selected);
+            refresh();
+        } catch (IllegalArgumentException e) {
+            showError("Sprite kann nicht entfernt werden", e);
+        }
+    }
+
+    private void onExportSprites() {
+        try {
+            projectController.exportSprites();
+            JOptionPane.showMessageDialog(this, "Sprites exportiert.");
+        } catch (IOException | IllegalArgumentException e) {
+            showError("Sprites konnten nicht exportiert werden", e);
+        }
+    }
+
+    private SpriteSettings askSpriteSettings(String title, SpriteAsset existing) {
+        JSpinner columns = new JSpinner(new SpinnerNumberModel(existing == null ? 1 : existing.columns, 1, 1_024, 1));
+        JSpinner rows = new JSpinner(new SpinnerNumberModel(existing == null ? 1 : existing.rows, 1, 1_024, 1));
+        JSpinner height = decimalSpinner(existing == null ? 1f : existing.worldHeight, 0.1d);
+        JSpinner duration = decimalSpinner(existing == null ? 0.15f : existing.frameDuration, 0.01d);
+        JSpinner footOffset = new JSpinner(new SpinnerNumberModel(
+            (double) (existing == null ? 0f : existing.footOffset), 0d, 0.99d, 0.01d));
+        Map<SpriteDirection, JTextField> idleFields = new EnumMap<>(SpriteDirection.class);
+        Map<SpriteDirection, JTextField> walkFields = new EnumMap<>(SpriteDirection.class);
+        JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
+        addRow(form, "Spalten:", columns);
+        addRow(form, "Zeilen:", rows);
+        addRow(form, "Welt-Höhe:", height);
+        addRow(form, "Frame-Dauer (s):", duration);
+        addRow(form, "Fußversatz (0–<1):", footOffset);
+        for (SpriteDirection direction : SpriteDirection.values()) {
+            SpriteAnimationAsset animation = existing == null ? defaultAnimation() : existing.direction(direction);
+            JTextField idle = new JTextField(String.valueOf(animation.idleFrame));
+            JTextField walk = new JTextField(joinFrames(animation.getWalkFrames()));
+            idleFields.put(direction, idle);
+            walkFields.put(direction, walk);
+            addRow(form, direction.toId() + " idle (Index):", idle);
+            addRow(form, direction.toId() + " walk (Indizes):", walk);
+        }
+        if (JOptionPane.showConfirmDialog(this, form, title, JOptionPane.OK_CANCEL_OPTION,
+            JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return null;
+        try {
+            EnumMap<SpriteDirection, SpriteAnimationAsset> directions = new EnumMap<>(SpriteDirection.class);
+            for (SpriteDirection direction : SpriteDirection.values()) {
+                int idle = Integer.parseInt(idleFields.get(direction).getText().trim());
+                directions.put(direction, new SpriteAnimationAsset(idle, parseFrameList(walkFields.get(direction).getText())));
+            }
+            return new SpriteSettings(integer(columns), integer(rows), number(height), number(duration),
+                number(footOffset), directions);
+        } catch (IllegalArgumentException e) {
+            JOptionPane.showMessageDialog(this, e.getMessage(), "Ungültige Sprite-Einstellungen", JOptionPane.ERROR_MESSAGE);
+            return null;
+        }
+    }
+
+    private static SpriteAnimationAsset defaultAnimation() {
+        return new SpriteAnimationAsset(0, List.of(0));
+    }
+
+    private static List<Integer> parseFrameList(String value) {
+        List<Integer> frames = new ArrayList<>();
+        for (String part : value.split(",")) {
+            String trimmed = part.trim();
+            if (trimmed.isEmpty()) continue;
+            frames.add(Integer.parseInt(trimmed));
+        }
+        if (frames.isEmpty()) throw new IllegalArgumentException("Mindestens ein Lauf-Frame ist erforderlich.");
+        return frames;
+    }
+
+    private static String joinFrames(List<Integer> frames) {
+        StringBuilder value = new StringBuilder();
+        for (int i = 0; i < frames.size(); i++) {
+            if (i > 0) value.append(", ");
+            value.append(frames.get(i));
+        }
+        return value.toString();
     }
 
     private void showError(String title, Exception cause) {
