@@ -289,7 +289,13 @@ und erneut öffnen, ohne Datenverlust oder kaputte Referenzen.
   und Seitenbild als getrennte Atlas-Regionen (beide müssen dieselbe Größe wie die übrigen
   Tiles/Seiten im Tileset haben - dieselbe Grid-Vereinfachung wie beim generellen Packing).
   Ohne Seitentextur fällt der Export weiterhin auf die Oberseite zurück.
-- [ ] Terrainformen gemäß dem abgeschlossenen Engine-Vertrag.
+- [x] Terrainformen gemäß dem abgeschlossenen Engine-Vertrag: `MapAsset` (`document`-Modul) trägt
+  Kachel-, Höhen-, Form- und manuelle Kollisionsebene und spiegelt `TileMap`s eigene
+  Grid-Höhen-Prüfung (flache Kacheln auf ganzen, Rampen auf halben Leveln), damit ein Zustand nie
+  entstehen kann, den die Engine ablehnen würde. `MapExport` schreibt `maps/<id>.json` exakt im
+  `MapLoader`-Schema - gegen den echten Parser geprüft (eine `Tileset` aus reinen `TileSurface`-
+  Objekten braucht dafür keinen GL-Kontext). Noch offen: die eigentliche Kartenbearbeitung in der
+  UI ist Phase 3.
 - [x] GLTF/GLB samt Abhängigkeiten importieren und Modell registrieren (Assets-Panel, Tab
   "Modelle"): Hauptdatei plus Abhängigkeiten (z. B. `.bin`) werden zusammen nach
   `sources/models/` kopiert; die Bounds kommen aus einem echten `Model`/`Mesh`, das nur die
@@ -307,13 +313,23 @@ Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle 
 
 ### Phase 3 — Karte, Gelände und Kollision
 
-- Karten anlegen, Größen ändern und Tilesets zuordnen.
-- Malen, Löschen, Pipette, Füllen, Rechteckauswahl, Kopieren und Einfügen.
-- Ein Pinselstrich entspricht einer Undo-Aktion; Vorschau aktualisiert sich während der Arbeit.
-- Höhen ändern, Plateaus und Rampen setzen und ihre Orientierung über die Formebene bearbeiten;
-  begehbare und nicht begehbare Rampen unterscheiden sich nur im Kacheltyp.
-- Terrain, Gitter, Begehbarkeit, Kanten und manuelle Sperren getrennt ein-/ausblenden.
-- Picking auf der tatsächlichen Terrainoberfläche; Tile-Mitte und Cursor stimmen auch bei
+- [x] Karten anlegen und Tilesets zuordnen, auf Dokumentebene: `MapAsset` (`document`-Modul) trägt
+  Kachel-, Höhen-, Form- und Kollisionsebene; `CreateMapCommand`/`RemoveMapCommand` und
+  `PaintTilesCommand`/`PaintTerrainCommand`/`PaintCollisionCommand` decken Anlegen und Bemalen ab
+  - je Aufruf eine Liste von Zell-Änderungen, also bereits so geschnitten, dass ein ganzer
+  Pinselstrich eine einzige Undo-Aktion wird. `ProjectController.exportMap` schreibt
+  `maps/<id>.json` im echten `MapLoader`-Format. **Noch offen: Größen ändern** (Breite/Tiefe
+  einer bestehenden Karte anpassen) sowie jede Bedienung in der UI - es gibt noch keine
+  2D-Kartenansicht.
+- [ ] 2D-Kartenansicht mit Mausbedienung: Malen, Löschen, Pipette, Füllen, Rechteckauswahl, Kopieren
+  und Einfügen; ein Pinselstrich (auch über mehrere Zellen) entspricht einer Undo-Aktion, indem
+  die UI die betroffenen Zellen gesammelt an einen der Paint-Commands übergibt. Vorschau
+  aktualisiert sich während der Arbeit.
+- [ ] Höhen ändern, Plateaus und Rampen setzen und ihre Orientierung über die Formebene bearbeiten
+  - `PaintTerrainCommand` unterstützt das bereits datenseitig; es fehlt das Werkzeug in der UI.
+  Begehbare und nicht begehbare Rampen unterscheiden sich nur im Kacheltyp.
+- [ ] Terrain, Gitter, Begehbarkeit, Kanten und manuelle Sperren getrennt ein-/ausblenden.
+- [ ] Picking auf der tatsächlichen Terrainoberfläche; Tile-Mitte und Cursor stimmen auch bei
   geneigter Kamera, erhöhten Tiles und Rampen überein.
 
 Abnahme: Eine Ebene führt über eine Rampe auf ein Plateau. Der Testspieler erreicht das Plateau;
