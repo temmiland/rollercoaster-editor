@@ -33,7 +33,38 @@ public final class ProjectFile {
         if (nameValue == null || !nameValue.isString() || nameValue.asString().trim().isEmpty()) {
             throw new IOException("project.json is missing a nonempty 'name'");
         }
-        return new ProjectDocument(nameValue.asString());
+        ProjectDocument document = new ProjectDocument(nameValue.asString());
+
+        JsonValue textures = root.get("textures");
+        if (textures != null) {
+            for (JsonValue texture = textures.child; texture != null; texture = texture.next) {
+                document.addTexture(new TextureAsset(requireString(texture, "id"), requireString(texture, "file")));
+            }
+        }
+
+        JsonValue tilesets = root.get("tilesets");
+        if (tilesets != null) {
+            for (JsonValue tileset = tilesets.child; tileset != null; tileset = tileset.next) {
+                TilesetAsset asset = new TilesetAsset(requireString(tileset, "id"));
+                JsonValue tiles = tileset.get("tiles");
+                if (tiles != null) {
+                    for (JsonValue tile = tiles.child; tile != null; tile = tile.next) {
+                        asset.addTile(new TileEntry(requireString(tile, "id"), requireString(tile, "texture"),
+                            tile.getBoolean("walkable", true)));
+                    }
+                }
+                document.addTileset(asset);
+            }
+        }
+        return document;
+    }
+
+    private static String requireString(JsonValue parent, String field) throws IOException {
+        JsonValue value = parent.get(field);
+        if (value == null || !value.isString() || value.asString().trim().isEmpty()) {
+            throw new IOException("project.json entry is missing a nonempty '" + field + "'");
+        }
+        return value.asString();
     }
 
     public static void save(ProjectDocument document, Path projectDirectory) throws IOException {
@@ -50,6 +81,33 @@ public final class ProjectFile {
         writer.object();
         writer.set("formatVersion", ProjectDocument.FORMAT_VERSION);
         writer.set("name", document.getName());
+
+        writer.array("textures");
+        for (TextureAsset texture : document.getTextures()) {
+            writer.object();
+            writer.set("id", texture.id);
+            writer.set("file", texture.fileName);
+            writer.pop();
+        }
+        writer.pop();
+
+        writer.array("tilesets");
+        for (TilesetAsset tileset : document.getTilesets()) {
+            writer.object();
+            writer.set("id", tileset.id);
+            writer.array("tiles");
+            for (TileEntry tile : tileset.getTiles()) {
+                writer.object();
+                writer.set("id", tile.id);
+                writer.set("texture", tile.textureId);
+                writer.set("walkable", tile.walkable);
+                writer.pop();
+            }
+            writer.pop();
+            writer.pop();
+        }
+        writer.pop();
+
         writer.pop();
         return buffer.toString();
     }
