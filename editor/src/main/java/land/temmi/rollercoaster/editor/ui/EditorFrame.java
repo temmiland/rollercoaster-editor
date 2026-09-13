@@ -48,12 +48,14 @@ public final class EditorFrame extends JFrame {
     private final JMenuItem saveAsMenuItem = new JMenuItem("Speichern unter…");
     private final JMenuItem undoMenuItem = new JMenuItem("Rückgängig");
     private final JMenuItem redoMenuItem = new JMenuItem("Wiederholen");
+    private final AssetsPanel assetsPanel;
 
     public EditorFrame(Runnable onRestartPreviewRequested, ProjectController projectController,
                        RecentProjects recentProjects) {
         super("Rollercoaster Editor");
         this.projectController = projectController;
         this.recentProjects = recentProjects;
+        this.assetsPanel = new AssetsPanel(projectController);
 
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
@@ -120,7 +122,6 @@ public final class EditorFrame extends JFrame {
     }
 
     private JSplitPane buildContent() {
-        JPanel assets = placeholderPanel("Assets");
         JPanel map = placeholderPanel("Karte");
         JPanel properties = buildPropertiesPanel();
         JPanel diagnosticsPanel = buildDiagnosticsPanel();
@@ -128,8 +129,8 @@ public final class EditorFrame extends JFrame {
         JSplitPane rightSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, properties, diagnosticsPanel);
         rightSplit.setResizeWeight(0.4);
 
-        JSplitPane centerSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, assets, map);
-        centerSplit.setResizeWeight(0.2);
+        JSplitPane centerSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, assetsPanel, map);
+        centerSplit.setResizeWeight(0.3);
 
         JSplitPane mainSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, centerSplit, rightSplit);
         mainSplit.setResizeWeight(0.7);
@@ -310,6 +311,7 @@ public final class EditorFrame extends JFrame {
         redoMenuItem.setEnabled(projectController.canRedo());
 
         refreshRecentMenu();
+        assetsPanel.refresh();
     }
 
     private void refreshRecentMenu() {
