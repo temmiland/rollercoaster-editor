@@ -63,6 +63,12 @@ final class MapPanel extends JPanel {
     private final JList<MapProp> placedPropsList = new JList<>(placedPropsListModel);
     private final MapCanvas canvas;
     private final JToggleButton tileTool = new JToggleButton("Kacheln malen", true);
+    private final JToggleButton eraseTileTool = new JToggleButton("Kacheln löschen");
+    private final JToggleButton pickTileTool = new JToggleButton("Pipette");
+    private final JToggleButton fillTileTool = new JToggleButton("Füllen");
+    private final JToggleButton rectangleTileTool = new JToggleButton("Rechteck");
+    private final JToggleButton copyTileTool = new JToggleButton("Kopieren");
+    private final JToggleButton pasteTileTool = new JToggleButton("Einfügen");
     private final JToggleButton collisionTool = new JToggleButton("Sperren malen");
     private final JToggleButton terrainTool = new JToggleButton("Terrain formen");
     private final JToggleButton propsTool = new JToggleButton("Props platzieren");
@@ -95,10 +101,22 @@ final class MapPanel extends JPanel {
 
         ButtonGroup tools = new ButtonGroup();
         tools.add(tileTool);
+        tools.add(eraseTileTool);
+        tools.add(pickTileTool);
+        tools.add(fillTileTool);
+        tools.add(rectangleTileTool);
+        tools.add(copyTileTool);
+        tools.add(pasteTileTool);
         tools.add(collisionTool);
         tools.add(terrainTool);
         tools.add(propsTool);
         tileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.TILE));
+        eraseTileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.ERASE_TILE));
+        pickTileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.PICK_TILE));
+        fillTileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.FILL_TILE));
+        rectangleTileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.RECT_TILE));
+        copyTileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.COPY_TILE));
+        pasteTileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.PASTE_TILE));
         collisionTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.COLLISION));
         terrainTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.TERRAIN));
         propsTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.PROPS));
@@ -137,7 +155,25 @@ final class MapPanel extends JPanel {
             "(%d, %d)  Höhe %.2f  %s  %s%s", x, z, map.getHeight(x, z), map.getShape(x, z),
             map.getTile(x, z) == null ? "leer" : map.getTile(x, z), map.isBlocked(x, z) ? "  gesperrt" : ""));
         MapCanvas.PropListener propListener = this::onPlaceProp;
-        return new MapCanvas(strokeListener, hoverListener, propListener);
+        MapCanvas.TileListener tileListener = this::onPickTile;
+        return new MapCanvas(strokeListener, hoverListener, propListener, tileListener);
+    }
+
+    private void onPickTile(String tileId) {
+        if (tileId == null) {
+            paletteList.clearSelection();
+            canvas.setPaintTileId(null);
+        } else {
+            for (int i = 0; i < paletteListModel.size(); i++) {
+                if (tileId.equals(paletteListModel.get(i).id)) {
+                    paletteList.setSelectedIndex(i);
+                    break;
+                }
+            }
+            canvas.setPaintTileId(tileId);
+        }
+        tileTool.setSelected(true);
+        canvas.setTool(MapCanvas.Tool.TILE);
     }
 
     private void onPlaceProp(String mapId, int x, int z) {
@@ -208,6 +244,12 @@ final class MapPanel extends JPanel {
 
         JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
         toolbar.add(tileTool);
+        toolbar.add(eraseTileTool);
+        toolbar.add(pickTileTool);
+        toolbar.add(fillTileTool);
+        toolbar.add(rectangleTileTool);
+        toolbar.add(copyTileTool);
+        toolbar.add(pasteTileTool);
         toolbar.add(collisionTool);
         toolbar.add(terrainTool);
         toolbar.add(propsTool);

@@ -14,10 +14,12 @@ import java.awt.Graphics;
 import java.awt.Polygon;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * A map's terrain grid, north-up (world -Z at the top, +X to the right). A brush stroke only
@@ -41,7 +43,11 @@ final class MapCanvas extends JPanel {
         void onPlaceProp(String mapId, int x, int z);
     }
 
-    enum Tool { TILE, COLLISION, TERRAIN, PROPS }
+    interface TileListener {
+        void onPickTile(String tileId);
+    }
+
+    enum Tool { TILE, ERASE_TILE, PICK_TILE, FILL_TILE, RECT_TILE, COPY_TILE, PASTE_TILE, COLLISION, TERRAIN, PROPS }
 
     private static final int CELL_SIZE = 28;
     private static final Color EMPTY_COLOR = new Color(60, 60, 60);
@@ -55,6 +61,7 @@ final class MapCanvas extends JPanel {
     private final StrokeListener strokeListener;
     private final HoverListener hoverListener;
     private final PropListener propListener;
+    private final TileListener tileListener;
     private final Map<Long, PaintTilesCommand.Edit> pendingTileEdits = new LinkedHashMap<>();
     private final Map<Long, PaintCollisionCommand.Edit> pendingCollisionEdits = new LinkedHashMap<>();
     private final Map<Long, PaintTerrainCommand.Edit> pendingTerrainEdits = new LinkedHashMap<>();
@@ -75,11 +82,18 @@ final class MapCanvas extends JPanel {
     private boolean propPlacedThisPress;
     private int lastPaintedX = -1;
     private int lastPaintedZ = -1;
+    private int rectangleStartX = -1;
+    private int rectangleStartZ = -1;
+    private int rectangleEndX = -1;
+    private int rectangleEndZ = -1;
+    private String[][] tileClipboard;
 
-    MapCanvas(StrokeListener strokeListener, HoverListener hoverListener, PropListener propListener) {
+    MapCanvas(StrokeListener strokeListener, HoverListener hoverListener, PropListener propListener,
+              TileListener tileListener) {
         this.strokeListener = strokeListener;
         this.hoverListener = hoverListener;
         this.propListener = propListener;
+        this.tileListener = tileListener;
         setBackground(Color.DARK_GRAY);
         MouseAdapter mouse = new MouseAdapter() {
             @Override
@@ -120,6 +134,8 @@ final class MapCanvas extends JPanel {
 
     void setTool(Tool tool) {
         this.tool = tool;
+        clearRectangle();
+        repaint();
     }
 
     void setPaintTileId(String tileId) {
@@ -156,14 +172,32 @@ final class MapCanvas extends JPanel {
         lastPaintedZ = -1;
         collisionStrokeValue = null;
         propPlacedThisPress = false;
-        paintAt(e.getX(), e.getY());
+        int x = cellX(e.getX());
+        int z = cellZ(e.getY());
+        if (!map.contains(x, z)) return;
+        switch (tool) {
+            case PICK_TILE -> tileListener.onPickTile(map.getTile(x, z));
+            case FILL_TILE -> fillTiles(x, z);
+            case RECT_TILE, COPY_TILE -> setRectangle(x, z, x, z);
+            case PASTE_TILE -> pasteTiles(x, z);
+            default -> paintAt(e.getX(), e.getY());
+        }
     }
 
     private void continueStroke(MouseEvent e) {
-        paintAt(e.getX(), e.getY());
+        if (tool == Tool.RECT_TILE || tool == Tool.COPY_TILE) {
+            int x = cellX(e.getX());
+            int z = cellZ(e.getY());
+            if (map.contains(x, z)) setRectangle(rectangleStartX, rectangleStartZ, x, z);
+        } else if (tool != Tool.PICK_TILE && tool != Tool.FILL_TILE && tool != Tool.PASTE_TILE) {
+            paintAt(e.getX(), e.getY());
+        }
     }
 
     private void endStroke() {
+        if (tool == Tool.RECT_TILE) paintRectangle();
+        else if (tool == Tool.COPY_TILE) copyRectangle();
+        clearRectangle();
         if (!pendingTileEdits.isEmpty()) {
             strokeListener.onTileStroke(map.id, new ArrayList<>(pendingTileEdits.values()));
             pendingTileEdits.clear();
@@ -181,16 +215,16 @@ final class MapCanvas extends JPanel {
 
     private void reportHover(MouseEvent e) {
         if (map == null) return;
-        int x = e.getX() / CELL_SIZE;
-        int z = e.getY() / CELL_SIZE;
+        int x = cellX(e.getX());
+        int z = cellZ(e.getY());
         if (x < 0 || x >= map.width || z < 0 || z >= map.depth) return;
         hoverListener.onHover(map, x, z);
     }
 
     private void paintAt(int pixelX, int pixelY) {
         if (map == null) return;
-        int x = pixelX / CELL_SIZE;
-        int z = pixelY / CELL_SIZE;
+        int x = cellX(pixelX);
+        int z = cellZ(pixelY);
         if (x < 0 || x >= map.width || z < 0 || z >= map.depth) return;
         if (x == lastPaintedX && z == lastPaintedZ) return;
         lastPaintedX = x;
@@ -198,8 +232,10 @@ final class MapCanvas extends JPanel {
 
         long key = key(x, z);
         switch (tool) {
-            case TILE -> pendingTileEdits.putIfAbsent(key,
-                new PaintTilesCommand.Edit(x, z, map.getTile(x, z), paintTileId));
+            case TILE -> {
+                if (paintTileId != null) queueTileEdit(x, z, paintTileId);
+            }
+            case ERASE_TILE -> queueTileEdit(x, z, null);
             case COLLISION -> {
                 if (collisionStrokeValue == null) collisionStrokeValue = !map.isBlocked(x, z);
                 pendingCollisionEdits.putIfAbsent(key,
@@ -213,8 +249,98 @@ final class MapCanvas extends JPanel {
                     propListener.onPlaceProp(map.id, x, z);
                 }
             }
+            default -> {
+                // One-click tools are handled in beginStroke().
+            }
         }
         repaint();
+    }
+
+    private void fillTiles(int startX, int startZ) {
+        if (paintTileId == null) return;
+        String replacedTileId = map.getTile(startX, startZ);
+        if (Objects.equals(replacedTileId, paintTileId)) return;
+        boolean[][] visited = new boolean[map.depth][map.width];
+        ArrayDeque<int[]> queue = new ArrayDeque<>();
+        queue.add(new int[] {startX, startZ});
+        while (!queue.isEmpty()) {
+            int[] cell = queue.removeFirst();
+            int x = cell[0];
+            int z = cell[1];
+            if (!map.contains(x, z) || visited[z][x] || !Objects.equals(map.getTile(x, z), replacedTileId)) continue;
+            visited[z][x] = true;
+            queueTileEdit(x, z, paintTileId);
+            queue.addLast(new int[] {x - 1, z});
+            queue.addLast(new int[] {x + 1, z});
+            queue.addLast(new int[] {x, z - 1});
+            queue.addLast(new int[] {x, z + 1});
+        }
+    }
+
+    private void paintRectangle() {
+        if (paintTileId == null || rectangleStartX < 0) return;
+        forEachRectangleCell((x, z) -> queueTileEdit(x, z, paintTileId));
+    }
+
+    private void copyRectangle() {
+        if (rectangleStartX < 0) return;
+        int minX = Math.min(rectangleStartX, rectangleEndX);
+        int maxX = Math.max(rectangleStartX, rectangleEndX);
+        int minZ = Math.min(rectangleStartZ, rectangleEndZ);
+        int maxZ = Math.max(rectangleStartZ, rectangleEndZ);
+        tileClipboard = new String[maxZ - minZ + 1][maxX - minX + 1];
+        for (int z = minZ; z <= maxZ; z++) {
+            for (int x = minX; x <= maxX; x++) tileClipboard[z - minZ][x - minX] = map.getTile(x, z);
+        }
+    }
+
+    private void pasteTiles(int startX, int startZ) {
+        if (tileClipboard == null) return;
+        for (int clipboardZ = 0; clipboardZ < tileClipboard.length; clipboardZ++) {
+            for (int clipboardX = 0; clipboardX < tileClipboard[clipboardZ].length; clipboardX++) {
+                int x = startX + clipboardX;
+                int z = startZ + clipboardZ;
+                if (map.contains(x, z)) queueTileEdit(x, z, tileClipboard[clipboardZ][clipboardX]);
+            }
+        }
+    }
+
+    private void queueTileEdit(int x, int z, String tileId) {
+        if (Objects.equals(map.getTile(x, z), tileId)) return;
+        pendingTileEdits.putIfAbsent(key(x, z), new PaintTilesCommand.Edit(x, z, map.getTile(x, z), tileId));
+    }
+
+    private void setRectangle(int startX, int startZ, int endX, int endZ) {
+        rectangleStartX = startX;
+        rectangleStartZ = startZ;
+        rectangleEndX = endX;
+        rectangleEndZ = endZ;
+        repaint();
+    }
+
+    private void clearRectangle() {
+        rectangleStartX = -1;
+        rectangleStartZ = -1;
+        rectangleEndX = -1;
+        rectangleEndZ = -1;
+    }
+
+    private void forEachRectangleCell(CellConsumer consumer) {
+        int minX = Math.min(rectangleStartX, rectangleEndX);
+        int maxX = Math.max(rectangleStartX, rectangleEndX);
+        int minZ = Math.min(rectangleStartZ, rectangleEndZ);
+        int maxZ = Math.max(rectangleStartZ, rectangleEndZ);
+        for (int z = minZ; z <= maxZ; z++) {
+            for (int x = minX; x <= maxX; x++) consumer.accept(x, z);
+        }
+    }
+
+    private static int cellX(int pixelX) {
+        return Math.floorDiv(pixelX, CELL_SIZE);
+    }
+
+    private static int cellZ(int pixelY) {
+        return Math.floorDiv(pixelY, CELL_SIZE);
     }
 
     @Override
@@ -253,6 +379,18 @@ final class MapCanvas extends JPanel {
         }
         if (showEdges) drawEdges(g);
         for (MapProp prop : map.getProps()) drawProp(g, prop, prop.instanceId.equals(selectedPropInstanceId));
+        drawRectangle(g);
+    }
+
+    private void drawRectangle(Graphics g) {
+        if (rectangleStartX < 0) return;
+        int minX = Math.min(rectangleStartX, rectangleEndX);
+        int maxX = Math.max(rectangleStartX, rectangleEndX);
+        int minZ = Math.min(rectangleStartZ, rectangleEndZ);
+        int maxZ = Math.max(rectangleStartZ, rectangleEndZ);
+        g.setColor(Color.WHITE);
+        g.drawRect(minX * CELL_SIZE, minZ * CELL_SIZE,
+            (maxX - minX + 1) * CELL_SIZE, (maxZ - minZ + 1) * CELL_SIZE);
     }
 
     private static void drawTerrain(Graphics g, int px, int py, float height, TileShape shape) {
@@ -355,5 +493,9 @@ final class MapCanvas extends JPanel {
 
     private static long key(int x, int z) {
         return ((long) z << 32) | (x & 0xffffffffL);
+    }
+
+    private interface CellConsumer {
+        void accept(int x, int z);
     }
 }

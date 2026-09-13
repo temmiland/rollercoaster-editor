@@ -331,9 +331,10 @@ Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle 
   exportieren, Kacheln malen (Palette aus dem zugeordneten Tileset) und Sperren malen; ein
   Pinselstrich - auch über mehrere Zellen gezogen - sammelt sich lokal und wird erst beim
   Loslassen als eine `PaintTilesCommand`/`PaintCollisionCommand` und damit eine Undo-Aktion
-  übergeben. Rampenrichtung wird als kleines Dreieck angezeigt. **Noch offen:** Löschen/Pipette/
-  Füllen/Rechteckauswahl/Kopieren-Einfügen als eigene Werkzeuge, Textur-Thumbnails statt
-  Farbflächen.
+  übergeben. Rampenrichtung wird als kleines Dreieck angezeigt. Löschen, Pipette, Flutfüllung,
+  Rechteck, Kopieren und Einfügen arbeiten für die Kachelebene direkt auf der Karte und erzeugen
+  jeweils nur eine Undo-Aktion; der interne Kachel-Zwischenspeicher wird beim Projektwechsel nicht
+  persistiert. Textur-Thumbnails statt Farbflächen fehlen noch.
 - [x] Höhen ändern, Plateaus und Rampen setzen und ihre Orientierung über die Formebene bearbeiten:
   Werkzeug "Terrain formen" nimmt Level (das Plateau, zu dem eine Rampe hinaufführt) und Form
   entgegen statt einer rohen Höhe - jede Kombination, die es erzeugen kann, ist dadurch bereits
