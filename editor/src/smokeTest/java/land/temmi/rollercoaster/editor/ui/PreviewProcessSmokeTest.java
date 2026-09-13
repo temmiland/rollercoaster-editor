@@ -1,7 +1,11 @@
 package land.temmi.rollercoaster.editor.ui;
 
+import land.temmi.rollercoaster.editor.asset.MapExport;
 import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
+import land.temmi.rollercoaster.editor.protocol.ShowMapResult;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -42,11 +46,25 @@ public final class PreviewProcessSmokeTest {
             if (result.maxX <= result.minX || result.maxZ <= result.minZ) {
                 throw new AssertionError("Expected nonzero horizontal extent");
             }
+
+            Path mapDirectory = Files.createTempDirectory("preview-process-smoke-test-map");
+            MapExport.write("valley", 2, 2, "overworld",
+                new String[] {"grass", "grass", "grass", "grass"}, new float[] {0f, 0f, 0f, 0f},
+                new String[] {"flat", "flat", "flat", "flat"}, new boolean[] {false, false, false, false},
+                mapDirectory);
+            String mapFilePath = mapDirectory.resolve("valley.json").toAbsolutePath().toString();
+
+            CompletableFuture<ShowMapResult> showMapFuture = process.showMap(mapFilePath, 2, 2,
+                new String[] {"grass"}, new boolean[] {true});
+            ShowMapResult showMapResult = showMapFuture.get(20, TimeUnit.SECONDS);
+            if (!showMapResult.success) throw new AssertionError("ShowMap failed: " + showMapResult.errorMessage);
+            System.out.println("ShowMap succeeded for a real exported map, built through a real WorldSceneLoader");
         } finally {
             process.stop();
         }
 
-        System.out.println("PASS: preview computed real bounds for a sample GLTF file over the live protocol");
+        System.out.println("PASS: preview computed real bounds for a sample GLTF file, and rendered a real "
+            + "exported map through WorldSceneLoader/ChunkMesher, both over the live protocol");
         System.exit(0);
     }
 }

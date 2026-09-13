@@ -55,12 +55,13 @@ public final class EditorFrame extends JFrame {
 
     public EditorFrame(Runnable onRestartPreviewRequested, ProjectController projectController,
                        RecentProjects recentProjects,
-                       Function<String, CompletableFuture<ModelBoundsResult>> modelBoundsComputer) {
+                       Function<String, CompletableFuture<ModelBoundsResult>> modelBoundsComputer,
+                       MapPanel.PreviewMapRequester previewMapRequester) {
         super("Rollercoaster Editor");
         this.projectController = projectController;
         this.recentProjects = recentProjects;
         this.assetsPanel = new AssetsPanel(projectController, modelBoundsComputer);
-        this.mapPanel = new MapPanel(projectController);
+        this.mapPanel = new MapPanel(projectController, previewMapRequester);
 
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {

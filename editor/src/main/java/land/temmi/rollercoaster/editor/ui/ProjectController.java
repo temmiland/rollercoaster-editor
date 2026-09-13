@@ -330,8 +330,8 @@ public final class ProjectController {
         listener.onProjectChanged();
     }
 
-    /** Writes maps/&lt;id&gt;.json matching MapLoader's schema exactly. */
-    public void exportMap(String mapId) throws IOException {
+    /** Writes maps/&lt;id&gt;.json matching MapLoader's schema exactly; returns the file it wrote. */
+    public Path exportMap(String mapId) throws IOException {
         requireOpen();
         MapAsset map = history.getDocument().findMap(mapId);
         if (map == null) throw new IOException("No such map: " + mapId);
@@ -352,6 +352,7 @@ public final class ProjectController {
         }
         MapExport.write(map.id, map.width, map.depth, map.tilesetId, tiles, heights, shapes, collision,
             mapsDirectory());
+        return mapsDirectory().resolve(map.id + ".json");
     }
 
     private Path modelsDirectory() {

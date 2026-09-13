@@ -7,6 +7,7 @@ import land.temmi.rollercoaster.editor.document.PaintTilesCommand;
 import land.temmi.rollercoaster.editor.document.TileEntry;
 import land.temmi.rollercoaster.editor.document.TileShape;
 import land.temmi.rollercoaster.editor.document.TilesetAsset;
+import land.temmi.rollercoaster.editor.protocol.ShowMapResult;
 
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
@@ -23,16 +24,26 @@ import javax.swing.JSplitPane;
 import javax.swing.JToggleButton;
 import javax.swing.ListCellRenderer;
 import javax.swing.SpinnerNumberModel;
+import javax.swing.SwingUtilities;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 /** Map list plus the 2D terrain view: create/remove/export a map, paint its tiles and collision. */
 final class MapPanel extends JPanel {
+    /** Fire-and-forget from the UI's side; the returned future carries success/failure back. */
+    interface PreviewMapRequester {
+        CompletableFuture<ShowMapResult> showMap(String mapFilePath, int width, int depth,
+                                                 String[] tileIds, boolean[] tileWalkable);
+    }
+
     private final ProjectController projectController;
+    private final PreviewMapRequester previewMapRequester;
     private final DefaultListModel<MapAsset> mapListModel = new DefaultListModel<>();
     private final JList<MapAsset> mapList = new JList<>(mapListModel);
     private final DefaultListModel<TileEntry> paletteListModel = new DefaultListModel<>();
@@ -45,9 +56,10 @@ final class MapPanel extends JPanel {
     private final JComboBox<TileShape> shapeCombo = new JComboBox<>(TileShape.values());
     private final JLabel hoverLabel = new JLabel(" ");
 
-    MapPanel(ProjectController projectController) {
+    MapPanel(ProjectController projectController, PreviewMapRequester previewMapRequester) {
         super(new BorderLayout());
         this.projectController = projectController;
+        this.previewMapRequester = previewMapRequester;
         setBorder(BorderFactory.createTitledBorder("Karte"));
 
         canvas = buildCanvas();
@@ -107,11 +119,14 @@ final class MapPanel extends JPanel {
         removeMap.addActionListener(e -> onRemoveMap());
         JButton exportMap = new JButton("Exportieren");
         exportMap.addActionListener(e -> onExportMap());
+        JButton previewMap = new JButton("In Vorschau zeigen");
+        previewMap.addActionListener(e -> onPreviewMap());
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
         buttons.add(newMap);
         buttons.add(removeMap);
         buttons.add(exportMap);
+        buttons.add(previewMap);
         panel.add(buttons, BorderLayout.SOUTH);
         return panel;
     }
@@ -242,6 +257,39 @@ final class MapPanel extends JPanel {
         } catch (IOException e) {
             showError("Karte konnte nicht exportiert werden", e);
         }
+    }
+
+    private void onPreviewMap() {
+        MapAsset selected = mapList.getSelectedValue();
+        if (selected == null) return;
+        TilesetAsset tileset = findTileset(selected.tilesetId);
+        if (tileset == null) return;
+
+        Path mapFile;
+        try {
+            mapFile = projectController.exportMap(selected.id);
+        } catch (IOException e) {
+            showError("Karte konnte nicht exportiert werden", e);
+            return;
+        }
+
+        List<TileEntry> tiles = tileset.getTiles();
+        String[] tileIds = new String[tiles.size()];
+        boolean[] tileWalkable = new boolean[tiles.size()];
+        for (int i = 0; i < tiles.size(); i++) {
+            tileIds[i] = tiles.get(i).id;
+            tileWalkable[i] = tiles.get(i).walkable;
+        }
+        previewMapRequester.showMap(mapFile.toAbsolutePath().toString(), selected.width, selected.depth,
+            tileIds, tileWalkable).whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
+                if (error != null) {
+                    JOptionPane.showMessageDialog(this, error.getMessage(), "Vorschau fehlgeschlagen",
+                        JOptionPane.ERROR_MESSAGE);
+                } else if (!result.success) {
+                    JOptionPane.showMessageDialog(this, result.errorMessage, "Vorschau fehlgeschlagen",
+                        JOptionPane.ERROR_MESSAGE);
+                }
+            }));
     }
 
     private void showError(String title, Exception cause) {

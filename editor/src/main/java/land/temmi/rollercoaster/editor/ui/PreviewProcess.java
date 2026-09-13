@@ -7,6 +7,8 @@ import land.temmi.rollercoaster.editor.protocol.MessageChannel;
 import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
 import land.temmi.rollercoaster.editor.protocol.PickResult;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
+import land.temmi.rollercoaster.editor.protocol.ShowMap;
+import land.temmi.rollercoaster.editor.protocol.ShowMapResult;
 import land.temmi.rollercoaster.editor.protocol.ShowSampleLevel;
 
 import java.io.File;
@@ -40,6 +42,7 @@ public final class PreviewProcess {
     private volatile MessageChannel channel;
     private volatile boolean levelOpen;
     private volatile CompletableFuture<ModelBoundsResult> pendingBoundsRequest;
+    private volatile CompletableFuture<ShowMapResult> pendingShowMapRequest;
 
     public PreviewProcess(String previewClasspath, StatusListener listener, PickListener pickListener) {
         this.previewClasspath = previewClasspath;
@@ -71,6 +74,25 @@ public final class PreviewProcess {
             current.send(new ComputeModelBounds(modelFilePath));
         } catch (IOException e) {
             pendingBoundsRequest = null;
+            future.completeExceptionally(e);
+        }
+        return future;
+    }
+
+    /** Asks the preview to render an already-exported map file, replacing whatever it currently shows. */
+    public CompletableFuture<ShowMapResult> showMap(String mapFilePath, int width, int depth,
+                                                    String[] tileIds, boolean[] tileWalkable) {
+        CompletableFuture<ShowMapResult> future = new CompletableFuture<>();
+        MessageChannel current = channel;
+        if (current == null) {
+            future.completeExceptionally(new IOException("Preview is not connected"));
+            return future;
+        }
+        pendingShowMapRequest = future;
+        try {
+            current.send(new ShowMap(mapFilePath, width, depth, tileIds, tileWalkable));
+        } catch (IOException e) {
+            pendingShowMapRequest = null;
             future.completeExceptionally(e);
         }
         return future;
@@ -174,6 +196,10 @@ public final class PreviewProcess {
                     CompletableFuture<ModelBoundsResult> future = pendingBoundsRequest;
                     pendingBoundsRequest = null;
                     if (future != null) future.complete((ModelBoundsResult) incoming);
+                } else if (incoming instanceof ShowMapResult) {
+                    CompletableFuture<ShowMapResult> future = pendingShowMapRequest;
+                    pendingShowMapRequest = null;
+                    if (future != null) future.complete((ShowMapResult) incoming);
                 }
             }
             listener.onPreviewStatusChanged(Status.DISCONNECTED, "Preview closed the connection");
@@ -181,9 +207,12 @@ public final class PreviewProcess {
             listener.onPreviewStatusChanged(Status.DISCONNECTED, e.getMessage());
         } finally {
             channel = null;
-            CompletableFuture<ModelBoundsResult> future = pendingBoundsRequest;
+            CompletableFuture<ModelBoundsResult> boundsFuture = pendingBoundsRequest;
             pendingBoundsRequest = null;
-            if (future != null) future.completeExceptionally(new IOException("Preview disconnected"));
+            if (boundsFuture != null) boundsFuture.completeExceptionally(new IOException("Preview disconnected"));
+            CompletableFuture<ShowMapResult> showMapFuture = pendingShowMapRequest;
+            pendingShowMapRequest = null;
+            if (showMapFuture != null) showMapFuture.completeExceptionally(new IOException("Preview disconnected"));
         }
     }
 
