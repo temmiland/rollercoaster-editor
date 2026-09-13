@@ -388,7 +388,13 @@ Steilkanten und gesperrte Flächen verhalten sich genauso wie im exportierten Sp
   zuordnen: Ein importiertes PNG-Sheet wird über Spalten/Zeilen und Frame-Indizes eingerichtet,
   deterministisch als einzelne Atlas-Seite gepackt und als echtes `SpriteManifest` exportiert.
   Entities können nur registrierte Sprite-IDs referenzieren.
-- Startpunkte, NPCs, Triggerflächen und Übergänge mit stabilen Instanz-IDs platzieren.
+- [x] Übergänge (Kartenwechsel) mit stabilen Instanz-IDs platzieren, bearbeiten und löschen:
+  `MapTransition` (Engine) und `MapLoader` lesen ein optionales `transitions`-Array, spiegelbildlich
+  zu Props/Entities/Lights - reine Daten, keine Laufzeitlogik. Der Editor prüft beim Platzieren,
+  dass die Zielkarte existiert, und verweigert das Löschen einer Karte, solange ein Übergang noch
+  auf sie zeigt. Die Kartenansicht markiert Übergänge als eigenes Symbol, eine Instanzliste erlaubt
+  Bearbeiten von Position, Zielkarte und Zielposition. Das tatsächliche Auslösen beim Betreten der
+  Kachel ist Sache des Spiels beziehungsweise eines künftigen Testmodus, nicht des Editors.
 - Dialoge mit Sprecher-, Text-, Porträt- und Antwortknoten anlegen; Verzweigungen, Bedingungen
   und Übersetzungs-IDs prüfen.
 - Events mit Auslösern, Bedingungen und Aktionen verknüpfen; Dialoge, Kartenwechsel, Flags,
