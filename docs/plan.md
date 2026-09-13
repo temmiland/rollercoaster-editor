@@ -371,6 +371,9 @@ Steilkanten und gesperrte Flächen verhalten sich genauso wie im exportierten Sp
   mit Transformdialog verwaltet Höhenversatz und Drehung. Die 2D-Ansicht markiert Props farbig,
   die Vorschau lädt die exportierten GLTF/GLB-Dateien mit ihren Abhängigkeiten. Ungültige oder aus
   der Karte verschobene Anker werden abgewiesen, bevor ein Command das Dokument verändert.
+- [x] Startpunkte und NPCs als tile-gebundene Entities mit stabilen Instanz-IDs platzieren,
+  bearbeiten und löschen: Die Kartenansicht markiert sie separat, und `MapExport` übergibt ID,
+  Typ, optionalen Sprite und Position an den rückwärtskompatibel erweiterten `MapLoader`.
 - Terrainbezug, Höhenversatz und Kollisions-Fußabdruck sichtbar bearbeiten.
 - Sprite-Atlanten registrieren; Richtungen, Idle-/Laufsequenzen, Frame-Dauer und Fußpunkt zuordnen.
 - Startpunkte, NPCs, Triggerflächen und Übergänge mit stabilen Instanz-IDs platzieren.

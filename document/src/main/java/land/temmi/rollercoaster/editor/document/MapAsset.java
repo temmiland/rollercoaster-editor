@@ -24,6 +24,7 @@ public final class MapAsset {
     private TileShape[] shapes;
     private boolean[] collision;
     private final List<MapProp> props = new ArrayList<>();
+    private final List<MapEntityAsset> entities = new ArrayList<>();
 
     public MapAsset(String id, int width, int depth, String tilesetId) {
         if (id == null || id.trim().isEmpty()) throw new IllegalArgumentException("Map id is required");
@@ -74,6 +75,17 @@ public final class MapAsset {
         return null;
     }
 
+    public List<MapEntityAsset> getEntities() {
+        return Collections.unmodifiableList(entities);
+    }
+
+    public MapEntityAsset findEntity(String instanceId) {
+        for (MapEntityAsset entity : entities) {
+            if (entity.instanceId.equals(instanceId)) return entity;
+        }
+        return null;
+    }
+
     /** Package-private: mutation goes through a {@link Command} so undo/redo stays consistent. */
     void addProp(MapProp prop) {
         if (findProp(prop.instanceId) != null) throw new IllegalArgumentException("Duplicate prop instance id: " + prop.instanceId);
@@ -84,6 +96,32 @@ public final class MapAsset {
         if (!props.removeIf(prop -> prop.instanceId.equals(instanceId))) {
             throw new IllegalArgumentException("No such prop: " + instanceId);
         }
+    }
+
+    void addEntity(MapEntityAsset entity) {
+        if (findEntity(entity.instanceId) != null) {
+            throw new IllegalArgumentException("Duplicate entity instance id: " + entity.instanceId);
+        }
+        entities.add(entity);
+    }
+
+    void removeEntity(String instanceId) {
+        if (!entities.removeIf(entity -> entity.instanceId.equals(instanceId))) {
+            throw new IllegalArgumentException("No such entity: " + instanceId);
+        }
+    }
+
+    void replaceEntity(String instanceId, MapEntityAsset replacement) {
+        if (replacement == null || !instanceId.equals(replacement.instanceId)) {
+            throw new IllegalArgumentException("Replacement entity must keep instance ID '" + instanceId + "'");
+        }
+        for (int i = 0; i < entities.size(); i++) {
+            if (entities.get(i).instanceId.equals(instanceId)) {
+                entities.set(i, replacement);
+                return;
+            }
+        }
+        throw new IllegalArgumentException("No such entity: " + instanceId);
     }
 
     /** Restorable grid contents used by {@link ResizeMapCommand}. */
@@ -111,6 +149,11 @@ public final class MapAsset {
         for (MapProp prop : props) {
             if (prop.x >= newWidth || prop.z >= newDepth) {
                 throw new IllegalArgumentException("Resizing map '" + id + "' would remove prop '" + prop.instanceId + "'");
+            }
+        }
+        for (MapEntityAsset entity : entities) {
+            if (entity.x >= newWidth || entity.z >= newDepth) {
+                throw new IllegalArgumentException("Resizing map '" + id + "' would remove entity '" + entity.instanceId + "'");
             }
         }
         State previous = new State(this);
@@ -151,6 +194,13 @@ public final class MapAsset {
     void requirePropPosition(MapProp prop) {
         if (prop.x < 0f || prop.x >= width || prop.z < 0f || prop.z >= depth) {
             throw new IllegalArgumentException("Prop '" + prop.instanceId + "' is outside map '" + id + "'");
+        }
+    }
+
+    /** Entities are placed on whole cells, unlike freely offsettable props. */
+    void requireEntityPosition(MapEntityAsset entity) {
+        if (!contains(entity.x, entity.z)) {
+            throw new IllegalArgumentException("Entity '" + entity.instanceId + "' is outside map '" + id + "'");
         }
     }
 

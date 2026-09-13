@@ -137,6 +137,16 @@ public final class ProjectFile {
                             prop.getFloat("elevation", 0f), prop.getFloat("rotation", 0f)));
                     }
                 }
+                JsonValue entities = mapValue.get("entities");
+                if (entities != null) {
+                    for (JsonValue entity = entities.child; entity != null; entity = entity.next) {
+                        MapEntityAsset mapEntity = new MapEntityAsset(requireString(entity, "instanceId"),
+                            requireString(entity, "type"), entity.getString("sprite", null),
+                            entity.getInt("x"), entity.getInt("z"));
+                        map.requireEntityPosition(mapEntity);
+                        map.addEntity(mapEntity);
+                    }
+                }
                 document.addMap(map);
             }
         }
@@ -283,6 +293,17 @@ public final class ProjectFile {
                 writer.set("z", prop.z);
                 writer.set("elevation", prop.elevation);
                 writer.set("rotation", prop.rotation);
+                writer.pop();
+            }
+            writer.pop();
+            writer.array("entities");
+            for (MapEntityAsset entity : map.getEntities()) {
+                writer.object();
+                writer.set("instanceId", entity.instanceId);
+                writer.set("type", entity.type);
+                if (entity.spriteId != null) writer.set("sprite", entity.spriteId);
+                writer.set("x", entity.x);
+                writer.set("z", entity.z);
                 writer.pop();
             }
             writer.pop();

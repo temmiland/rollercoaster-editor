@@ -4,6 +4,7 @@ import com.badlogic.gdx.files.FileHandle;
 import land.temmi.rollercoaster.asset.ModelDefinition;
 import land.temmi.rollercoaster.asset.ModelManifest;
 import land.temmi.rollercoaster.editor.document.MapAsset;
+import land.temmi.rollercoaster.editor.document.MapEntityAsset;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
 import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
@@ -302,6 +303,7 @@ public final class ProjectControllerSmokeTest {
             new PaintTerrainCommand.Edit(1, 0, 0f, TileShape.FLAT, 0.5f, TileShape.RAMP_EAST)));
         controller.paintCollision("valley", Collections.singletonList(
             new PaintCollisionCommand.Edit(2, 1, false, true)));
+        controller.placeEntity("valley", new MapEntityAsset("player-start", "player", "player", 0, 0));
 
         try {
             controller.exportMap("valley");
@@ -319,6 +321,10 @@ public final class ProjectControllerSmokeTest {
         }
         if (loaded.tiles.getHeight(1, 0) != 0.5f) throw new AssertionError("Exported ramp height is wrong");
         if (!loaded.tiles.isBlocked(2, 1)) throw new AssertionError("Exported collision flag is wrong");
+        if (loaded.entities.size != 1 || !"player-start".equals(loaded.entities.first().id)
+            || !"player".equals(loaded.entities.first().type)) {
+            throw new AssertionError("Exported entity is wrong");
+        }
 
         controller.removeMap(map);
         if (!controller.getMaps().isEmpty()) throw new AssertionError("removeMap did not apply");

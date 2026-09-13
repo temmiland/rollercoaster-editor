@@ -1,6 +1,7 @@
 package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.document.MapAsset;
+import land.temmi.rollercoaster.editor.document.MapEntityAsset;
 import land.temmi.rollercoaster.editor.document.MapProp;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
 import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
@@ -44,11 +45,15 @@ final class MapCanvas extends JPanel {
         void onPlaceProp(String mapId, int x, int z);
     }
 
+    interface EntityListener {
+        void onPlaceEntity(String mapId, int x, int z);
+    }
+
     interface TileListener {
         void onPickTile(String tileId);
     }
 
-    enum Tool { TILE, ERASE_TILE, PICK_TILE, FILL_TILE, RECT_TILE, COPY_TILE, PASTE_TILE, COLLISION, TERRAIN, PROPS }
+    enum Tool { TILE, ERASE_TILE, PICK_TILE, FILL_TILE, RECT_TILE, COPY_TILE, PASTE_TILE, COLLISION, TERRAIN, PROPS, ENTITIES }
 
     private static final int CELL_SIZE = 28;
     private static final Color EMPTY_COLOR = new Color(60, 60, 60);
@@ -62,6 +67,7 @@ final class MapCanvas extends JPanel {
     private final StrokeListener strokeListener;
     private final HoverListener hoverListener;
     private final PropListener propListener;
+    private final EntityListener entityListener;
     private final TileListener tileListener;
     private final Map<Long, PaintTilesCommand.Edit> pendingTileEdits = new LinkedHashMap<>();
     private final Map<Long, PaintCollisionCommand.Edit> pendingCollisionEdits = new LinkedHashMap<>();
@@ -75,6 +81,7 @@ final class MapCanvas extends JPanel {
     private Map<String, Boolean> tileWalkability = Map.of();
     private Map<String, Image> tileImages = Map.of();
     private String selectedPropInstanceId;
+    private String selectedEntityInstanceId;
     private boolean showTerrain = true;
     private boolean showGrid = true;
     private boolean showWalkability;
@@ -82,6 +89,7 @@ final class MapCanvas extends JPanel {
     private boolean showManualCollision = true;
     private Boolean collisionStrokeValue;
     private boolean propPlacedThisPress;
+    private boolean entityPlacedThisPress;
     private int lastPaintedX = -1;
     private int lastPaintedZ = -1;
     private int rectangleStartX = -1;
@@ -91,10 +99,11 @@ final class MapCanvas extends JPanel {
     private String[][] tileClipboard;
 
     MapCanvas(StrokeListener strokeListener, HoverListener hoverListener, PropListener propListener,
-              TileListener tileListener) {
+              EntityListener entityListener, TileListener tileListener) {
         this.strokeListener = strokeListener;
         this.hoverListener = hoverListener;
         this.propListener = propListener;
+        this.entityListener = entityListener;
         this.tileListener = tileListener;
         setBackground(Color.DARK_GRAY);
         MouseAdapter mouse = new MouseAdapter() {
@@ -154,6 +163,11 @@ final class MapCanvas extends JPanel {
         repaint();
     }
 
+    void setSelectedEntityInstanceId(String instanceId) {
+        selectedEntityInstanceId = instanceId;
+        repaint();
+    }
+
     void setTileWalkability(Map<String, Boolean> tileWalkability) {
         this.tileWalkability = new LinkedHashMap<>(tileWalkability);
         repaint();
@@ -180,6 +194,7 @@ final class MapCanvas extends JPanel {
         lastPaintedZ = -1;
         collisionStrokeValue = null;
         propPlacedThisPress = false;
+        entityPlacedThisPress = false;
         int x = cellX(e.getX());
         int z = cellZ(e.getY());
         if (!map.contains(x, z)) return;
@@ -255,6 +270,12 @@ final class MapCanvas extends JPanel {
                 if (!propPlacedThisPress) {
                     propPlacedThisPress = true;
                     propListener.onPlaceProp(map.id, x, z);
+                }
+            }
+            case ENTITIES -> {
+                if (!entityPlacedThisPress) {
+                    entityPlacedThisPress = true;
+                    entityListener.onPlaceEntity(map.id, x, z);
                 }
             }
             default -> {
@@ -392,6 +413,9 @@ final class MapCanvas extends JPanel {
         }
         if (showEdges) drawEdges(g);
         for (MapProp prop : map.getProps()) drawProp(g, prop, prop.instanceId.equals(selectedPropInstanceId));
+        for (MapEntityAsset entity : map.getEntities()) {
+            drawEntity(g, entity, entity.instanceId.equals(selectedEntityInstanceId));
+        }
         drawRectangle(g);
     }
 
@@ -463,6 +487,16 @@ final class MapCanvas extends JPanel {
         g.fillOval(cx - r, cz - r, r * 2, r * 2);
         g.setColor(selected ? SELECTED_PROP_OUTLINE : PROP_OUTLINE);
         g.drawOval(cx - r, cz - r, r * 2, r * 2);
+    }
+
+    private static void drawEntity(Graphics g, MapEntityAsset entity, boolean selected) {
+        int px = entity.x * CELL_SIZE;
+        int py = entity.z * CELL_SIZE;
+        int inset = CELL_SIZE / 4;
+        g.setColor(new Color(70, 220, 155));
+        g.fillRect(px + inset, py + inset, CELL_SIZE - inset * 2, CELL_SIZE - inset * 2);
+        g.setColor(selected ? SELECTED_PROP_OUTLINE : PROP_OUTLINE);
+        g.drawRect(px + inset, py + inset, CELL_SIZE - inset * 2, CELL_SIZE - inset * 2);
     }
 
     private static void drawRampIndicator(Graphics g, int px, int py, TileShape shape) {

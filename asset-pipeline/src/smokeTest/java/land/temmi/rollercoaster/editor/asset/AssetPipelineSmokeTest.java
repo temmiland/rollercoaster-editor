@@ -50,7 +50,7 @@ public final class AssetPipelineSmokeTest {
 
         Path directory = Files.createTempDirectory("trackside-editor-map");
         MapExport.write("valley", width, depth, "overworld", tiles, heights, shapes, collision,
-            List.of(), directory);
+            List.of(), List.of(), directory);
 
         Path mapFile = directory.resolve("valley.json");
         if (!Files.exists(mapFile)) throw new AssertionError("Map JSON was not written");
@@ -79,7 +79,8 @@ public final class AssetPipelineSmokeTest {
         List<MapExport.Prop> props = List.of(new MapExport.Prop("house", 8f, 10f, 0.25f, 90f));
 
         Path directory = Files.createTempDirectory("trackside-editor-map-props");
-        MapExport.write("withProps", 1, 1, "overworld", tiles, heights, shapes, collision, props, directory);
+        MapExport.write("withProps", 1, 1, "overworld", tiles, heights, shapes, collision, props,
+            List.of(new MapExport.Entity("player-start", "player", "player", 0, 0)), directory);
 
         Tileset tileset = new Tileset().add(new TileSurface("grass"));
         LoadedMap loaded = new MapLoader().load(
@@ -90,6 +91,10 @@ public final class AssetPipelineSmokeTest {
             || prop.elevation != 0.25f || prop.rotation != 90f) {
             throw new AssertionError("Prop did not round-trip: " + prop.model + " " + prop.x + "," + prop.z);
         }
+        if (loaded.entities.size != 1 || !"player-start".equals(loaded.entities.first().id)
+            || !"player".equals(loaded.entities.first().sprite)) {
+            throw new AssertionError("Entity did not round-trip through the runtime map loader");
+        }
     }
 
     private static void verifyRejectsUnpaintedMap() throws IOException {
@@ -99,7 +104,8 @@ public final class AssetPipelineSmokeTest {
         boolean[] collision = new boolean[4];
         Path directory = Files.createTempDirectory("trackside-editor-map-empty");
         try {
-            MapExport.write("empty", 2, 2, "overworld", tiles, heights, shapes, collision, List.of(), directory);
+            MapExport.write("empty", 2, 2, "overworld", tiles, heights, shapes, collision,
+                List.of(), List.of(), directory);
             throw new AssertionError("Exporting a map with unpainted cells should fail");
         } catch (IllegalArgumentException expected) {
             // Expected.

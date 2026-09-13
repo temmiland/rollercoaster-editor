@@ -1,6 +1,7 @@
 package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.document.MapAsset;
+import land.temmi.rollercoaster.editor.document.MapEntityAsset;
 import land.temmi.rollercoaster.editor.document.MapProp;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
@@ -25,6 +26,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
+import javax.swing.JTextField;
 import javax.swing.JToggleButton;
 import javax.swing.ListCellRenderer;
 import javax.swing.SpinnerNumberModel;
@@ -63,6 +65,8 @@ final class MapPanel extends JPanel {
     private final JList<ModelAsset> modelPaletteList = new JList<>(modelPaletteListModel);
     private final DefaultListModel<MapProp> placedPropsListModel = new DefaultListModel<>();
     private final JList<MapProp> placedPropsList = new JList<>(placedPropsListModel);
+    private final DefaultListModel<MapEntityAsset> placedEntitiesListModel = new DefaultListModel<>();
+    private final JList<MapEntityAsset> placedEntitiesList = new JList<>(placedEntitiesListModel);
     private final MapCanvas canvas;
     private final JToggleButton tileTool = new JToggleButton("Kacheln malen", true);
     private final JToggleButton eraseTileTool = new JToggleButton("Kacheln löschen");
@@ -74,6 +78,7 @@ final class MapPanel extends JPanel {
     private final JToggleButton collisionTool = new JToggleButton("Sperren malen");
     private final JToggleButton terrainTool = new JToggleButton("Terrain formen");
     private final JToggleButton propsTool = new JToggleButton("Props platzieren");
+    private final JToggleButton entitiesTool = new JToggleButton("Entities platzieren");
     private final JSpinner levelSpinner = new JSpinner(new SpinnerNumberModel(0, -20, 20, 1));
     private final JComboBox<TileShape> shapeCombo = new JComboBox<>(TileShape.values());
     private final JCheckBox terrainOverlay = new JCheckBox("Terrain", true);
@@ -100,6 +105,10 @@ final class MapPanel extends JPanel {
         placedPropsList.setCellRenderer(labelRenderer(p -> p.modelId + "  (" + p.x + ", " + p.z + ")"));
         placedPropsList.addListSelectionListener(e -> canvas.setSelectedPropInstanceId(
             placedPropsList.getSelectedValue() == null ? null : placedPropsList.getSelectedValue().instanceId));
+        placedEntitiesList.setCellRenderer(labelRenderer(entity -> entity.type
+            + (entity.spriteId == null ? "" : " / " + entity.spriteId) + "  (" + entity.x + ", " + entity.z + ")"));
+        placedEntitiesList.addListSelectionListener(e -> canvas.setSelectedEntityInstanceId(
+            placedEntitiesList.getSelectedValue() == null ? null : placedEntitiesList.getSelectedValue().instanceId));
 
         ButtonGroup tools = new ButtonGroup();
         tools.add(tileTool);
@@ -112,6 +121,7 @@ final class MapPanel extends JPanel {
         tools.add(collisionTool);
         tools.add(terrainTool);
         tools.add(propsTool);
+        tools.add(entitiesTool);
         tileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.TILE));
         eraseTileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.ERASE_TILE));
         pickTileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.PICK_TILE));
@@ -122,6 +132,7 @@ final class MapPanel extends JPanel {
         collisionTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.COLLISION));
         terrainTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.TERRAIN));
         propsTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.PROPS));
+        entitiesTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.ENTITIES));
         levelSpinner.addChangeListener(e -> updateTerrainTarget());
         shapeCombo.addActionListener(e -> updateTerrainTarget());
         terrainOverlay.addActionListener(e -> updateOverlays());
@@ -157,8 +168,9 @@ final class MapPanel extends JPanel {
             "(%d, %d)  Höhe %.2f  %s  %s%s", x, z, map.getHeight(x, z), map.getShape(x, z),
             map.getTile(x, z) == null ? "leer" : map.getTile(x, z), map.isBlocked(x, z) ? "  gesperrt" : ""));
         MapCanvas.PropListener propListener = this::onPlaceProp;
+        MapCanvas.EntityListener entityListener = this::onPlaceEntity;
         MapCanvas.TileListener tileListener = this::onPickTile;
-        return new MapCanvas(strokeListener, hoverListener, propListener, tileListener);
+        return new MapCanvas(strokeListener, hoverListener, propListener, entityListener, tileListener);
     }
 
     private void onPickTile(String tileId) {
@@ -191,6 +203,20 @@ final class MapPanel extends JPanel {
             selectProp(prop.instanceId);
         } catch (IllegalArgumentException e) {
             showError("Prop konnte nicht platziert werden", e);
+        }
+    }
+
+    private void onPlaceEntity(String mapId, int x, int z) {
+        EntitySettings settings = askEntitySettings("Entity platzieren", "npc", null, x, z);
+        if (settings == null) return;
+        MapEntityAsset entity = new MapEntityAsset(UUID.randomUUID().toString(), settings.type, settings.spriteId,
+            settings.x, settings.z);
+        try {
+            projectController.placeEntity(mapId, entity);
+            refresh();
+            selectEntity(entity.instanceId);
+        } catch (IllegalArgumentException e) {
+            showError("Entity konnte nicht platziert werden", e);
         }
     }
 
@@ -235,7 +261,21 @@ final class MapPanel extends JPanel {
         propsButtons.add(removeProp);
         propsPanel.add(propsButtons, BorderLayout.SOUTH);
 
-        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mapListPanel, propsPanel);
+        JPanel entitiesPanel = new JPanel(new BorderLayout());
+        entitiesPanel.setBorder(BorderFactory.createTitledBorder("Startpunkte & NPCs"));
+        entitiesPanel.add(new JScrollPane(placedEntitiesList), BorderLayout.CENTER);
+        JButton removeEntity = new JButton("Löschen");
+        removeEntity.addActionListener(e -> onRemoveEntity());
+        JButton editEntity = new JButton("Bearbeiten…");
+        editEntity.addActionListener(e -> onEditEntity());
+        JPanel entityButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        entityButtons.add(editEntity);
+        entityButtons.add(removeEntity);
+        entitiesPanel.add(entityButtons, BorderLayout.SOUTH);
+
+        JSplitPane placements = new JSplitPane(JSplitPane.VERTICAL_SPLIT, propsPanel, entitiesPanel);
+        placements.setResizeWeight(0.5);
+        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mapListPanel, placements);
         split.setResizeWeight(0.6);
         panel.add(split, BorderLayout.CENTER);
         return panel;
@@ -255,6 +295,7 @@ final class MapPanel extends JPanel {
         toolbar.add(collisionTool);
         toolbar.add(terrainTool);
         toolbar.add(propsTool);
+        toolbar.add(entitiesTool);
         toolbar.add(new JLabel("Level:"));
         toolbar.add(levelSpinner);
         toolbar.add(shapeCombo);
@@ -330,13 +371,24 @@ final class MapPanel extends JPanel {
         canvas.setTileImages(tileImages);
 
         MapProp selectedProp = placedPropsList.getSelectedValue();
+        MapEntityAsset selectedEntity = placedEntitiesList.getSelectedValue();
         placedPropsListModel.clear();
+        placedEntitiesListModel.clear();
         if (selected != null) {
             selected.getProps().forEach(placedPropsListModel::addElement);
+            selected.getEntities().forEach(placedEntitiesListModel::addElement);
             if (selectedProp != null) {
                 for (int i = 0; i < placedPropsListModel.size(); i++) {
                     if (placedPropsListModel.get(i).instanceId.equals(selectedProp.instanceId)) {
                         placedPropsList.setSelectedIndex(i);
+                        break;
+                    }
+                }
+            }
+            if (selectedEntity != null) {
+                for (int i = 0; i < placedEntitiesListModel.size(); i++) {
+                    if (placedEntitiesListModel.get(i).instanceId.equals(selectedEntity.instanceId)) {
+                        placedEntitiesList.setSelectedIndex(i);
                         break;
                     }
                 }
@@ -350,6 +402,29 @@ final class MapPanel extends JPanel {
         if (selected == null || prop == null) return;
         projectController.removeProp(selected.id, prop);
         refresh();
+    }
+
+    private void onRemoveEntity() {
+        MapAsset selected = mapList.getSelectedValue();
+        MapEntityAsset entity = placedEntitiesList.getSelectedValue();
+        if (selected == null || entity == null) return;
+        projectController.removeEntity(selected.id, entity);
+        refresh();
+    }
+
+    private void onEditEntity() {
+        MapAsset map = mapList.getSelectedValue();
+        MapEntityAsset entity = placedEntitiesList.getSelectedValue();
+        if (map == null || entity == null) return;
+        EntitySettings settings = askEntitySettings("Entity bearbeiten", entity.type, entity.spriteId, entity.x, entity.z);
+        if (settings == null) return;
+        try {
+            projectController.updateEntity(map.id, entity, settings.type, settings.spriteId, settings.x, settings.z);
+            refresh();
+            selectEntity(entity.instanceId);
+        } catch (IllegalArgumentException e) {
+            showError("Entity konnte nicht bearbeitet werden", e);
+        }
     }
 
     private void onEditProp() {
@@ -414,6 +489,32 @@ final class MapPanel extends JPanel {
         return ((Number) spinner.getValue()).floatValue();
     }
 
+    private EntitySettings askEntitySettings(String title, String type, String spriteId, int x, int z) {
+        JTextField typeField = new JTextField(type, 18);
+        JTextField spriteField = new JTextField(spriteId == null ? "" : spriteId, 18);
+        JSpinner xSpinner = new JSpinner(new SpinnerNumberModel(x, -1_000, 1_000, 1));
+        JSpinner zSpinner = new JSpinner(new SpinnerNumberModel(z, -1_000, 1_000, 1));
+        JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
+        form.add(new JLabel("Typ:"));
+        form.add(typeField);
+        form.add(new JLabel("Sprite-ID (optional):"));
+        form.add(spriteField);
+        form.add(new JLabel("X:"));
+        form.add(xSpinner);
+        form.add(new JLabel("Z:"));
+        form.add(zSpinner);
+        if (JOptionPane.showConfirmDialog(this, form, title, JOptionPane.OK_CANCEL_OPTION,
+            JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return null;
+        String selectedType = typeField.getText().trim();
+        String selectedSprite = spriteField.getText().trim();
+        if (selectedType.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Ein Entity-Typ ist erforderlich.");
+            return null;
+        }
+        return new EntitySettings(selectedType, selectedSprite.isEmpty() ? null : selectedSprite,
+            (Integer) xSpinner.getValue(), (Integer) zSpinner.getValue());
+    }
+
     private void selectProp(String instanceId) {
         for (int i = 0; i < placedPropsListModel.size(); i++) {
             if (placedPropsListModel.get(i).instanceId.equals(instanceId)) {
@@ -423,7 +524,19 @@ final class MapPanel extends JPanel {
         }
     }
 
+    private void selectEntity(String instanceId) {
+        for (int i = 0; i < placedEntitiesListModel.size(); i++) {
+            if (placedEntitiesListModel.get(i).instanceId.equals(instanceId)) {
+                placedEntitiesList.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
     private record PropTransform(float x, float z, float elevation, float rotation) {
+    }
+
+    private record EntitySettings(String type, String spriteId, int x, int z) {
     }
 
     /**

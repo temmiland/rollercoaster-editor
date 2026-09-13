@@ -34,6 +34,23 @@ public final class MapExport {
         }
     }
 
+    /** A runtime entity with an optional registered directional sprite. */
+    public static final class Entity {
+        public final String id;
+        public final String type;
+        public final String sprite;
+        public final int x;
+        public final int z;
+
+        public Entity(String id, String type, String sprite, int x, int z) {
+            this.id = id;
+            this.type = type;
+            this.sprite = sprite;
+            this.x = x;
+            this.z = z;
+        }
+    }
+
     /**
      * @param tiles per-cell tile type id, row-major (z outer, x inner); every cell must be filled
      * @param heights per-cell surface height at the tile centre, same layout as {@code tiles}
@@ -42,7 +59,7 @@ public final class MapExport {
      */
     public static void write(String id, int width, int depth, String tilesetId,
                              String[] tiles, float[] heights, String[] shapes, boolean[] collision,
-                             List<Prop> props, Path mapsDirectory) throws IOException {
+                             List<Prop> props, List<Entity> entities, Path mapsDirectory) throws IOException {
         int cells = width * depth;
         if (tiles.length != cells || heights.length != cells || shapes.length != cells || collision.length != cells) {
             throw new IllegalArgumentException("Map layer arrays must have " + cells + " cells: " + id);
@@ -56,14 +73,14 @@ public final class MapExport {
         Files.createDirectories(mapsDirectory);
         Path target = mapsDirectory.resolve(id + ".json");
         Path temp = mapsDirectory.resolve(id + ".json.tmp");
-        Files.writeString(temp, toJson(id, width, depth, tilesetId, tiles, heights, shapes, collision, props),
+        Files.writeString(temp, toJson(id, width, depth, tilesetId, tiles, heights, shapes, collision, props, entities),
             StandardCharsets.UTF_8);
         Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
 
     private static String toJson(String id, int width, int depth, String tilesetId,
                                  String[] tiles, float[] heights, String[] shapes, boolean[] collision,
-                                 List<Prop> props)
+                                 List<Prop> props, List<Entity> entities)
         throws IOException {
         StringWriter buffer = new StringWriter();
         JsonWriter writer = new JsonWriter(buffer);
@@ -93,6 +110,15 @@ public final class MapExport {
         }
         writer.pop();
         writer.array("entities");
+        for (Entity entity : entities) {
+            writer.object();
+            writer.set("id", entity.id);
+            writer.set("type", entity.type);
+            if (entity.sprite != null) writer.set("sprite", entity.sprite);
+            writer.set("x", entity.x);
+            writer.set("y", entity.z);
+            writer.pop();
+        }
         writer.pop();
         writer.pop();
         return buffer.toString();

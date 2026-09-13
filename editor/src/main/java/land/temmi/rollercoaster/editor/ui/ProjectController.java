@@ -12,17 +12,20 @@ import land.temmi.rollercoaster.editor.document.CreateTilesetCommand;
 import land.temmi.rollercoaster.editor.document.ImportModelCommand;
 import land.temmi.rollercoaster.editor.document.ImportTextureCommand;
 import land.temmi.rollercoaster.editor.document.MapAsset;
+import land.temmi.rollercoaster.editor.document.MapEntityAsset;
 import land.temmi.rollercoaster.editor.document.MapProp;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
 import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
 import land.temmi.rollercoaster.editor.document.PaintTilesCommand;
 import land.temmi.rollercoaster.editor.document.PlacePropCommand;
+import land.temmi.rollercoaster.editor.document.PlaceEntityCommand;
 import land.temmi.rollercoaster.editor.document.ProjectDocument;
 import land.temmi.rollercoaster.editor.document.ProjectFile;
 import land.temmi.rollercoaster.editor.document.RemoveMapCommand;
 import land.temmi.rollercoaster.editor.document.RemoveModelCommand;
 import land.temmi.rollercoaster.editor.document.RemovePropCommand;
+import land.temmi.rollercoaster.editor.document.RemoveEntityCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTextureCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTilesetCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTileCommand;
@@ -33,6 +36,7 @@ import land.temmi.rollercoaster.editor.document.TileEntry;
 import land.temmi.rollercoaster.editor.document.TilesetAsset;
 import land.temmi.rollercoaster.editor.document.TransformPropCommand;
 import land.temmi.rollercoaster.editor.document.UpdateModelCommand;
+import land.temmi.rollercoaster.editor.document.UpdateEntityCommand;
 
 import javax.swing.Timer;
 import java.io.IOException;
@@ -443,14 +447,37 @@ public final class ProjectController {
         for (MapProp prop : map.getProps()) {
             props.add(new MapExport.Prop(prop.modelId, prop.x, prop.z, prop.elevation, prop.rotation));
         }
+        List<MapExport.Entity> entities = new ArrayList<>();
+        for (MapEntityAsset entity : map.getEntities()) {
+            entities.add(new MapExport.Entity(entity.instanceId, entity.type, entity.spriteId, entity.x, entity.z));
+        }
         MapExport.write(map.id, map.width, map.depth, map.tilesetId, tiles, heights, shapes, collision,
-            props, mapsDirectory());
+            props, entities, mapsDirectory());
         return mapsDirectory().resolve(map.id + ".json");
     }
 
     public void placeProp(String mapId, MapProp prop) {
         requireOpen();
         history.perform(new PlacePropCommand(mapId, prop));
+        listener.onProjectChanged();
+    }
+
+    public void placeEntity(String mapId, MapEntityAsset entity) {
+        requireOpen();
+        history.perform(new PlaceEntityCommand(mapId, entity));
+        listener.onProjectChanged();
+    }
+
+    public void removeEntity(String mapId, MapEntityAsset entity) {
+        requireOpen();
+        history.perform(new RemoveEntityCommand(mapId, entity));
+        listener.onProjectChanged();
+    }
+
+    public void updateEntity(String mapId, MapEntityAsset previous, String type, String spriteId, int x, int z) {
+        requireOpen();
+        history.perform(new UpdateEntityCommand(mapId, previous,
+            new MapEntityAsset(previous.instanceId, type, spriteId, x, z)));
         listener.onProjectChanged();
     }
 

@@ -373,6 +373,20 @@ public final class DocumentSmokeTest {
         document.addModel(ModelAsset.imported("house", "house.gltf", false,
             -1.8f, 0f, -1.3f, 2.8f, 4f, 2.3f, List.of("house.bin")));
         history.perform(new CreateMapCommand("valley", 4, 3, "overworld"));
+        MapEntityAsset playerStart = new MapEntityAsset("player-start", "player", "player", 1, 0);
+        history.perform(new PlaceEntityCommand("valley", playerStart));
+        if (document.findMap("valley").findEntity("player-start") == null) {
+            throw new AssertionError("Entity placement did not apply");
+        }
+        history.perform(new UpdateEntityCommand("valley", playerStart,
+            new MapEntityAsset("player-start", "player", "hero", 1, 1)));
+        if (!"hero".equals(document.findMap("valley").findEntity("player-start").spriteId)) {
+            throw new AssertionError("Entity update did not apply");
+        }
+        history.undo();
+        if (!"player".equals(document.findMap("valley").findEntity("player-start").spriteId)) {
+            throw new AssertionError("Undo did not restore entity metadata");
+        }
 
         try {
             history.perform(new PlacePropCommand("valley",
@@ -455,6 +469,11 @@ public final class DocumentSmokeTest {
         if (reloadedProp == null || !"house".equals(reloadedProp.modelId) || reloadedProp.x != 2f
             || reloadedProp.z != 1f || reloadedProp.elevation != 0f || reloadedProp.rotation != 0f) {
             throw new AssertionError("Prop did not round-trip");
+        }
+        MapEntityAsset reloadedStart = reloadedMap.findEntity("player-start");
+        if (reloadedStart == null || !"player".equals(reloadedStart.type)
+            || !"player".equals(reloadedStart.spriteId) || reloadedStart.x != 1 || reloadedStart.z != 0) {
+            throw new AssertionError("Entity did not round-trip");
         }
         ModelAsset reloadedModel = ProjectFile.load(directory).findModel("house");
         if (!reloadedModel.getDependencyFileNames().equals(List.of("house.bin"))) {
