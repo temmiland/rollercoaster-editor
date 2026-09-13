@@ -78,6 +78,47 @@ public final class ProjectFile {
                     model.getFloat("walkHeight", 0f)));
             }
         }
+
+        JsonValue maps = root.get("maps");
+        if (maps != null) {
+            for (JsonValue mapValue = maps.child; mapValue != null; mapValue = mapValue.next) {
+                int width = mapValue.getInt("width");
+                int depth = mapValue.getInt("depth");
+                MapAsset map = new MapAsset(requireString(mapValue, "id"), width, depth,
+                    requireString(mapValue, "tileset"));
+                JsonValue tileRows = required(mapValue, "tiles");
+                JsonValue heightRows = mapValue.get("heights");
+                JsonValue shapeRows = mapValue.get("shapes");
+                JsonValue collisionRows = mapValue.get("collision");
+                JsonValue tileRow = tileRows.child;
+                JsonValue heightRow = heightRows == null ? null : heightRows.child;
+                JsonValue shapeRow = shapeRows == null ? null : shapeRows.child;
+                JsonValue collisionRow = collisionRows == null ? null : collisionRows.child;
+                for (int z = 0; z < depth; z++) {
+                    JsonValue tileCell = tileRow.child;
+                    JsonValue heightCell = heightRow == null ? null : heightRow.child;
+                    JsonValue shapeCell = shapeRow == null ? null : shapeRow.child;
+                    JsonValue collisionCell = collisionRow == null ? null : collisionRow.child;
+                    for (int x = 0; x < width; x++) {
+                        String tileId = tileCell.isNull() ? null : tileCell.asString();
+                        if (tileId != null) map.setTile(x, z, tileId);
+                        float height = heightCell == null ? 0f : heightCell.asFloat();
+                        TileShape shape = shapeCell == null ? TileShape.FLAT : TileShape.fromId(shapeCell.asString());
+                        if (height != 0f || shape != TileShape.FLAT) map.setTerrain(x, z, height, shape);
+                        if (collisionCell != null && collisionCell.asInt() != 0) map.setBlocked(x, z, true);
+                        tileCell = tileCell.next;
+                        if (heightCell != null) heightCell = heightCell.next;
+                        if (shapeCell != null) shapeCell = shapeCell.next;
+                        if (collisionCell != null) collisionCell = collisionCell.next;
+                    }
+                    tileRow = tileRow.next;
+                    if (heightRow != null) heightRow = heightRow.next;
+                    if (shapeRow != null) shapeRow = shapeRow.next;
+                    if (collisionRow != null) collisionRow = collisionRow.next;
+                }
+                document.addMap(map);
+            }
+        }
         return document;
     }
 
@@ -170,6 +211,45 @@ public final class ProjectFile {
             writer.set("alignToSlope", model.alignToSlope);
             writer.set("walkable", model.walkable);
             writer.set("walkHeight", model.walkHeight);
+            writer.pop();
+        }
+        writer.pop();
+
+        writer.array("maps");
+        for (MapAsset map : document.getMaps()) {
+            writer.object();
+            writer.set("id", map.id);
+            writer.set("width", map.width);
+            writer.set("depth", map.depth);
+            writer.set("tileset", map.tilesetId);
+            writer.array("tiles");
+            for (int z = 0; z < map.depth; z++) {
+                writer.array();
+                for (int x = 0; x < map.width; x++) writer.value(map.getTile(x, z));
+                writer.pop();
+            }
+            writer.pop();
+            writer.array("heights");
+            for (int z = 0; z < map.depth; z++) {
+                writer.array();
+                for (int x = 0; x < map.width; x++) writer.value(map.getHeight(x, z));
+                writer.pop();
+            }
+            writer.pop();
+            writer.array("shapes");
+            for (int z = 0; z < map.depth; z++) {
+                writer.array();
+                for (int x = 0; x < map.width; x++) writer.value(map.getShape(x, z).toId());
+                writer.pop();
+            }
+            writer.pop();
+            writer.array("collision");
+            for (int z = 0; z < map.depth; z++) {
+                writer.array();
+                for (int x = 0; x < map.width; x++) writer.value(map.isBlocked(x, z) ? 1 : 0);
+                writer.pop();
+            }
+            writer.pop();
             writer.pop();
         }
         writer.pop();

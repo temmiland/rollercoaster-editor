@@ -3,6 +3,7 @@ package land.temmi.rollercoaster.editor.document;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 
 /** Checks undo/redo, dirty tracking and the project.json roundtrip; no GL context involved. */
 public final class DocumentSmokeTest {
@@ -15,9 +16,11 @@ public final class DocumentSmokeTest {
         verifySideTextureRoundtrip();
         verifyRemoveTextureBlockedBySideReference();
         verifyModelCommandsAndRoundtrip();
+        verifyMapCommandsAndTerrainGrid();
+        verifyMapRoundtrip();
         System.out.println("PASS: undo/redo, dirty tracking after a branching edit, an atomic project.json "
             + "roundtrip across a moved directory, texture/tileset commands with referential integrity, "
-            + "and model import/export");
+            + "model import/export, and map terrain painting");
     }
 
     private static void verifyUndoRedoAndDirtyTracking() {
@@ -216,6 +219,106 @@ public final class DocumentSmokeTest {
             || reloaded.boundsMaxX != house.boundsMaxX || reloaded.collisionMaxX != house.collisionMaxX) {
             throw new AssertionError("Model fields did not round-trip");
         }
+    }
+
+    private static void verifyMapCommandsAndTerrainGrid() {
+        ProjectDocument document = new ProjectDocument("Kartenwelt");
+        CommandHistory history = new CommandHistory(document);
+        document.addTexture(new TextureAsset("grass", "grass.png"));
+        TilesetAsset tileset = new TilesetAsset("overworld");
+        tileset.addTile(new TileEntry("grass", "grass", true));
+        document.addTileset(tileset);
+
+        history.perform(new CreateMapCommand("valley", 4, 3, "overworld"));
+        MapAsset map = document.findMap("valley");
+        if (map == null) throw new AssertionError("Map creation did not apply");
+        if (map.getShape(0, 0) != TileShape.FLAT || map.getHeight(0, 0) != 0f) {
+            throw new AssertionError("A fresh map must start flat at height zero");
+        }
+
+        history.perform(new PaintTilesCommand("valley",
+            Collections.singletonList(new PaintTilesCommand.Edit(1, 1, null, "grass"))));
+        if (!"grass".equals(map.getTile(1, 1))) throw new AssertionError("Tile paint did not apply");
+        history.undo();
+        if (map.getTile(1, 1) != null) throw new AssertionError("Undo did not clear the painted tile");
+        history.redo();
+
+        try {
+            history.perform(new PaintTilesCommand("valley", Collections.singletonList(
+                new PaintTilesCommand.Edit(2, 1, null, "unknown-tile"))));
+            throw new AssertionError("Painting an unknown tile id should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: "unknown-tile" is not in the map's tileset.
+        }
+
+        // A ramp climbing to level 1, matching the engine's own testfield: two ramp midpoints then a plateau.
+        history.perform(new PaintTerrainCommand("valley", java.util.Arrays.asList(
+            new PaintTerrainCommand.Edit(0, 0, 0f, TileShape.FLAT, 0.5f, TileShape.RAMP_SOUTH),
+            new PaintTerrainCommand.Edit(0, 1, 0f, TileShape.FLAT, 1f, TileShape.FLAT))));
+        if (map.getHeight(0, 0) != 0.5f || map.getShape(0, 0) != TileShape.RAMP_SOUTH) {
+            throw new AssertionError("Ramp terrain paint did not apply");
+        }
+        history.undo();
+        if (map.getHeight(0, 0) != 0f || map.getShape(0, 0) != TileShape.FLAT) {
+            throw new AssertionError("Undo did not restore the previous terrain");
+        }
+
+        try {
+            map.setShape(0, 0, TileShape.RAMP_NORTH);
+            throw new AssertionError("A shape change that no longer fits the stored height should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: height 0 is not a valid ramp midpoint.
+        }
+
+        history.perform(new PaintCollisionCommand("valley",
+            Collections.singletonList(new PaintCollisionCommand.Edit(3, 2, false, true))));
+        if (!map.isBlocked(3, 2)) throw new AssertionError("Collision paint did not apply");
+        history.undo();
+        if (map.isBlocked(3, 2)) throw new AssertionError("Undo did not clear the collision flag");
+
+        try {
+            document.removeTileset("overworld");
+            throw new AssertionError("Removing a tileset still used by a map should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: the map still references it.
+        }
+
+        history.perform(new RemoveMapCommand(map));
+        if (document.findMap("valley") != null) throw new AssertionError("Map removal did not apply");
+        history.undo();
+        if (document.findMap("valley") == null) throw new AssertionError("Undo did not restore the map");
+        if (!"grass".equals(document.findMap("valley").getTile(1, 1))) {
+            throw new AssertionError("Restoring a removed map must keep its painted cells");
+        }
+    }
+
+    private static void verifyMapRoundtrip() throws IOException {
+        ProjectDocument document = new ProjectDocument("Kartenexport");
+        document.addTexture(new TextureAsset("grass", "grass.png"));
+        TilesetAsset tileset = new TilesetAsset("overworld");
+        tileset.addTile(new TileEntry("grass", "grass", true));
+        document.addTileset(tileset);
+
+        MapAsset map = new MapAsset("valley", 3, 2, "overworld");
+        map.setTile(0, 0, "grass");
+        map.setTerrain(1, 0, 0.5f, TileShape.RAMP_EAST);
+        map.setBlocked(2, 1, true);
+        document.addMap(map);
+
+        Path directory = Files.createTempDirectory("trackside-editor-project-map");
+        ProjectFile.save(document, directory);
+        MapAsset reloaded = ProjectFile.load(directory).findMap("valley");
+        if (reloaded == null || reloaded.width != 3 || reloaded.depth != 2) {
+            throw new AssertionError("Map dimensions did not round-trip");
+        }
+        if (!"overworld".equals(reloaded.tilesetId)) throw new AssertionError("Map tileset reference did not round-trip");
+        if (!"grass".equals(reloaded.getTile(0, 0))) throw new AssertionError("Tile layer did not round-trip");
+        if (reloaded.getTile(1, 1) != null) throw new AssertionError("An unpainted cell should round-trip as null");
+        if (reloaded.getShape(1, 0) != TileShape.RAMP_EAST || reloaded.getHeight(1, 0) != 0.5f) {
+            throw new AssertionError("Terrain shape/height did not round-trip");
+        }
+        if (!reloaded.isBlocked(2, 1)) throw new AssertionError("Collision layer did not round-trip");
+        if (reloaded.isBlocked(0, 0)) throw new AssertionError("Unblocked cells should round-trip as unblocked");
     }
 
     private static void verifyRejectsUnknownVersion() throws IOException {

@@ -12,6 +12,7 @@ public final class ProjectDocument {
     private final List<TextureAsset> textures = new ArrayList<>();
     private final List<TilesetAsset> tilesets = new ArrayList<>();
     private final List<ModelAsset> models = new ArrayList<>();
+    private final List<MapAsset> maps = new ArrayList<>();
 
     public ProjectDocument(String name) {
         setName(name);
@@ -85,6 +86,11 @@ public final class ProjectDocument {
     }
 
     void removeTileset(String id) {
+        for (MapAsset map : maps) {
+            if (map.tilesetId.equals(id)) {
+                throw new IllegalArgumentException("Tileset '" + id + "' is still used by map '" + map.id + "'");
+            }
+        }
         if (!tilesets.removeIf(tileset -> tileset.id.equals(id))) {
             throw new IllegalArgumentException("No such tileset: " + id);
         }
@@ -105,5 +111,33 @@ public final class ProjectDocument {
         if (!models.removeIf(model -> model.id.equals(id))) {
             throw new IllegalArgumentException("No such model: " + id);
         }
+    }
+
+    public List<MapAsset> getMaps() {
+        return Collections.unmodifiableList(maps);
+    }
+
+    public MapAsset findMap(String id) {
+        for (MapAsset map : maps) {
+            if (map.id.equals(id)) return map;
+        }
+        return null;
+    }
+
+    void addMap(MapAsset map) {
+        if (findMap(map.id) != null) throw new IllegalArgumentException("Duplicate map id: " + map.id);
+        maps.add(map);
+    }
+
+    void removeMap(String id) {
+        if (!maps.removeIf(map -> map.id.equals(id))) {
+            throw new IllegalArgumentException("No such map: " + id);
+        }
+    }
+
+    MapAsset requireMap(String id) {
+        MapAsset map = findMap(id);
+        if (map == null) throw new IllegalArgumentException("No such map: " + id);
+        return map;
     }
 }
