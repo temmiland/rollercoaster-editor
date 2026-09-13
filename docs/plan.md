@@ -332,6 +332,13 @@ Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle 
   entgegen statt einer rohen Höhe - jede Kombination, die es erzeugen kann, ist dadurch bereits
   gültig (ganze Level für flach, halbe für eine Rampe), sodass `PaintTerrainCommand` sie nie
   ablehnt. Begehbare und nicht begehbare Rampen unterscheiden sich weiterhin nur im Kacheltyp.
+- [x] Bemalte Karte dreidimensional anzeigen: "In Vorschau zeigen" exportiert die Karte und schickt
+  Dateipfad sowie Kacheltyp-Katalog (ID plus Begehbarkeit) per neuer `ShowMap`-Nachricht an den
+  Vorschauprozess. Dieser baut daraus mit `WorldSceneLoader`/`ChunkMesher` - denselben Klassen wie
+  das Spiel - eine echte Szene; Kachelfarben werden aus der ID gehasht, damit sie ohne Atlas exakt
+  zur 2D-Ansicht passen. Damit lässt sich zum ersten Mal eine in der UI gemalte Rampe tatsächlich
+  in 3D befahren sehen, nicht nur als Dreieck im Grid. Props/Entities fehlen der Vorschau noch
+  (Phase 4), Kollisions-Overlay ebenso.
 - [ ] Terrain, Gitter, Begehbarkeit, Kanten und manuelle Sperren getrennt ein-/ausblenden.
 - [ ] Picking auf der tatsächlichen Terrainoberfläche; Tile-Mitte und Cursor stimmen auch bei
   geneigter Kamera, erhöhten Tiles und Rampen überein.
