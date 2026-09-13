@@ -11,6 +11,7 @@ import javax.swing.JCheckBox;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
+import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
@@ -26,12 +27,17 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.awt.GridLayout;
+import java.awt.Image;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
@@ -47,6 +53,7 @@ final class AssetsPanel extends JPanel {
     private final JList<TileEntry> tileList = new JList<>(tileListModel);
     private final DefaultListModel<ModelAsset> modelListModel = new DefaultListModel<>();
     private final JList<ModelAsset> modelList = new JList<>(modelListModel);
+    private final Map<String, ImageIcon> textureThumbnails = new HashMap<>();
 
     AssetsPanel(ProjectController projectController,
                Function<String, CompletableFuture<ModelBoundsResult>> modelBoundsComputer) {
@@ -55,7 +62,7 @@ final class AssetsPanel extends JPanel {
         this.modelBoundsComputer = modelBoundsComputer;
         setBorder(BorderFactory.createTitledBorder("Assets"));
 
-        textureList.setCellRenderer(labelRenderer(t -> t.id + "  (" + t.fileName + ")"));
+        textureList.setCellRenderer(textureRenderer());
         tilesetList.setCellRenderer(labelRenderer(t -> t.id + "  (" + t.getTiles().size() + " Tiles)"));
         tileList.setCellRenderer(labelRenderer(t -> t.id + " -> " + t.textureId
             + (t.sideTextureId != null ? " / Seite: " + t.sideTextureId : "")
@@ -148,13 +155,16 @@ final class AssetsPanel extends JPanel {
         ModelAsset selectedModel = modelList.getSelectedValue();
 
         textureListModel.clear();
-        if (open) projectController.getTextures().forEach(textureListModel::addElement);
+        if (open) projectController.getTextures().stream().sorted(Comparator.comparing(t -> t.id))
+            .forEach(textureListModel::addElement);
 
         tilesetListModel.clear();
-        if (open) projectController.getTilesets().forEach(tilesetListModel::addElement);
+        if (open) projectController.getTilesets().stream().sorted(Comparator.comparing(t -> t.id))
+            .forEach(tilesetListModel::addElement);
 
         modelListModel.clear();
-        if (open) projectController.getModels().forEach(modelListModel::addElement);
+        if (open) projectController.getModels().stream().sorted(Comparator.comparing(m -> m.id))
+            .forEach(modelListModel::addElement);
 
         if (selectedTileset != null) {
             for (int i = 0; i < tilesetListModel.size(); i++) {
@@ -178,7 +188,8 @@ final class AssetsPanel extends JPanel {
     private void refreshTiles() {
         tileListModel.clear();
         TilesetAsset selected = tilesetList.getSelectedValue();
-        if (selected != null) selected.getTiles().forEach(tileListModel::addElement);
+        if (selected != null) selected.getTiles().stream().sorted(Comparator.comparing(t -> t.id))
+            .forEach(tileListModel::addElement);
     }
 
     private void onImportTexture() {
@@ -454,5 +465,34 @@ final class AssetsPanel extends JPanel {
             label.setForeground(isSelected ? list.getSelectionForeground() : list.getForeground());
             return label;
         };
+    }
+
+    private ListCellRenderer<TextureAsset> textureRenderer() {
+        return (list, value, index, isSelected, cellHasFocus) -> {
+            JLabel label = new JLabel(value.id + "  (" + value.fileName + ")", thumbnailFor(value), JLabel.LEFT);
+            label.setIconTextGap(8);
+            label.setOpaque(true);
+            label.setBackground(isSelected ? list.getSelectionBackground() : list.getBackground());
+            label.setForeground(isSelected ? list.getSelectionForeground() : list.getForeground());
+            return label;
+        };
+    }
+
+    private ImageIcon thumbnailFor(TextureAsset asset) {
+        ImageIcon existing = textureThumbnails.get(asset.id);
+        if (existing != null) return existing;
+        Path projectDirectory = projectController.getProjectDirectory();
+        if (projectDirectory == null) return null;
+        try {
+            BufferedImage source = javax.imageio.ImageIO.read(
+                projectDirectory.resolve("sources/textures").resolve(asset.fileName).toFile());
+            if (source == null) return null;
+            Image scaled = source.getScaledInstance(32, 32, Image.SCALE_SMOOTH);
+            ImageIcon thumbnail = new ImageIcon(scaled);
+            textureThumbnails.put(asset.id, thumbnail);
+            return thumbnail;
+        } catch (IOException ignored) {
+            return null;
+        }
     }
 }

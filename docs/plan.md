@@ -283,8 +283,9 @@ und erneut öffnen, ohne Datenverlust oder kaputte Referenzen.
   geprüft, nicht nur gegen die eigene Ausgabe.
 - [x] Einzeltexturen importieren und Tiles/Tilesets daraus anlegen (Assets-Panel, Tab "Texturen"
   und "Tilesets"): kopiert in `sources/textures/`, Katalog lebt im Dokumentmodell
-  (`TextureAsset`/`TilesetAsset`/`TileEntry`) mit Commands für Undo/Redo. Sortieren und
-  Texturvorschau (Thumbnail) fehlen noch - die Liste zeigt bisher nur ID und Dateiname.
+  (`TextureAsset`/`TilesetAsset`/`TileEntry`) mit Commands für Undo/Redo. Textur-, Tileset-,
+  Tile- und Modelllisten werden nach ID sortiert; die Texturliste zeigt skalierte Vorschauen ihrer
+  Quellen. Die Kartenfläche nutzt weiterhin ID-Farben statt der Atlasbilder.
 - [x] Oberflächen-/Seitenzuordnung: `TileEntry.sideTextureId` optional, `TilePacker` packt Ober-
   und Seitenbild als getrennte Atlas-Regionen (beide müssen dieselbe Größe wie die übrigen
   Tiles/Seiten im Tileset haben - dieselbe Grid-Vereinfachung wie beim generellen Packing).
