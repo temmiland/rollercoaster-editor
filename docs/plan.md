@@ -327,9 +327,11 @@ Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle 
   übergeben. Rampenrichtung wird als kleines Dreieck angezeigt. **Noch offen:** Löschen/Pipette/
   Füllen/Rechteckauswahl/Kopieren-Einfügen als eigene Werkzeuge, Textur-Thumbnails statt
   Farbflächen.
-- [ ] Höhen ändern, Plateaus und Rampen setzen und ihre Orientierung über die Formebene bearbeiten
-  - `PaintTerrainCommand` unterstützt das bereits datenseitig; es fehlt das Werkzeug in der UI.
-  Begehbare und nicht begehbare Rampen unterscheiden sich nur im Kacheltyp.
+- [x] Höhen ändern, Plateaus und Rampen setzen und ihre Orientierung über die Formebene bearbeiten:
+  Werkzeug "Terrain formen" nimmt Level (das Plateau, zu dem eine Rampe hinaufführt) und Form
+  entgegen statt einer rohen Höhe - jede Kombination, die es erzeugen kann, ist dadurch bereits
+  gültig (ganze Level für flach, halbe für eine Rampe), sodass `PaintTerrainCommand` sie nie
+  ablehnt. Begehbare und nicht begehbare Rampen unterscheiden sich weiterhin nur im Kacheltyp.
 - [ ] Terrain, Gitter, Begehbarkeit, Kanten und manuelle Sperren getrennt ein-/ausblenden.
 - [ ] Picking auf der tatsächlichen Terrainoberfläche; Tile-Mitte und Cursor stimmen auch bei
   geneigter Kamera, erhöhten Tiles und Rampen überein.
