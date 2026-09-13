@@ -15,14 +15,14 @@ public final class MapAsset {
     private static final float HEIGHT_EPSILON = 0.0001f;
 
     public final String id;
-    public final int width;
-    public final int depth;
+    public int width;
+    public int depth;
     public final String tilesetId;
 
-    private final String[] tiles;
-    private final float[] heights;
-    private final TileShape[] shapes;
-    private final boolean[] collision;
+    private String[] tiles;
+    private float[] heights;
+    private TileShape[] shapes;
+    private boolean[] collision;
     private final List<MapProp> props = new ArrayList<>();
 
     public MapAsset(String id, int width, int depth, String tilesetId) {
@@ -84,6 +84,67 @@ public final class MapAsset {
         if (!props.removeIf(prop -> prop.instanceId.equals(instanceId))) {
             throw new IllegalArgumentException("No such prop: " + instanceId);
         }
+    }
+
+    /** Restorable grid contents used by {@link ResizeMapCommand}. */
+    static final class State {
+        private final int width;
+        private final int depth;
+        private final String[] tiles;
+        private final float[] heights;
+        private final TileShape[] shapes;
+        private final boolean[] collision;
+
+        private State(MapAsset map) {
+            width = map.width;
+            depth = map.depth;
+            tiles = map.tiles.clone();
+            heights = map.heights.clone();
+            shapes = map.shapes.clone();
+            collision = map.collision.clone();
+        }
+    }
+
+    /** Resizes the terrain grid, preserving the north-west cells shared by both dimensions. */
+    State resize(int newWidth, int newDepth) {
+        if (newWidth <= 0 || newDepth <= 0) throw new IllegalArgumentException("Map size must be positive: " + id);
+        for (MapProp prop : props) {
+            if (prop.x >= newWidth || prop.z >= newDepth) {
+                throw new IllegalArgumentException("Resizing map '" + id + "' would remove prop '" + prop.instanceId + "'");
+            }
+        }
+        State previous = new State(this);
+        String[] newTiles = new String[newWidth * newDepth];
+        float[] newHeights = new float[newWidth * newDepth];
+        TileShape[] newShapes = new TileShape[newWidth * newDepth];
+        Arrays.fill(newShapes, TileShape.FLAT);
+        boolean[] newCollision = new boolean[newWidth * newDepth];
+        int copiedWidth = Math.min(width, newWidth);
+        int copiedDepth = Math.min(depth, newDepth);
+        for (int z = 0; z < copiedDepth; z++) {
+            int oldOffset = z * width;
+            int newOffset = z * newWidth;
+            System.arraycopy(tiles, oldOffset, newTiles, newOffset, copiedWidth);
+            System.arraycopy(heights, oldOffset, newHeights, newOffset, copiedWidth);
+            System.arraycopy(shapes, oldOffset, newShapes, newOffset, copiedWidth);
+            System.arraycopy(collision, oldOffset, newCollision, newOffset, copiedWidth);
+        }
+        width = newWidth;
+        depth = newDepth;
+        tiles = newTiles;
+        heights = newHeights;
+        shapes = newShapes;
+        collision = newCollision;
+        return previous;
+    }
+
+    void restore(State state) {
+        width = state.width;
+        depth = state.depth;
+        tiles = state.tiles.clone();
+        heights = state.heights.clone();
+        shapes = state.shapes.clone();
+        collision = state.collision.clone();
     }
 
     /** Props use grid coordinates; their anchor must remain on this map. */

@@ -153,6 +153,8 @@ final class MapPanel extends JPanel {
         newMap.addActionListener(e -> onCreateMap());
         JButton removeMap = new JButton("Löschen");
         removeMap.addActionListener(e -> onRemoveMap());
+        JButton resizeMap = new JButton("Größe ändern…");
+        resizeMap.addActionListener(e -> onResizeMap());
         JButton exportMap = new JButton("Exportieren");
         exportMap.addActionListener(e -> onExportMap());
         JButton previewMap = new JButton("In Vorschau zeigen");
@@ -161,6 +163,7 @@ final class MapPanel extends JPanel {
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
         buttons.add(newMap);
         buttons.add(removeMap);
+        buttons.add(resizeMap);
         buttons.add(exportMap);
         buttons.add(previewMap);
         mapListPanel.add(buttons, BorderLayout.SOUTH);
@@ -380,9 +383,9 @@ final class MapPanel extends JPanel {
         TilesetAsset tileset = (TilesetAsset) JOptionPane.showInputDialog(this, "Tileset:", "Neue Karte",
             JOptionPane.PLAIN_MESSAGE, null, tilesets.toArray(), tilesets.get(0));
         if (tileset == null) return;
-        Integer width = askDimension("Breite (Tiles):");
+        Integer width = askDimension("Breite (Tiles):", 16);
         if (width == null) return;
-        Integer depth = askDimension("Tiefe (Tiles):");
+        Integer depth = askDimension("Tiefe (Tiles):", 16);
         if (depth == null) return;
         try {
             projectController.createMap(id.trim(), width, depth, tileset.id);
@@ -392,8 +395,8 @@ final class MapPanel extends JPanel {
         }
     }
 
-    private Integer askDimension(String prompt) {
-        String text = JOptionPane.showInputDialog(this, prompt, "16");
+    private Integer askDimension(String prompt, int currentValue) {
+        String text = JOptionPane.showInputDialog(this, prompt, String.valueOf(currentValue));
         if (text == null) return null;
         try {
             int value = Integer.parseInt(text.trim());
@@ -410,6 +413,21 @@ final class MapPanel extends JPanel {
         if (selected == null) return;
         projectController.removeMap(selected);
         refresh();
+    }
+
+    private void onResizeMap() {
+        MapAsset selected = mapList.getSelectedValue();
+        if (selected == null) return;
+        Integer width = askDimension("Breite (Tiles):", selected.width);
+        if (width == null) return;
+        Integer depth = askDimension("Tiefe (Tiles):", selected.depth);
+        if (depth == null) return;
+        try {
+            projectController.resizeMap(selected.id, width, depth);
+            refresh();
+        } catch (IllegalArgumentException e) {
+            showError("Kartengröße konnte nicht geändert werden", e);
+        }
     }
 
     private void onExportMap() {

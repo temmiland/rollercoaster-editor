@@ -323,8 +323,10 @@ Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle 
   `PaintTilesCommand`/`PaintTerrainCommand`/`PaintCollisionCommand` decken Anlegen und Bemalen ab
   - je Aufruf eine Liste von Zell-Änderungen, also bereits so geschnitten, dass ein ganzer
   Pinselstrich eine einzige Undo-Aktion wird. `ProjectController.exportMap` schreibt
-  `maps/<id>.json` im echten `MapLoader`-Format. **Noch offen: Größen ändern** (Breite/Tiefe
-  einer bestehenden Karte anpassen).
+  `maps/<id>.json` im echten `MapLoader`-Format. "Größe ändern…" erhält beim Vergrößern die
+  gemeinsamen nordwestlichen Zellen und initialisiert neue Zellen leer und flach; beim Verkleinern
+  verhindert es Datenverlust, falls ein Prop-Anker außerhalb der neuen Karte läge. Der gesamte
+  Vorgang ist eine Undo/Redo-Aktion.
 - [x] 2D-Kartenansicht mit Mausbedienung (`MapPanel`/`MapCanvas`): Kartenliste anlegen/löschen/
   exportieren, Kacheln malen (Palette aus dem zugeordneten Tileset) und Sperren malen; ein
   Pinselstrich - auch über mehrere Zellen gezogen - sammelt sich lokal und wird erst beim

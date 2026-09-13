@@ -27,6 +27,7 @@ import land.temmi.rollercoaster.editor.document.RemoveTextureCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTilesetCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTileCommand;
 import land.temmi.rollercoaster.editor.document.RenameProjectCommand;
+import land.temmi.rollercoaster.editor.document.ResizeMapCommand;
 import land.temmi.rollercoaster.editor.document.TextureAsset;
 import land.temmi.rollercoaster.editor.document.TileEntry;
 import land.temmi.rollercoaster.editor.document.TilesetAsset;
@@ -340,6 +341,12 @@ public final class ProjectController {
     public void removeMap(MapAsset map) {
         requireOpen();
         history.perform(new RemoveMapCommand(map));
+        listener.onProjectChanged();
+    }
+
+    public void resizeMap(String mapId, int width, int depth) {
+        requireOpen();
+        history.perform(new ResizeMapCommand(mapId, width, depth));
         listener.onProjectChanged();
     }
 

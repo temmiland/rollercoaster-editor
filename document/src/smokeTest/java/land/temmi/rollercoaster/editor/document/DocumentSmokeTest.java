@@ -306,6 +306,18 @@ public final class DocumentSmokeTest {
         history.undo();
         if (map.isBlocked(3, 2)) throw new AssertionError("Undo did not clear the collision flag");
 
+        history.perform(new ResizeMapCommand("valley", 5, 4));
+        if (map.width != 5 || map.depth != 4 || !"grass".equals(map.getTile(1, 1))) {
+            throw new AssertionError("Map resize did not preserve overlapping terrain cells");
+        }
+        if (map.getTile(4, 3) != null || map.getHeight(4, 3) != 0f || map.getShape(4, 3) != TileShape.FLAT) {
+            throw new AssertionError("New map cells should start as empty, flat terrain");
+        }
+        history.undo();
+        if (map.width != 4 || map.depth != 3 || !"grass".equals(map.getTile(1, 1))) {
+            throw new AssertionError("Undo did not restore the original map size");
+        }
+
         try {
             document.removeTileset("overworld");
             throw new AssertionError("Removing a tileset still used by a map should fail");
@@ -389,6 +401,15 @@ public final class DocumentSmokeTest {
         history.perform(new PlacePropCommand("valley", house));
         MapAsset map = document.findMap("valley");
         if (map.findProp("house-1") == null) throw new AssertionError("Prop placement did not apply");
+
+        try {
+            history.perform(new ResizeMapCommand("valley", 2, 3));
+            throw new AssertionError("Shrinking a map past a prop anchor should fail");
+        } catch (IllegalArgumentException expected) {
+            if (map.width != 4 || map.depth != 3 || map.findProp("house-1") == null) {
+                throw new AssertionError("A rejected resize must leave the map and props untouched");
+            }
+        }
 
         history.perform(new TransformPropCommand("valley", "house-1", "house", 2f, 1f, 0f, 0f, 3f, 2f, 0.5f, 90f));
         MapProp moved = map.findProp("house-1");
