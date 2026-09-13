@@ -51,11 +51,11 @@ public final class PreviewProcessSmokeTest {
             MapExport.write("valley", 2, 2, "overworld",
                 new String[] {"grass", "grass", "grass", "grass"}, new float[] {0f, 0f, 0f, 0f},
                 new String[] {"flat", "flat", "flat", "flat"}, new boolean[] {false, false, false, false},
-                java.util.List.of(), mapDirectory);
+                java.util.List.of(new MapExport.Prop("house", 1f, 1f, 0f, 0f)), mapDirectory);
             String mapFilePath = mapDirectory.resolve("valley.json").toAbsolutePath().toString();
 
             CompletableFuture<ShowMapResult> showMapFuture = process.showMap(mapFilePath, 2, 2,
-                new String[] {"grass"}, new boolean[] {true});
+                new String[] {"grass"}, new boolean[] {true}, new String[] {"house"});
             ShowMapResult showMapResult = showMapFuture.get(20, TimeUnit.SECONDS);
             if (!showMapResult.success) throw new AssertionError("ShowMap failed: " + showMapResult.errorMessage);
             System.out.println("ShowMap succeeded for a real exported map, built through a real WorldSceneLoader");

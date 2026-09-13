@@ -1,6 +1,7 @@
 package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.document.MapAsset;
+import land.temmi.rollercoaster.editor.document.MapProp;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
 import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
 import land.temmi.rollercoaster.editor.document.PaintTilesCommand;
@@ -39,7 +40,7 @@ final class MapPanel extends JPanel {
     /** Fire-and-forget from the UI's side; the returned future carries success/failure back. */
     interface PreviewMapRequester {
         CompletableFuture<ShowMapResult> showMap(String mapFilePath, int width, int depth,
-                                                 String[] tileIds, boolean[] tileWalkable);
+                                                 String[] tileIds, boolean[] tileWalkable, String[] modelIds);
     }
 
     private final ProjectController projectController;
@@ -280,8 +281,12 @@ final class MapPanel extends JPanel {
             tileIds[i] = tiles.get(i).id;
             tileWalkable[i] = tiles.get(i).walkable;
         }
+        java.util.Set<String> modelIds = new java.util.LinkedHashSet<>();
+        for (MapProp prop : selected.getProps()) modelIds.add(prop.modelId);
+
         previewMapRequester.showMap(mapFile.toAbsolutePath().toString(), selected.width, selected.depth,
-            tileIds, tileWalkable).whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
+            tileIds, tileWalkable, modelIds.toArray(new String[0]))
+            .whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
                 if (error != null) {
                     JOptionPane.showMessageDialog(this, error.getMessage(), "Vorschau fehlgeschlagen",
                         JOptionPane.ERROR_MESSAGE);

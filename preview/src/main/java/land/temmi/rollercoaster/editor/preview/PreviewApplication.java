@@ -19,6 +19,7 @@ import com.badlogic.gdx.graphics.g3d.utils.shapebuilders.BoxShapeBuilder;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
 import land.temmi.rollercoaster.asset.ModelCatalog;
+import land.temmi.rollercoaster.asset.ModelDefinition;
 import land.temmi.rollercoaster.editor.protocol.ComputeModelBounds;
 import land.temmi.rollercoaster.editor.protocol.PickResult;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
@@ -165,6 +166,11 @@ public final class PreviewApplication extends ApplicationAdapter {
                     .setWalkable(request.tileWalkable[i]));
             }
             ModelCatalog catalog = new ModelCatalog();
+            if (request.modelIds != null) {
+                for (String modelId : request.modelIds) {
+                    catalog.register(placeholderDefinition(modelId), placeholderFactory(modelId));
+                }
+            }
             WorldScene scene = new WorldSceneLoader().load(
                 new FileHandle(request.mapFilePath), tileset, new Material(), catalog);
 
@@ -197,6 +203,39 @@ public final class PreviewApplication extends ApplicationAdapter {
     private static Color colorFor(String tileId) {
         int hue = Math.floorMod(tileId.hashCode(), 360);
         return new Color(0f, 0f, 0f, 1f).fromHsv(hue, 0.45f, 0.75f);
+    }
+
+    /** A single-cell placeholder footprint - real bounds/collision need the model's own file,
+     * which this process has no way to resolve from an arbitrary project path yet. */
+    private static ModelDefinition placeholderDefinition(String modelId) {
+        return new ModelDefinition(modelId, "placeholder:" + modelId, 0f, 0f, 0f, 1f, 1f,
+            -0.5f, 0f, -0.5f, 0.5f, 1f, 0.5f, 0, 0, 0, 0);
+    }
+
+    /** Builds its box once and hands out the same Model every time, matching the shared-Model
+     * contract ModelCatalog expects (dispose() is called once per registered id, not per prop). */
+    private static ModelCatalog.Factory placeholderFactory(String modelId) {
+        return new ModelCatalog.Factory() {
+            private Model model;
+
+            @Override
+            public Model create() {
+                if (model == null) {
+                    ModelBuilder builder = new ModelBuilder();
+                    builder.begin();
+                    BoxShapeBuilder.build(builder.part("prop", GL20.GL_TRIANGLES, Usage.Position | Usage.Normal,
+                            new Material(ColorAttribute.createDiffuse(colorFor(modelId)))),
+                        0f, 0.5f, 0f, 0.8f, 1f, 0.8f);
+                    model = builder.end();
+                }
+                return model;
+            }
+
+            @Override
+            public void dispose() {
+                if (model != null) model.dispose();
+            }
+        };
     }
 
     @Override

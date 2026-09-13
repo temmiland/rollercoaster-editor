@@ -155,14 +155,15 @@ public final class ProtocolSmokeTest {
                 client.send(new Hello(MessageChannel.PROTOCOL_VERSION));
                 client.receive(); // HelloAck
                 client.send(new ShowMap("/tmp/valley.json", 3, 2, new String[] {"grass", "cliff"},
-                    new boolean[] {true, false}));
+                    new boolean[] {true, false}, new String[] {"house"}));
                 result = (ShowMapResult) client.receive();
             }
             server.join();
 
             if (received[0] == null || !"/tmp/valley.json".equals(received[0].mapFilePath)
                 || received[0].width != 3 || received[0].depth != 2 || received[0].tileIds.length != 2
-                || !received[0].tileIds[1].equals("cliff") || received[0].tileWalkable[1]) {
+                || !received[0].tileIds[1].equals("cliff") || received[0].tileWalkable[1]
+                || received[0].modelIds.length != 1 || !"house".equals(received[0].modelIds[0])) {
                 throw new AssertionError("ShowMap lost data in transit");
             }
             if (!result.success) throw new AssertionError("ShowMapResult lost data in transit");
