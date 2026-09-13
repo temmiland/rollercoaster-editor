@@ -51,6 +51,53 @@ public final class MapExport {
         }
     }
 
+    /** A placed point or spot light. */
+    public static final class Light {
+        public final String id;
+        public final float x;
+        public final float y;
+        public final float z;
+        public final float colorR;
+        public final float colorG;
+        public final float colorB;
+        public final float intensity;
+        public final float range;
+        public final boolean enabled;
+        public final boolean spot;
+        public final float directionX;
+        public final float directionY;
+        public final float directionZ;
+        public final float innerAngle;
+        public final float outerAngle;
+
+        /** A plain point light. */
+        public Light(String id, float x, float y, float z, float colorR, float colorG, float colorB,
+                    float intensity, float range, boolean enabled) {
+            this(id, x, y, z, colorR, colorG, colorB, intensity, range, enabled, false, 0f, -1f, 0f, 0f, 0f);
+        }
+
+        public Light(String id, float x, float y, float z, float colorR, float colorG, float colorB,
+                    float intensity, float range, boolean enabled, boolean spot,
+                    float directionX, float directionY, float directionZ, float innerAngle, float outerAngle) {
+            this.id = id;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.colorR = colorR;
+            this.colorG = colorG;
+            this.colorB = colorB;
+            this.intensity = intensity;
+            this.range = range;
+            this.enabled = enabled;
+            this.spot = spot;
+            this.directionX = directionX;
+            this.directionY = directionY;
+            this.directionZ = directionZ;
+            this.innerAngle = innerAngle;
+            this.outerAngle = outerAngle;
+        }
+    }
+
     /**
      * @param tiles per-cell tile type id, row-major (z outer, x inner); every cell must be filled
      * @param heights per-cell surface height at the tile centre, same layout as {@code tiles}
@@ -59,7 +106,8 @@ public final class MapExport {
      */
     public static void write(String id, int width, int depth, String tilesetId,
                              String[] tiles, float[] heights, String[] shapes, boolean[] collision,
-                             List<Prop> props, List<Entity> entities, Path mapsDirectory) throws IOException {
+                             List<Prop> props, List<Entity> entities, List<Light> lights, Path mapsDirectory)
+        throws IOException {
         int cells = width * depth;
         if (tiles.length != cells || heights.length != cells || shapes.length != cells || collision.length != cells) {
             throw new IllegalArgumentException("Map layer arrays must have " + cells + " cells: " + id);
@@ -73,14 +121,15 @@ public final class MapExport {
         Files.createDirectories(mapsDirectory);
         Path target = mapsDirectory.resolve(id + ".json");
         Path temp = mapsDirectory.resolve(id + ".json.tmp");
-        Files.writeString(temp, toJson(id, width, depth, tilesetId, tiles, heights, shapes, collision, props, entities),
+        Files.writeString(temp,
+            toJson(id, width, depth, tilesetId, tiles, heights, shapes, collision, props, entities, lights),
             StandardCharsets.UTF_8);
         Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
 
     private static String toJson(String id, int width, int depth, String tilesetId,
                                  String[] tiles, float[] heights, String[] shapes, boolean[] collision,
-                                 List<Prop> props, List<Entity> entities)
+                                 List<Prop> props, List<Entity> entities, List<Light> lights)
         throws IOException {
         StringWriter buffer = new StringWriter();
         JsonWriter writer = new JsonWriter(buffer);
@@ -117,6 +166,34 @@ public final class MapExport {
             if (entity.sprite != null) writer.set("sprite", entity.sprite);
             writer.set("x", entity.x);
             writer.set("y", entity.z);
+            writer.pop();
+        }
+        writer.pop();
+        writer.array("lights");
+        for (Light light : lights) {
+            writer.object();
+            writer.set("id", light.id);
+            writer.set("x", light.x);
+            writer.set("y", light.y);
+            writer.set("z", light.z);
+            writer.array("color");
+            writer.value(light.colorR);
+            writer.value(light.colorG);
+            writer.value(light.colorB);
+            writer.pop();
+            writer.set("intensity", light.intensity);
+            writer.set("range", light.range);
+            writer.set("enabled", light.enabled);
+            writer.set("spot", light.spot);
+            if (light.spot) {
+                writer.array("direction");
+                writer.value(light.directionX);
+                writer.value(light.directionY);
+                writer.value(light.directionZ);
+                writer.pop();
+                writer.set("innerAngle", light.innerAngle);
+                writer.set("outerAngle", light.outerAngle);
+            }
             writer.pop();
         }
         writer.pop();

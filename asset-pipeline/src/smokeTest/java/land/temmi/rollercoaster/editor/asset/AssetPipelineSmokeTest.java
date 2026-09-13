@@ -55,7 +55,7 @@ public final class AssetPipelineSmokeTest {
 
         Path directory = Files.createTempDirectory("trackside-editor-map");
         MapExport.write("valley", width, depth, "overworld", tiles, heights, shapes, collision,
-            List.of(), List.of(), directory);
+            List.of(), List.of(), List.of(), directory);
 
         Path mapFile = directory.resolve("valley.json");
         if (!Files.exists(mapFile)) throw new AssertionError("Map JSON was not written");
@@ -115,8 +115,11 @@ public final class AssetPipelineSmokeTest {
         List<MapExport.Prop> props = List.of(new MapExport.Prop("house", 8f, 10f, 0.25f, 90f));
 
         Path directory = Files.createTempDirectory("trackside-editor-map-props");
+        List<MapExport.Light> lights = List.of(
+            new MapExport.Light("lamp-1", 8f, 1.5f, 10f, 1f, 0.9f, 0.7f, 1.2f, 5f, true),
+            new MapExport.Light("spot-1", 3f, 3f, 3f, 1f, 1f, 1f, 1f, 6f, true, true, 0f, -1f, 0f, 20f, 35f));
         MapExport.write("withProps", 1, 1, "overworld", tiles, heights, shapes, collision, props,
-            List.of(new MapExport.Entity("player-start", "player", "player", 0, 0)), directory);
+            List.of(new MapExport.Entity("player-start", "player", "player", 0, 0)), lights, directory);
 
         Tileset tileset = new Tileset().add(new TileSurface("grass"));
         LoadedMap loaded = new MapLoader().load(
@@ -131,6 +134,17 @@ public final class AssetPipelineSmokeTest {
             || !"player".equals(loaded.entities.first().sprite)) {
             throw new AssertionError("Entity did not round-trip through the runtime map loader");
         }
+        if (loaded.lights.size != 2) throw new AssertionError("Expected 2 lights, got " + loaded.lights.size);
+        land.temmi.rollercoaster.world.MapLight point = loaded.lights.get(0);
+        if (!"lamp-1".equals(point.id) || point.x != 8f || point.y != 1.5f || point.z != 10f
+            || point.colorR != 1f || point.colorG != 0.9f || point.colorB != 0.7f
+            || point.intensity != 1.2f || point.range != 5f || !point.enabled || point.spot) {
+            throw new AssertionError("Point light did not round-trip");
+        }
+        land.temmi.rollercoaster.world.MapLight spot = loaded.lights.get(1);
+        if (!spot.spot || spot.innerAngle != 20f || spot.outerAngle != 35f || spot.directionY != -1f) {
+            throw new AssertionError("Spot light did not round-trip");
+        }
     }
 
     private static void verifyRejectsUnpaintedMap() throws IOException {
@@ -141,7 +155,7 @@ public final class AssetPipelineSmokeTest {
         Path directory = Files.createTempDirectory("trackside-editor-map-empty");
         try {
             MapExport.write("empty", 2, 2, "overworld", tiles, heights, shapes, collision,
-                List.of(), List.of(), directory);
+                List.of(), List.of(), List.of(), directory);
             throw new AssertionError("Exporting a map with unpainted cells should fail");
         } catch (IllegalArgumentException expected) {
             // Expected.
