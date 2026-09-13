@@ -2,6 +2,7 @@ package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.document.MapAsset;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
+import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
 import land.temmi.rollercoaster.editor.document.PaintTilesCommand;
 import land.temmi.rollercoaster.editor.document.TileShape;
 
@@ -27,13 +28,15 @@ final class MapCanvas extends JPanel {
         void onTileStroke(String mapId, List<PaintTilesCommand.Edit> edits);
 
         void onCollisionStroke(String mapId, List<PaintCollisionCommand.Edit> edits);
+
+        void onTerrainStroke(String mapId, List<PaintTerrainCommand.Edit> edits);
     }
 
     interface HoverListener {
         void onHover(MapAsset map, int x, int z);
     }
 
-    enum Tool { TILE, COLLISION }
+    enum Tool { TILE, COLLISION, TERRAIN }
 
     private static final int CELL_SIZE = 28;
     private static final Color EMPTY_COLOR = new Color(60, 60, 60);
@@ -44,10 +47,13 @@ final class MapCanvas extends JPanel {
     private final HoverListener hoverListener;
     private final Map<Long, PaintTilesCommand.Edit> pendingTileEdits = new LinkedHashMap<>();
     private final Map<Long, PaintCollisionCommand.Edit> pendingCollisionEdits = new LinkedHashMap<>();
+    private final Map<Long, PaintTerrainCommand.Edit> pendingTerrainEdits = new LinkedHashMap<>();
 
     private MapAsset map;
     private Tool tool = Tool.TILE;
     private String paintTileId;
+    private float terrainTargetHeight;
+    private TileShape terrainTargetShape = TileShape.FLAT;
     private Boolean collisionStrokeValue;
     private int lastPaintedX = -1;
     private int lastPaintedZ = -1;
@@ -86,6 +92,7 @@ final class MapCanvas extends JPanel {
         this.map = map;
         pendingTileEdits.clear();
         pendingCollisionEdits.clear();
+        pendingTerrainEdits.clear();
         setPreferredSize(map == null ? new Dimension(0, 0)
             : new Dimension(map.width * CELL_SIZE, map.depth * CELL_SIZE));
         revalidate();
@@ -98,6 +105,11 @@ final class MapCanvas extends JPanel {
 
     void setPaintTileId(String tileId) {
         this.paintTileId = tileId;
+    }
+
+    void setTerrainTarget(float height, TileShape shape) {
+        this.terrainTargetHeight = height;
+        this.terrainTargetShape = shape;
     }
 
     private void beginStroke(MouseEvent e) {
@@ -121,6 +133,10 @@ final class MapCanvas extends JPanel {
             strokeListener.onCollisionStroke(map.id, new ArrayList<>(pendingCollisionEdits.values()));
             pendingCollisionEdits.clear();
         }
+        if (!pendingTerrainEdits.isEmpty()) {
+            strokeListener.onTerrainStroke(map.id, new ArrayList<>(pendingTerrainEdits.values()));
+            pendingTerrainEdits.clear();
+        }
         repaint();
     }
 
@@ -142,12 +158,16 @@ final class MapCanvas extends JPanel {
         lastPaintedZ = z;
 
         long key = key(x, z);
-        if (tool == Tool.TILE) {
-            pendingTileEdits.putIfAbsent(key, new PaintTilesCommand.Edit(x, z, map.getTile(x, z), paintTileId));
-        } else {
-            if (collisionStrokeValue == null) collisionStrokeValue = !map.isBlocked(x, z);
-            pendingCollisionEdits.putIfAbsent(key,
-                new PaintCollisionCommand.Edit(x, z, map.isBlocked(x, z), collisionStrokeValue));
+        switch (tool) {
+            case TILE -> pendingTileEdits.putIfAbsent(key,
+                new PaintTilesCommand.Edit(x, z, map.getTile(x, z), paintTileId));
+            case COLLISION -> {
+                if (collisionStrokeValue == null) collisionStrokeValue = !map.isBlocked(x, z);
+                pendingCollisionEdits.putIfAbsent(key,
+                    new PaintCollisionCommand.Edit(x, z, map.isBlocked(x, z), collisionStrokeValue));
+            }
+            case TERRAIN -> pendingTerrainEdits.putIfAbsent(key, new PaintTerrainCommand.Edit(
+                x, z, map.getHeight(x, z), map.getShape(x, z), terrainTargetHeight, terrainTargetShape));
         }
         repaint();
     }
@@ -163,6 +183,8 @@ final class MapCanvas extends JPanel {
                 String tileId = tileEdit != null ? tileEdit.newTileId : map.getTile(x, z);
                 PaintCollisionCommand.Edit collisionEdit = pendingCollisionEdits.get(key);
                 boolean blocked = collisionEdit != null ? collisionEdit.newBlocked : map.isBlocked(x, z);
+                PaintTerrainCommand.Edit terrainEdit = pendingTerrainEdits.get(key);
+                TileShape shape = terrainEdit != null ? terrainEdit.newShape : map.getShape(x, z);
 
                 int px = x * CELL_SIZE;
                 int py = z * CELL_SIZE;
@@ -172,7 +194,6 @@ final class MapCanvas extends JPanel {
                     g.setColor(BLOCKED_TINT);
                     g.fillRect(px, py, CELL_SIZE, CELL_SIZE);
                 }
-                TileShape shape = map.getShape(x, z);
                 if (shape != TileShape.FLAT) drawRampIndicator(g, px, py, shape);
                 g.setColor(GRID_LINE);
                 g.drawRect(px, py, CELL_SIZE, CELL_SIZE);

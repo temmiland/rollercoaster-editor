@@ -2,22 +2,27 @@ package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.document.MapAsset;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
+import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
 import land.temmi.rollercoaster.editor.document.PaintTilesCommand;
 import land.temmi.rollercoaster.editor.document.TileEntry;
+import land.temmi.rollercoaster.editor.document.TileShape;
 import land.temmi.rollercoaster.editor.document.TilesetAsset;
 
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
 import javax.swing.JSplitPane;
 import javax.swing.JToggleButton;
 import javax.swing.ListCellRenderer;
+import javax.swing.SpinnerNumberModel;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -35,6 +40,9 @@ final class MapPanel extends JPanel {
     private final MapCanvas canvas;
     private final JToggleButton tileTool = new JToggleButton("Kacheln malen", true);
     private final JToggleButton collisionTool = new JToggleButton("Sperren malen");
+    private final JToggleButton terrainTool = new JToggleButton("Terrain formen");
+    private final JSpinner levelSpinner = new JSpinner(new SpinnerNumberModel(0, -20, 20, 1));
+    private final JComboBox<TileShape> shapeCombo = new JComboBox<>(TileShape.values());
     private final JLabel hoverLabel = new JLabel(" ");
 
     MapPanel(ProjectController projectController) {
@@ -53,8 +61,13 @@ final class MapPanel extends JPanel {
         ButtonGroup tools = new ButtonGroup();
         tools.add(tileTool);
         tools.add(collisionTool);
+        tools.add(terrainTool);
         tileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.TILE));
         collisionTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.COLLISION));
+        terrainTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.TERRAIN));
+        levelSpinner.addChangeListener(e -> updateTerrainTarget());
+        shapeCombo.addActionListener(e -> updateTerrainTarget());
+        updateTerrainTarget();
 
         add(buildMapListPanel(), BorderLayout.WEST);
         add(buildCenterPanel(), BorderLayout.CENTER);
@@ -70,6 +83,11 @@ final class MapPanel extends JPanel {
             @Override
             public void onCollisionStroke(String mapId, List<PaintCollisionCommand.Edit> edits) {
                 projectController.paintCollision(mapId, edits);
+            }
+
+            @Override
+            public void onTerrainStroke(String mapId, List<PaintTerrainCommand.Edit> edits) {
+                projectController.paintTerrain(mapId, edits);
             }
         };
         MapCanvas.HoverListener hoverListener = (map, x, z) -> hoverLabel.setText(String.format(
@@ -104,6 +122,10 @@ final class MapPanel extends JPanel {
         JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
         toolbar.add(tileTool);
         toolbar.add(collisionTool);
+        toolbar.add(terrainTool);
+        toolbar.add(new JLabel("Level:"));
+        toolbar.add(levelSpinner);
+        toolbar.add(shapeCombo);
         panel.add(toolbar, BorderLayout.NORTH);
 
         JPanel palettePanel = new JPanel(new BorderLayout());
@@ -146,6 +168,18 @@ final class MapPanel extends JPanel {
             TilesetAsset tileset = findTileset(selected.tilesetId);
             if (tileset != null) tileset.getTiles().forEach(paletteListModel::addElement);
         }
+    }
+
+    /**
+     * Level is the flat plateau a ramp bridges up to, so height derives from it and the shape
+     * rather than being typed directly - that keeps every target the terrain tool can produce
+     * already valid (whole levels for flat, half levels for a ramp), matching {@link MapAsset}.
+     */
+    private void updateTerrainTarget() {
+        int level = (Integer) levelSpinner.getValue();
+        TileShape shape = (TileShape) shapeCombo.getSelectedItem();
+        float height = shape.isRamp() ? level - 0.5f : level;
+        canvas.setTerrainTarget(height, shape);
     }
 
     private TilesetAsset findTileset(String id) {
