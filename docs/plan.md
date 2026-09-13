@@ -345,6 +345,10 @@ Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle 
   entgegen statt einer rohen Höhe - jede Kombination, die es erzeugen kann, ist dadurch bereits
   gültig (ganze Level für flach, halbe für eine Rampe), sodass `PaintTerrainCommand` sie nie
   ablehnt. Begehbare und nicht begehbare Rampen unterscheiden sich weiterhin nur im Kacheltyp.
+- [x] Bewegte Charaktere folgen der Rampenoberfläche entlang ihrer tatsächlichen Weltposition:
+  `GridActor` fragt beim Schritt `TerrainSurface.heightAt` ab, statt die Höhen der Tile-Mitten
+  linear zu verbinden. Der Regressionstest `RampMovementTest` deckt Einfahrt, Mitte und Ausfahrt
+  einer begehbaren Rampe bis zum Plateau ab.
 - [x] Bemalte Karte dreidimensional und live anzeigen: `Live-Vorschau` bündelt kurz aufeinander
   folgende Pinselstriche, exportiert danach Karte, Tileset, Modelle und bei Bedarf Sprites und
   schickt ihre Katalogpfade per `ShowMap` an den Vorschauprozess. Dieser baut mit
