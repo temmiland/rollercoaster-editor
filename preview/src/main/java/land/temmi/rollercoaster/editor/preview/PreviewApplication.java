@@ -28,6 +28,7 @@ import land.temmi.rollercoaster.editor.protocol.ShowSampleLevel;
 import land.temmi.rollercoaster.render.DayNightCycle;
 import land.temmi.rollercoaster.render.LightingEnvironment;
 import land.temmi.rollercoaster.render.WorldShaderProvider;
+import land.temmi.rollercoaster.world.TerrainSurface;
 import land.temmi.rollercoaster.world.TileSurface;
 import land.temmi.rollercoaster.world.Tileset;
 import land.temmi.rollercoaster.world.WorldScene;
@@ -54,6 +55,7 @@ public final class PreviewApplication extends ApplicationAdapter {
 
     private PerspectiveCamera camera;
     private CameraInputController cameraController;
+    private ClickPicker clickPicker;
     private ModelBatch modelBatch;
     private LightingEnvironment lighting;
     private DayNightCycle dayNightCycle;
@@ -78,7 +80,7 @@ public final class PreviewApplication extends ApplicationAdapter {
     public void create() {
         camera = new PerspectiveCamera(60f, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         cameraController = new CameraInputController(camera);
-        ClickPicker clickPicker = new ClickPicker(camera, this::onPick);
+        clickPicker = new ClickPicker(camera, this::onPick);
         InputMultiplexer inputMultiplexer = new InputMultiplexer(clickPicker, cameraController);
         Gdx.input.setInputProcessor(inputMultiplexer);
 
@@ -125,6 +127,7 @@ public final class PreviewApplication extends ApplicationAdapter {
 
     private void showGenericScene() {
         sceneMode = SceneMode.GENERIC;
+        clickPicker.setTerrainSurface(null);
         camera.position.set(8f, 6f, 8f);
         camera.lookAt(0f, 0f, 0f);
         camera.near = 0.1f;
@@ -140,6 +143,7 @@ public final class PreviewApplication extends ApplicationAdapter {
             levelModelCatalog = loaded.catalog();
         }
         sceneMode = SceneMode.SAMPLE_LEVEL;
+        clickPicker.setTerrainSurface(new TerrainSurface(levelScene.getMap().tiles));
         camera.position.set(34f, 24f, 34f);
         camera.lookAt(12f, 1f, 12f);
         camera.near = 0.1f;
@@ -172,6 +176,7 @@ public final class PreviewApplication extends ApplicationAdapter {
             }
 
             sceneMode = SceneMode.DOCUMENT_MAP;
+            clickPicker.setTerrainSurface(new TerrainSurface(scene.getMap().tiles));
             float cx = request.width / 2f;
             float cz = request.depth / 2f;
             float distance = Math.max(request.width, request.depth) * 1.2f + 6f;

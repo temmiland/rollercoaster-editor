@@ -21,3 +21,21 @@ tasks.named('run') {
         jvmArgs += ['-XstartOnFirstThread']
     }
 }
+
+sourceSets {
+    smokeTest {
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+configurations {
+    smokeTestImplementation.extendsFrom implementation
+}
+
+tasks.register('previewSmokeTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks terrain-surface ray-march picking against a real TileMap; no GL context or window involved.'
+    classpath = sourceSets.smokeTest.runtimeClasspath
+    mainClass = 'land.temmi.rollercoaster.editor.preview.ClickPickerSmokeTest'
+}
