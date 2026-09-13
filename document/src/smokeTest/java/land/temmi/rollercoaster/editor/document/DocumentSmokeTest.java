@@ -40,6 +40,13 @@ public final class DocumentSmokeTest {
             throw new AssertionError("A new edit that discards the saved state's redo branch must stay dirty");
         }
         if (history.canRedo()) throw new AssertionError("Performing a command should clear the redo stack");
+
+        CommandHistory freshHistory = new CommandHistory(new ProjectDocument("Frisch geladen"));
+        if (freshHistory.isDirty()) throw new AssertionError("A freshly built history is clean by default");
+        freshHistory.markDirty();
+        if (!freshHistory.isDirty()) throw new AssertionError("markDirty() must force a dirty read");
+        freshHistory.markSaved();
+        if (freshHistory.isDirty()) throw new AssertionError("markSaved() must clear a forced-dirty state");
     }
 
     private static void verifySaveLoadRoundtrip() throws IOException {

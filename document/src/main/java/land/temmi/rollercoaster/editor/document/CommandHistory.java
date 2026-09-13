@@ -60,4 +60,13 @@ public final class CommandHistory {
     public void markSaved() {
         savedDepth = undoStack.size();
     }
+
+    /**
+     * Forces the document to read as dirty regardless of undo-stack depth. A freshly built
+     * history is at depth 0 with savedDepth also 0, so it reads as clean by default - use this
+     * for state that was loaded but not itself persisted yet, e.g. a restored autosave.
+     */
+    public void markDirty() {
+        savedDepth = UNREACHABLE;
+    }
 }
