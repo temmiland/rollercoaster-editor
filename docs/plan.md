@@ -379,7 +379,11 @@ Steilkanten und gesperrte Flächen verhalten sich genauso wie im exportierten Sp
 - [x] Startpunkte und NPCs als tile-gebundene Entities mit stabilen Instanz-IDs platzieren,
   bearbeiten und löschen: Die Kartenansicht markiert sie separat, und `MapExport` übergibt ID,
   Typ, optionalen Sprite und Position an den rückwärtskompatibel erweiterten `MapLoader`.
-- Terrainbezug, Höhenversatz und Kollisions-Fußabdruck sichtbar bearbeiten.
+- [x] Terrainbezug, Höhenversatz und Kollisions-Fußabdruck sichtbar bearbeiten: Höhenversatz und
+  Drehung stehen bereits im Transformdialog; die Kartenansicht umreißt zusätzlich den mitgedrehten
+  Kollisions-Fußabdruck des ausgewählten Props. Bei Zwischenwinkeln zeigt das die tatsächliche
+  gedrehte Form, nicht die konservative achsparallele Näherung der Engine - genau genug, um eine
+  Platzierung zu beurteilen, kein Byte-für-Byte-Abbild des exportierten Kollisionsrasters.
 - [x] Sprite-Atlanten registrieren; Richtungen, Idle-/Laufsequenzen, Frame-Dauer und Fußpunkt
   zuordnen: Ein importiertes PNG-Sheet wird über Spalten/Zeilen und Frame-Indizes eingerichtet,
   deterministisch als einzelne Atlas-Seite gepackt und als echtes `SpriteManifest` exportiert.
