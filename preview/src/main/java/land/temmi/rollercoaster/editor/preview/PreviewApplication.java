@@ -3,6 +3,7 @@ package land.temmi.rollercoaster.editor.preview;
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.InputMultiplexer;
+import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
@@ -21,23 +22,33 @@ import land.temmi.rollercoaster.asset.ModelCatalog;
 import land.temmi.rollercoaster.editor.protocol.ComputeModelBounds;
 import land.temmi.rollercoaster.editor.protocol.PickResult;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
+import land.temmi.rollercoaster.editor.protocol.ShowMap;
+import land.temmi.rollercoaster.editor.protocol.ShowMapResult;
 import land.temmi.rollercoaster.editor.protocol.ShowSampleLevel;
 import land.temmi.rollercoaster.render.DayNightCycle;
 import land.temmi.rollercoaster.render.LightingEnvironment;
 import land.temmi.rollercoaster.render.WorldShaderProvider;
+import land.temmi.rollercoaster.world.TileSurface;
+import land.temmi.rollercoaster.world.Tileset;
 import land.temmi.rollercoaster.world.WorldScene;
+import land.temmi.rollercoaster.world.WorldSceneLoader;
 
 import java.io.IOException;
 
 /**
  * The preview window. Renders through the same ModelBatch/WorldShaderProvider/LightingEnvironment
  * pipeline as the game. Shows a neutral generic scene until the editor reports that a project is
- * open, then switches to example-game's testfeld map (standing in for a document-backed scene
- * until Phase 2/3 give the editor its own map authoring).
+ * open, then switches to example-game's testfeld map, until the editor asks it to show a specific
+ * exported document map instead (ShowMap) - which takes over as the active scene until the next
+ * scene-switch message.
  */
 public final class PreviewApplication extends ApplicationAdapter {
     private static final float GENERIC_CAMERA_FAR = 200f;
     private static final float LEVEL_CAMERA_FAR = 150f;
+    private static final float DOCUMENT_MAP_CAMERA_FAR = 200f;
+    private static final float DOCUMENT_TILE_SIDE_TINT = 0.72f;
+
+    private enum SceneMode { GENERIC, SAMPLE_LEVEL, DOCUMENT_MAP }
 
     private final PreviewConnection connection;
 
@@ -54,7 +65,10 @@ public final class PreviewApplication extends ApplicationAdapter {
     private ModelCatalog levelModelCatalog;
     private final Array<ModelInstance> visibleInstances = new Array<>();
 
-    private boolean levelActive;
+    private WorldScene documentScene;
+    private ModelCatalog documentModelCatalog;
+
+    private SceneMode sceneMode = SceneMode.GENERIC;
 
     public PreviewApplication(PreviewConnection connection) {
         this.connection = connection;
@@ -90,6 +104,9 @@ public final class PreviewApplication extends ApplicationAdapter {
         } else if (message instanceof ComputeModelBounds) {
             String path = ((ComputeModelBounds) message).modelFilePath;
             Gdx.app.postRunnable(() -> connection.send(ModelBoundsService.compute(path)));
+        } else if (message instanceof ShowMap) {
+            ShowMap request = (ShowMap) message;
+            Gdx.app.postRunnable(() -> connection.send(showDocumentMap(request)));
         }
     }
 
@@ -107,7 +124,7 @@ public final class PreviewApplication extends ApplicationAdapter {
     }
 
     private void showGenericScene() {
-        levelActive = false;
+        sceneMode = SceneMode.GENERIC;
         camera.position.set(8f, 6f, 8f);
         camera.lookAt(0f, 0f, 0f);
         camera.near = 0.1f;
@@ -122,13 +139,59 @@ public final class PreviewApplication extends ApplicationAdapter {
             levelScene = loaded.scene();
             levelModelCatalog = loaded.catalog();
         }
-        levelActive = true;
+        sceneMode = SceneMode.SAMPLE_LEVEL;
         camera.position.set(34f, 24f, 34f);
         camera.lookAt(12f, 1f, 12f);
         camera.near = 0.1f;
         camera.far = LEVEL_CAMERA_FAR;
         camera.update();
         cameraController.target.set(12f, 1f, 12f);
+    }
+
+    /** Builds a real WorldScene from an exported map file - the tool that closes Phase 3's "does
+     * this ramp actually let a player reach the plateau" question, not just a colored 2D grid. */
+    private ShowMapResult showDocumentMap(ShowMap request) {
+        WorldScene previousScene = documentScene;
+        ModelCatalog previousCatalog = documentModelCatalog;
+        try {
+            Tileset tileset = new Tileset();
+            for (int i = 0; i < request.tileIds.length; i++) {
+                tileset.add(new TileSurface(request.tileIds[i])
+                    .setColor(colorFor(request.tileIds[i]), DOCUMENT_TILE_SIDE_TINT)
+                    .setWalkable(request.tileWalkable[i]));
+            }
+            ModelCatalog catalog = new ModelCatalog();
+            WorldScene scene = new WorldSceneLoader().load(
+                new FileHandle(request.mapFilePath), tileset, new Material(), catalog);
+
+            documentScene = scene;
+            documentModelCatalog = catalog;
+            if (previousScene != null) {
+                previousScene.dispose();
+                previousCatalog.dispose();
+            }
+
+            sceneMode = SceneMode.DOCUMENT_MAP;
+            float cx = request.width / 2f;
+            float cz = request.depth / 2f;
+            float distance = Math.max(request.width, request.depth) * 1.2f + 6f;
+            camera.position.set(cx + distance, distance * 0.8f, cz + distance);
+            camera.lookAt(cx, 1f, cz);
+            camera.near = 0.1f;
+            camera.far = DOCUMENT_MAP_CAMERA_FAR;
+            camera.update();
+            cameraController.target.set(cx, 1f, cz);
+            return ShowMapResult.ok();
+        } catch (RuntimeException e) {
+            return ShowMapResult.ofError(e.getMessage());
+        }
+    }
+
+    /** Matches the editor's own MapCanvas hash-to-color function, so a tile looks the same in the
+     * 2D map view and the 3D preview even without a real texture atlas. */
+    private static Color colorFor(String tileId) {
+        int hue = Math.floorMod(tileId.hashCode(), 360);
+        return new Color(0f, 0f, 0f, 1f).fromHsv(hue, 0.45f, 0.75f);
     }
 
     @Override
@@ -141,10 +204,10 @@ public final class PreviewApplication extends ApplicationAdapter {
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 
         modelBatch.begin(camera);
-        if (levelActive) {
-            modelBatch.render(levelScene.getVisibleInstances(camera, visibleInstances));
-        } else {
-            modelBatch.render(genericInstances);
+        switch (sceneMode) {
+            case SAMPLE_LEVEL -> modelBatch.render(levelScene.getVisibleInstances(camera, visibleInstances));
+            case DOCUMENT_MAP -> modelBatch.render(documentScene.getVisibleInstances(camera, visibleInstances));
+            default -> modelBatch.render(genericInstances);
         }
         modelBatch.end();
     }
@@ -163,6 +226,10 @@ public final class PreviewApplication extends ApplicationAdapter {
         if (levelScene != null) {
             levelScene.dispose();
             levelModelCatalog.dispose();
+        }
+        if (documentScene != null) {
+            documentScene.dispose();
+            documentModelCatalog.dispose();
         }
         try {
             connection.close();
