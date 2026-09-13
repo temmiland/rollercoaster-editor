@@ -3,11 +3,20 @@ package land.temmi.rollercoaster.editor.ui;
 import com.badlogic.gdx.files.FileHandle;
 import land.temmi.rollercoaster.asset.ModelDefinition;
 import land.temmi.rollercoaster.asset.ModelManifest;
+import land.temmi.rollercoaster.editor.document.MapAsset;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
+import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
+import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
+import land.temmi.rollercoaster.editor.document.PaintTilesCommand;
 import land.temmi.rollercoaster.editor.document.ProjectDocument;
 import land.temmi.rollercoaster.editor.document.ProjectFile;
 import land.temmi.rollercoaster.editor.document.TextureAsset;
+import land.temmi.rollercoaster.editor.document.TileShape;
+import land.temmi.rollercoaster.world.LoadedMap;
+import land.temmi.rollercoaster.world.MapLoader;
 import land.temmi.rollercoaster.world.TileDefinition;
+import land.temmi.rollercoaster.world.TileSurface;
+import land.temmi.rollercoaster.world.Tileset;
 import land.temmi.rollercoaster.world.TilesetManifest;
 
 import java.awt.Color;
@@ -18,6 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 
 /** Checks ProjectController's new/open/save/saveAs and autosave-restore logic; no GUI involved. */
@@ -31,9 +41,11 @@ public final class ProjectControllerSmokeTest {
         verifyTextureImportAndTilesetExport();
         verifyExportWithSideTexture();
         verifyModelImportAndExport();
+        verifyMapCreationPaintingAndExport();
         System.out.println("PASS: ProjectController new/rename/save/undo/redo, autosave detection and restore, "
             + "saveAs isolation, a texture-import-to-tileset-export roundtrip read back by the real parser, "
-            + "a separately packed side texture, and a model import/export roundtrip");
+            + "a separately packed side texture, a model import/export roundtrip, "
+            + "and a map creation/paint/export roundtrip read back by the real MapLoader parser");
     }
 
     private static void verifyNewRenameSaveUndoRedo() throws IOException {
@@ -232,6 +244,57 @@ public final class ProjectControllerSmokeTest {
         Path file = Files.createTempDirectory("trackside-editor-texture-source").resolve(name + ".png");
         javax.imageio.ImageIO.write(image, "PNG", file.toFile());
         return file;
+    }
+
+    private static void verifyMapCreationPaintingAndExport() throws IOException {
+        Path projectDirectory = Files.createTempDirectory("trackside-editor-controller-map");
+        ProjectController controller = new ProjectController(() -> { });
+        controller.newProject(projectDirectory, "Valley World");
+
+        TextureAsset grass = controller.importTexture(solidColorPng("grass", 16, 16, Color.GREEN), "grass");
+        controller.createTileset("overworld");
+        controller.addTile("overworld", "grass", grass.id, null, true);
+
+        controller.createMap("valley", 3, 2, "overworld");
+        if (controller.getMaps().size() != 1) throw new AssertionError("Map was not added to the document");
+        MapAsset map = controller.getMaps().get(0);
+
+        controller.paintTiles("valley", List.of(
+            new PaintTilesCommand.Edit(0, 0, null, "grass"),
+            new PaintTilesCommand.Edit(1, 0, null, "grass"),
+            new PaintTilesCommand.Edit(2, 0, null, "grass"),
+            new PaintTilesCommand.Edit(0, 1, null, "grass"),
+            new PaintTilesCommand.Edit(1, 1, null, "grass"),
+            new PaintTilesCommand.Edit(2, 1, null, "grass")));
+        controller.paintTerrain("valley", Collections.singletonList(
+            new PaintTerrainCommand.Edit(1, 0, 0f, TileShape.FLAT, 0.5f, TileShape.RAMP_EAST)));
+        controller.paintCollision("valley", Collections.singletonList(
+            new PaintCollisionCommand.Edit(2, 1, false, true)));
+
+        try {
+            controller.exportMap("valley");
+        } catch (IOException unexpected) {
+            throw new AssertionError("A fully painted map should export cleanly", unexpected);
+        }
+
+        Path mapFile = projectDirectory.resolve("maps/valley.json");
+        if (!Files.exists(mapFile)) throw new AssertionError("exportMap did not write the map file");
+
+        Tileset tileset = new Tileset().add(new TileSurface("grass"));
+        LoadedMap loaded = new MapLoader().load(new FileHandle(mapFile.toFile()), tileset);
+        if (loaded.tiles.getWidth() != 3 || loaded.tiles.getDepth() != 2) {
+            throw new AssertionError("Exported map size is wrong");
+        }
+        if (loaded.tiles.getHeight(1, 0) != 0.5f) throw new AssertionError("Exported ramp height is wrong");
+        if (!loaded.tiles.isBlocked(2, 1)) throw new AssertionError("Exported collision flag is wrong");
+
+        controller.removeMap(map);
+        if (!controller.getMaps().isEmpty()) throw new AssertionError("removeMap did not apply");
+        controller.undo();
+        if (controller.getMaps().isEmpty()) throw new AssertionError("Undo did not restore the map");
+        if (!"grass".equals(controller.getMaps().get(0).getTile(0, 0))) {
+            throw new AssertionError("Restoring a removed map must keep its painted cells");
+        }
     }
 
     private static void verifyOperationsRequireAnOpenProject() {

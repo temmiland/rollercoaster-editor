@@ -1,17 +1,24 @@
 package land.temmi.rollercoaster.editor.ui;
 
+import land.temmi.rollercoaster.editor.asset.MapExport;
 import land.temmi.rollercoaster.editor.asset.ModelManifestExport;
 import land.temmi.rollercoaster.editor.asset.TilePacker;
 import land.temmi.rollercoaster.editor.asset.TileSource;
 import land.temmi.rollercoaster.editor.asset.TilesetExport;
 import land.temmi.rollercoaster.editor.document.AddTileCommand;
 import land.temmi.rollercoaster.editor.document.CommandHistory;
+import land.temmi.rollercoaster.editor.document.CreateMapCommand;
 import land.temmi.rollercoaster.editor.document.CreateTilesetCommand;
 import land.temmi.rollercoaster.editor.document.ImportModelCommand;
 import land.temmi.rollercoaster.editor.document.ImportTextureCommand;
+import land.temmi.rollercoaster.editor.document.MapAsset;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
+import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
+import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
+import land.temmi.rollercoaster.editor.document.PaintTilesCommand;
 import land.temmi.rollercoaster.editor.document.ProjectDocument;
 import land.temmi.rollercoaster.editor.document.ProjectFile;
+import land.temmi.rollercoaster.editor.document.RemoveMapCommand;
 import land.temmi.rollercoaster.editor.document.RemoveModelCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTextureCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTilesetCommand;
@@ -45,6 +52,7 @@ public final class ProjectController {
     private static final String TEXTURES_DIRECTORY_NAME = "sources/textures";
     private static final String MODELS_DIRECTORY_NAME = "sources/models";
     private static final String CATALOGS_DIRECTORY_NAME = "catalogs";
+    private static final String MAPS_DIRECTORY_NAME = "maps";
 
     private final Listener listener;
     private final Timer autosaveTimer;
@@ -287,6 +295,65 @@ public final class ProjectController {
         ModelManifestExport.write(entries, catalogsDirectory());
     }
 
+    public List<MapAsset> getMaps() {
+        requireOpen();
+        return history.getDocument().getMaps();
+    }
+
+    public void createMap(String id, int width, int depth, String tilesetId) {
+        requireOpen();
+        history.perform(new CreateMapCommand(id, width, depth, tilesetId));
+        listener.onProjectChanged();
+    }
+
+    public void removeMap(MapAsset map) {
+        requireOpen();
+        history.perform(new RemoveMapCommand(map));
+        listener.onProjectChanged();
+    }
+
+    public void paintTiles(String mapId, List<PaintTilesCommand.Edit> edits) {
+        requireOpen();
+        history.perform(new PaintTilesCommand(mapId, edits));
+        listener.onProjectChanged();
+    }
+
+    public void paintTerrain(String mapId, List<PaintTerrainCommand.Edit> edits) {
+        requireOpen();
+        history.perform(new PaintTerrainCommand(mapId, edits));
+        listener.onProjectChanged();
+    }
+
+    public void paintCollision(String mapId, List<PaintCollisionCommand.Edit> edits) {
+        requireOpen();
+        history.perform(new PaintCollisionCommand(mapId, edits));
+        listener.onProjectChanged();
+    }
+
+    /** Writes maps/&lt;id&gt;.json matching MapLoader's schema exactly. */
+    public void exportMap(String mapId) throws IOException {
+        requireOpen();
+        MapAsset map = history.getDocument().findMap(mapId);
+        if (map == null) throw new IOException("No such map: " + mapId);
+
+        int cells = map.width * map.depth;
+        String[] tiles = new String[cells];
+        float[] heights = new float[cells];
+        String[] shapes = new String[cells];
+        boolean[] collision = new boolean[cells];
+        for (int z = 0; z < map.depth; z++) {
+            for (int x = 0; x < map.width; x++) {
+                int index = z * map.width + x;
+                tiles[index] = map.getTile(x, z);
+                heights[index] = map.getHeight(x, z);
+                shapes[index] = map.getShape(x, z).toId();
+                collision[index] = map.isBlocked(x, z);
+            }
+        }
+        MapExport.write(map.id, map.width, map.depth, map.tilesetId, tiles, heights, shapes, collision,
+            mapsDirectory());
+    }
+
     private Path modelsDirectory() {
         return projectDirectory.resolve(MODELS_DIRECTORY_NAME);
     }
@@ -305,6 +372,10 @@ public final class ProjectController {
 
     private Path catalogsDirectory() {
         return projectDirectory.resolve(CATALOGS_DIRECTORY_NAME);
+    }
+
+    private Path mapsDirectory() {
+        return projectDirectory.resolve(MAPS_DIRECTORY_NAME);
     }
 
     private void autosave() {
