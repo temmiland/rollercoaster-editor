@@ -34,7 +34,9 @@ import land.temmi.rollercoaster.render.DayNightCycle;
 import land.temmi.rollercoaster.render.LightingEnvironment;
 import land.temmi.rollercoaster.render.BillboardQuad;
 import land.temmi.rollercoaster.render.BillboardRenderer;
+import land.temmi.rollercoaster.render.PointLightSource;
 import land.temmi.rollercoaster.render.WorldShaderProvider;
+import land.temmi.rollercoaster.world.MapLight;
 import land.temmi.rollercoaster.world.TerrainSurface;
 import land.temmi.rollercoaster.world.TileSurface;
 import land.temmi.rollercoaster.world.Tileset;
@@ -141,6 +143,7 @@ public final class PreviewApplication extends ApplicationAdapter {
     private void showGenericScene() {
         sceneMode = SceneMode.GENERIC;
         clickPicker.setTerrainSurface(null);
+        lighting.clearPointLights();
         camera.position.set(8f, 6f, 8f);
         camera.lookAt(0f, 0f, 0f);
         camera.near = 0.1f;
@@ -156,6 +159,7 @@ public final class PreviewApplication extends ApplicationAdapter {
             levelModelCatalog = loaded.catalog();
         }
         sceneMode = SceneMode.SAMPLE_LEVEL;
+        lighting.clearPointLights();
         clickPicker.setTerrainSurface(new TerrainSurface(levelScene.getMap().tiles));
         camera.position.set(34f, 24f, 34f);
         camera.lookAt(12f, 1f, 12f);
@@ -181,6 +185,11 @@ public final class PreviewApplication extends ApplicationAdapter {
             nextCatalog = loadModelCatalog(request.modelManifestFilePath);
             nextScene = new WorldSceneLoader().load(new FileHandle(request.mapFilePath), nextTileset.getTileset(),
                 nextTileset.createMaterial(), nextCatalog);
+            if (nextScene.getMap().lights.size > LightingEnvironment.MAX_POINT_LIGHTS) {
+                throw new IllegalArgumentException("Map has " + nextScene.getMap().lights.size
+                    + " lights, more than the engine's shared point/spot budget of "
+                    + LightingEnvironment.MAX_POINT_LIGHTS);
+            }
             if (request.spriteManifestFilePath != null) {
                 FileHandle manifestFile = new FileHandle(request.spriteManifestFilePath);
                 SpriteManifest manifest = SpriteManifest.load(manifestFile);
@@ -209,6 +218,7 @@ public final class PreviewApplication extends ApplicationAdapter {
             documentTextureTileset = nextTileset;
             documentSpriteAtlas = nextSpriteAtlas;
             documentSprites.addAll(nextSprites);
+            applyLights(nextScene.getMap().lights);
 
             sceneMode = SceneMode.DOCUMENT_MAP;
             clickPicker.setTerrainSurface(new TerrainSurface(nextScene.getMap().tiles));
@@ -229,6 +239,23 @@ public final class PreviewApplication extends ApplicationAdapter {
             if (nextTileset != null) nextTileset.dispose();
             if (nextSpriteAtlas != null) nextSpriteAtlas.dispose();
             return ShowMapResult.ofError(e.getMessage());
+        }
+    }
+
+    /** Replaces the shared LightingEnvironment's point/spot lights with the map's own - called
+     * only after everything else about the new scene has already loaded successfully, so a
+     * rejected ShowMap never leaves the currently visible scene's lighting half-changed. */
+    private void applyLights(Array<MapLight> lights) {
+        lighting.clearPointLights();
+        for (MapLight light : lights) {
+            PointLightSource source = new PointLightSource(light.x, light.y, light.z,
+                new Color(light.colorR, light.colorG, light.colorB, 1f), light.intensity, light.range);
+            source.enabled = light.enabled;
+            if (light.spot) {
+                source.setSpot(new Vector3(light.directionX, light.directionY, light.directionZ),
+                    light.innerAngle, light.outerAngle);
+            }
+            lighting.addPointLight(source);
         }
     }
 

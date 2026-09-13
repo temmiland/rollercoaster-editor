@@ -76,7 +76,9 @@ public final class PreviewProcessSmokeTest {
                 new String[] {"grass", "grass", "grass", "grass"}, new float[] {0f, 0f, 0f, 0f},
                 new String[] {"flat", "flat", "flat", "flat"}, new boolean[] {false, false, false, false},
                 java.util.List.of(new MapExport.Prop("house", 1f, 1f, 0f, 0f)),
-                java.util.List.of(new MapExport.Entity("npc-1", "npc", "npc", 0, 0)), mapDirectory);
+                java.util.List.of(new MapExport.Entity("npc-1", "npc", "npc", 0, 0)),
+                java.util.List.of(new MapExport.Light("lamp-1", 1f, 1.5f, 1f, 1f, 0.9f, 0.7f, 1f, 4f, true)),
+                mapDirectory);
             BufferedImage tile = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
             Graphics graphics = tile.getGraphics();
             try {
