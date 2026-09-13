@@ -69,8 +69,38 @@ public final class ProtocolSmokeTest {
             server.join();
         }
 
+        try (ServerSocket serverSocket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            int port = serverSocket.getLocalPort();
+            PickResult[] received = new PickResult[1];
+            Thread server = new Thread(() -> {
+                try (Socket socket = serverSocket.accept();
+                     MessageChannel channel = new MessageChannel(socket)) {
+                    channel.receive(); // Hello
+                    channel.send(new HelloAck(true, null));
+                    received[0] = (PickResult) channel.receive();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            server.start();
+
+            try (Socket clientSocket = new Socket(InetAddress.getLoopbackAddress(), port);
+                 MessageChannel client = new MessageChannel(clientSocket)) {
+                client.send(new Hello(MessageChannel.PROTOCOL_VERSION));
+                client.receive(); // HelloAck
+                client.send(new PickResult(1.5f, 0f, -2.25f));
+            }
+            server.join();
+
+            if (received[0] == null) throw new AssertionError("Server never received the PickResult");
+            if (received[0].worldX != 1.5f || received[0].worldY != 0f || received[0].worldZ != -2.25f) {
+                throw new AssertionError("PickResult lost a coordinate in transit: " + received[0].worldX
+                    + "," + received[0].worldY + "," + received[0].worldZ);
+            }
+        }
+
         System.out.println("PASS: Hello/HelloAck roundtrip over a loopback socket, version mismatch rejected with a "
-            + "reason, and scene-switch messages roundtrip after the handshake");
+            + "reason, scene-switch messages roundtrip after the handshake, and a preview-to-editor PickResult");
     }
 
     /** Mirrors the editor's half of the handshake: one connection, one Hello, one reply. */
