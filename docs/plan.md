@@ -281,10 +281,14 @@ und erneut öffnen, ohne Datenverlust oder kaputte Referenzen.
   (>2048px-Seite), abweichende Tile-Größen und doppelte IDs mit klarer Meldung ab. `TilesetExport`
   schreibt PNG plus Manifest im exakten `TilesetManifest`-Schema - gegen den echten Engine-Parser
   geprüft, nicht nur gegen die eigene Ausgabe.
-- [ ] Einzeltexturen importieren, benennen, sortieren und Vorschauen anzeigen - noch keine UI, der
-  Packer nimmt bisher `TileSource`-Objekte direkt entgegen.
-- [ ] Oberflächen-/Seitenzuordnung - Seitenregion fällt aktuell auf die Oberseite zurück (wie vom
-  Engine-Vertrag vorgesehen), eine eigene Seitentextur zuzuweisen ist noch nicht möglich.
+- [x] Einzeltexturen importieren und Tiles/Tilesets daraus anlegen (Assets-Panel, Tab "Texturen"
+  und "Tilesets"): kopiert in `sources/textures/`, Katalog lebt im Dokumentmodell
+  (`TextureAsset`/`TilesetAsset`/`TileEntry`) mit Commands für Undo/Redo. Sortieren und
+  Texturvorschau (Thumbnail) fehlen noch - die Liste zeigt bisher nur ID und Dateiname.
+- [x] Oberflächen-/Seitenzuordnung: `TileEntry.sideTextureId` optional, `TilePacker` packt Ober-
+  und Seitenbild als getrennte Atlas-Regionen (beide müssen dieselbe Größe wie die übrigen
+  Tiles/Seiten im Tileset haben - dieselbe Grid-Vereinfachung wie beim generellen Packing).
+  Ohne Seitentextur fällt der Export weiterhin auf die Oberseite zurück.
 - [ ] Terrainformen gemäß dem abgeschlossenen Engine-Vertrag.
 - [ ] GLTF/GLB samt Abhängigkeiten importieren, Modell registrieren und dreidimensional anzeigen.
 - [ ] Bounds anzeigen, Maßstab/Pivot/Höhe einstellen und Kollisions-Fußabdruck bearbeiten.
