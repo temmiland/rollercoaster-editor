@@ -319,12 +319,14 @@ Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle 
   - je Aufruf eine Liste von Zell-Änderungen, also bereits so geschnitten, dass ein ganzer
   Pinselstrich eine einzige Undo-Aktion wird. `ProjectController.exportMap` schreibt
   `maps/<id>.json` im echten `MapLoader`-Format. **Noch offen: Größen ändern** (Breite/Tiefe
-  einer bestehenden Karte anpassen) sowie jede Bedienung in der UI - es gibt noch keine
-  2D-Kartenansicht.
-- [ ] 2D-Kartenansicht mit Mausbedienung: Malen, Löschen, Pipette, Füllen, Rechteckauswahl, Kopieren
-  und Einfügen; ein Pinselstrich (auch über mehrere Zellen) entspricht einer Undo-Aktion, indem
-  die UI die betroffenen Zellen gesammelt an einen der Paint-Commands übergibt. Vorschau
-  aktualisiert sich während der Arbeit.
+  einer bestehenden Karte anpassen).
+- [x] 2D-Kartenansicht mit Mausbedienung (`MapPanel`/`MapCanvas`): Kartenliste anlegen/löschen/
+  exportieren, Kacheln malen (Palette aus dem zugeordneten Tileset) und Sperren malen; ein
+  Pinselstrich - auch über mehrere Zellen gezogen - sammelt sich lokal und wird erst beim
+  Loslassen als eine `PaintTilesCommand`/`PaintCollisionCommand` und damit eine Undo-Aktion
+  übergeben. Rampenrichtung wird als kleines Dreieck angezeigt. **Noch offen:** Löschen/Pipette/
+  Füllen/Rechteckauswahl/Kopieren-Einfügen als eigene Werkzeuge, Textur-Thumbnails statt
+  Farbflächen.
 - [ ] Höhen ändern, Plateaus und Rampen setzen und ihre Orientierung über die Formebene bearbeiten
   - `PaintTerrainCommand` unterstützt das bereits datenseitig; es fehlt das Werkzeug in der UI.
   Begehbare und nicht begehbare Rampen unterscheiden sich nur im Kacheltyp.
