@@ -290,8 +290,16 @@ und erneut öffnen, ohne Datenverlust oder kaputte Referenzen.
   Tiles/Seiten im Tileset haben - dieselbe Grid-Vereinfachung wie beim generellen Packing).
   Ohne Seitentextur fällt der Export weiterhin auf die Oberseite zurück.
 - [ ] Terrainformen gemäß dem abgeschlossenen Engine-Vertrag.
-- [ ] GLTF/GLB samt Abhängigkeiten importieren, Modell registrieren und dreidimensional anzeigen.
-- [ ] Bounds anzeigen, Maßstab/Pivot/Höhe einstellen und Kollisions-Fußabdruck bearbeiten.
+- [x] GLTF/GLB samt Abhängigkeiten importieren und Modell registrieren (Assets-Panel, Tab
+  "Modelle"): Hauptdatei plus Abhängigkeiten (z. B. `.bin`) werden zusammen nach
+  `sources/models/` kopiert; die Bounds kommen aus einem echten `Model`/`Mesh`, das nur die
+  Vorschau (mit GL-Kontext) bauen kann - `ComputeModelBounds`/`ModelBoundsResult` holen sie per
+  Roundtrip, `ModelBoundsService` spiegelt `GltfModelFactory`s Ladepfad exakt. Export schreibt
+  `catalogs/models/` plus ein gemeinsames `models.json`, gegen den echten `ModelManifest`-Parser
+  geprüft. **Dreidimensional anzeigen fehlt noch** - die Vorschau zeigt importierte Modelle noch
+  nicht isoliert an, nur ganze Karten (`SampleScene`).
+- [ ] Bounds anzeigen, Maßstab/Pivot/Höhe einstellen und Kollisions-Fußabdruck bearbeiten - Import
+  setzt bisher feste Startwerte (Skalierung 1, Anker (0,0,0), Kollision auf eine Zelle).
 - [ ] Abhängigkeiten bei Umbenennung, Löschung und Reimport prüfen; betroffene Karten auflisten.
 
 Abnahme: Tileset und Haus entstehen ausschließlich über die UI und laden im Example Game.
