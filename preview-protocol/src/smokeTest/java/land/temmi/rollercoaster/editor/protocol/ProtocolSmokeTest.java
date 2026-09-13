@@ -99,8 +99,43 @@ public final class ProtocolSmokeTest {
             }
         }
 
+        try (ServerSocket serverSocket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            int port = serverSocket.getLocalPort();
+            ComputeModelBounds[] received = new ComputeModelBounds[1];
+            Thread server = new Thread(() -> {
+                try (Socket socket = serverSocket.accept();
+                     MessageChannel channel = new MessageChannel(socket)) {
+                    channel.receive(); // Hello
+                    channel.send(new HelloAck(true, null));
+                    received[0] = (ComputeModelBounds) channel.receive();
+                    channel.send(ModelBoundsResult.ofBounds(-1f, 0f, -1f, 1f, 2f, 1f));
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            server.start();
+
+            ModelBoundsResult result;
+            try (Socket clientSocket = new Socket(InetAddress.getLoopbackAddress(), port);
+                 MessageChannel client = new MessageChannel(clientSocket)) {
+                client.send(new Hello(MessageChannel.PROTOCOL_VERSION));
+                client.receive(); // HelloAck
+                client.send(new ComputeModelBounds("/tmp/house.gltf"));
+                result = (ModelBoundsResult) client.receive();
+            }
+            server.join();
+
+            if (received[0] == null || !"/tmp/house.gltf".equals(received[0].modelFilePath)) {
+                throw new AssertionError("Server never received the ComputeModelBounds request");
+            }
+            if (!result.success || result.minY != 0f || result.maxY != 2f) {
+                throw new AssertionError("ModelBoundsResult lost data in transit");
+            }
+        }
+
         System.out.println("PASS: Hello/HelloAck roundtrip over a loopback socket, version mismatch rejected with a "
-            + "reason, scene-switch messages roundtrip after the handshake, and a preview-to-editor PickResult");
+            + "reason, scene-switch messages roundtrip after the handshake, a preview-to-editor PickResult, "
+            + "and a ComputeModelBounds/ModelBoundsResult roundtrip");
     }
 
     /** Mirrors the editor's half of the handshake: one connection, one Hello, one reply. */
