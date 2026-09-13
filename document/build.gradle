@@ -1,0 +1,28 @@
+plugins {
+    id 'java-library'
+}
+
+group = 'land.temmi'
+version = '0.1.0'
+
+dependencies {
+    api libs.gdx.core
+}
+
+sourceSets {
+    smokeTest {
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+configurations {
+    smokeTestImplementation.extendsFrom implementation
+}
+
+tasks.register('documentSmokeTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks undo/redo, dirty tracking and the project.json roundtrip without a GL context.'
+    classpath = sourceSets.smokeTest.runtimeClasspath
+    mainClass = 'land.temmi.rollercoaster.editor.document.DocumentSmokeTest'
+}
