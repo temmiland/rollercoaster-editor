@@ -390,6 +390,12 @@ final class MapPanel extends JPanel {
         canvas.setTileWalkability(tileWalkability);
         canvas.setTileImages(tileImages);
 
+        Map<String, ModelAsset> modelsById = new LinkedHashMap<>();
+        if (projectController.isOpen()) {
+            for (ModelAsset model : projectController.getModels()) modelsById.put(model.id, model);
+        }
+        canvas.setModels(modelsById);
+
         MapProp selectedProp = placedPropsList.getSelectedValue();
         MapEntityAsset selectedEntity = placedEntitiesList.getSelectedValue();
         placedPropsListModel.clear();

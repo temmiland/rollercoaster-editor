@@ -3,6 +3,7 @@ package land.temmi.rollercoaster.editor.ui;
 import land.temmi.rollercoaster.editor.document.MapAsset;
 import land.temmi.rollercoaster.editor.document.MapEntityAsset;
 import land.temmi.rollercoaster.editor.document.MapProp;
+import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
 import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
 import land.temmi.rollercoaster.editor.document.PaintTilesCommand;
@@ -12,6 +13,7 @@ import javax.swing.JPanel;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.Image;
 import java.awt.Polygon;
 import java.awt.event.MouseAdapter;
@@ -63,6 +65,7 @@ final class MapCanvas extends JPanel {
     private static final Color EDGE_LINE = new Color(255, 180, 30);
     private static final Color PROP_OUTLINE = Color.WHITE;
     private static final Color SELECTED_PROP_OUTLINE = new Color(255, 220, 40);
+    private static final Color FOOTPRINT_OUTLINE = new Color(255, 60, 60);
 
     private final StrokeListener strokeListener;
     private final HoverListener hoverListener;
@@ -80,6 +83,7 @@ final class MapCanvas extends JPanel {
     private TileShape terrainTargetShape = TileShape.FLAT;
     private Map<String, Boolean> tileWalkability = Map.of();
     private Map<String, Image> tileImages = Map.of();
+    private Map<String, ModelAsset> models = Map.of();
     private String selectedPropInstanceId;
     private String selectedEntityInstanceId;
     private boolean showTerrain = true;
@@ -176,6 +180,12 @@ final class MapCanvas extends JPanel {
     /** Tile-id keyed source previews; missing or unreadable images deliberately fall back to color. */
     void setTileImages(Map<String, Image> tileImages) {
         this.tileImages = new LinkedHashMap<>(tileImages);
+        repaint();
+    }
+
+    /** Model-id keyed catalog, used to draw the selected prop's collision footprint. */
+    void setModels(Map<String, ModelAsset> models) {
+        this.models = new LinkedHashMap<>(models);
         repaint();
     }
 
@@ -412,7 +422,11 @@ final class MapCanvas extends JPanel {
             }
         }
         if (showEdges) drawEdges(g);
-        for (MapProp prop : map.getProps()) drawProp(g, prop, prop.instanceId.equals(selectedPropInstanceId));
+        for (MapProp prop : map.getProps()) {
+            boolean selected = prop.instanceId.equals(selectedPropInstanceId);
+            if (selected) drawPropFootprint(g, prop, models.get(prop.modelId));
+            drawProp(g, prop, selected);
+        }
         for (MapEntityAsset entity : map.getEntities()) {
             drawEntity(g, entity, entity.instanceId.equals(selectedEntityInstanceId));
         }
@@ -476,6 +490,31 @@ final class MapCanvas extends JPanel {
             case RAMP_WEST -> height - dx * 0.5f;
             case FLAT -> height;
         };
+    }
+
+    /**
+     * Outlines the tiles the model's collision footprint would mark blocked around this prop,
+     * rotated with it. This draws the true rotated shape rather than the engine's own conservative
+     * axis-aligned approximation for non-90-degree rotations - close enough to judge placement,
+     * not a byte-for-byte preview of the exported collision grid.
+     */
+    private static void drawPropFootprint(Graphics g, MapProp prop, ModelAsset model) {
+        if (model == null) return;
+        int left = Math.round((prop.x + model.collisionMinX) * CELL_SIZE);
+        int right = Math.round((prop.x + model.collisionMaxX + 1) * CELL_SIZE);
+        int top = Math.round((prop.z + model.collisionMinZ) * CELL_SIZE);
+        int bottom = Math.round((prop.z + model.collisionMaxZ + 1) * CELL_SIZE);
+        double anchorX = (prop.x + 0.5) * CELL_SIZE;
+        double anchorZ = (prop.z + 0.5) * CELL_SIZE;
+
+        Graphics2D g2 = (Graphics2D) g.create();
+        try {
+            g2.rotate(Math.toRadians(prop.rotation), anchorX, anchorZ);
+            g2.setColor(FOOTPRINT_OUTLINE);
+            g2.drawRect(left, top, right - left, bottom - top);
+        } finally {
+            g2.dispose();
+        }
     }
 
     private static void drawProp(Graphics g, MapProp prop, boolean selected) {
