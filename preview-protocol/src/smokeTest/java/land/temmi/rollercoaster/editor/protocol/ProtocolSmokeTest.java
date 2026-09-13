@@ -44,7 +44,33 @@ public final class ProtocolSmokeTest {
             server.join();
         }
 
-        System.out.println("PASS: Hello/HelloAck roundtrip over a loopback socket, version mismatch rejected with a reason");
+        try (ServerSocket serverSocket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            int port = serverSocket.getLocalPort();
+            Thread server = new Thread(() -> {
+                try (Socket socket = serverSocket.accept();
+                     MessageChannel channel = new MessageChannel(socket)) {
+                    channel.receive(); // Hello
+                    channel.send(new HelloAck(true, null));
+                    channel.send(new ShowGenericScene());
+                    channel.send(new ShowSampleLevel());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            server.start();
+
+            try (Socket clientSocket = new Socket(InetAddress.getLoopbackAddress(), port);
+                 MessageChannel client = new MessageChannel(clientSocket)) {
+                client.send(new Hello(MessageChannel.PROTOCOL_VERSION));
+                client.receive(); // HelloAck
+                if (!(client.receive() instanceof ShowGenericScene)) throw new AssertionError("Expected ShowGenericScene");
+                if (!(client.receive() instanceof ShowSampleLevel)) throw new AssertionError("Expected ShowSampleLevel");
+            }
+            server.join();
+        }
+
+        System.out.println("PASS: Hello/HelloAck roundtrip over a loopback socket, version mismatch rejected with a "
+            + "reason, and scene-switch messages roundtrip after the handshake");
     }
 
     /** Mirrors the editor's half of the handshake: one connection, one Hello, one reply. */
