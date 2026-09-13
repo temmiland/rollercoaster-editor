@@ -128,6 +128,8 @@ final class AssetsPanel extends JPanel {
 
         JButton importButton = new JButton("Importieren…");
         importButton.addActionListener(e -> onImportModel());
+        JButton reimportButton = new JButton("Neu importieren…");
+        reimportButton.addActionListener(e -> onReimportModel());
         JButton removeButton = new JButton("Entfernen");
         removeButton.addActionListener(e -> onRemoveModel());
         JButton propertiesButton = new JButton("Eigenschaften…");
@@ -137,6 +139,7 @@ final class AssetsPanel extends JPanel {
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
         buttons.add(importButton);
+        buttons.add(reimportButton);
         buttons.add(removeButton);
         buttons.add(propertiesButton);
         buttons.add(export);
@@ -298,11 +301,35 @@ final class AssetsPanel extends JPanel {
 
     private void onImportModel() {
         if (!projectController.isOpen()) return;
+        ModelFiles files = chooseModelFiles("Modell importieren (Hauptdatei + Abhängigkeiten wie .bin zusammen auswählen)");
+        if (files == null) return;
+
+        String id = JOptionPane.showInputDialog(this, "Modell-ID:", stripExtension(files.primary.getName()));
+        if (id == null || id.trim().isEmpty()) return;
+
+        String finalId = id.trim();
+        modelBoundsComputer.apply(files.primary.getAbsolutePath()).whenComplete((result, error) ->
+            SwingUtilities.invokeLater(() -> onModelBoundsComputed(files, finalId, result, error)));
+    }
+
+    private void onReimportModel() {
+        ModelAsset model = modelList.getSelectedValue();
+        if (model == null) {
+            JOptionPane.showMessageDialog(this, "Bitte zuerst ein Modell auswählen.");
+            return;
+        }
+        ModelFiles files = chooseModelFiles("Modell neu importieren (Hauptdatei + Abhängigkeiten zusammen auswählen)");
+        if (files == null) return;
+        modelBoundsComputer.apply(files.primary.getAbsolutePath()).whenComplete((result, error) ->
+            SwingUtilities.invokeLater(() -> onModelReimportBoundsComputed(model, files, result, error)));
+    }
+
+    private ModelFiles chooseModelFiles(String dialogTitle) {
         JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Modell importieren (Hauptdatei + Abhängigkeiten wie .bin zusammen auswählen)");
+        chooser.setDialogTitle(dialogTitle);
         chooser.setMultiSelectionEnabled(true);
         chooser.setFileFilter(new FileNameExtensionFilter("3D-Modelle und Abhängigkeiten", "gltf", "glb", "bin"));
-        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return null;
 
         File[] selected = chooser.getSelectedFiles();
         File primary = null;
@@ -312,7 +339,7 @@ final class AssetsPanel extends JPanel {
             if (lower.endsWith(".gltf") || lower.endsWith(".glb")) {
                 if (primary != null) {
                     JOptionPane.showMessageDialog(this, "Bitte nur eine .gltf- oder .glb-Hauptdatei auswählen.");
-                    return;
+                    return null;
                 }
                 primary = file;
             } else {
@@ -321,19 +348,12 @@ final class AssetsPanel extends JPanel {
         }
         if (primary == null) {
             JOptionPane.showMessageDialog(this, "Bitte eine .gltf- oder .glb-Datei auswählen.");
-            return;
+            return null;
         }
-
-        String id = JOptionPane.showInputDialog(this, "Modell-ID:", stripExtension(primary.getName()));
-        if (id == null || id.trim().isEmpty()) return;
-
-        File finalPrimary = primary;
-        String finalId = id.trim();
-        modelBoundsComputer.apply(finalPrimary.getAbsolutePath()).whenComplete((result, error) ->
-            SwingUtilities.invokeLater(() -> onModelBoundsComputed(finalPrimary, dependencies, finalId, result, error)));
+        return new ModelFiles(primary, dependencies);
     }
 
-    private void onModelBoundsComputed(File primary, List<Path> dependencies, String id,
+    private void onModelBoundsComputed(ModelFiles files, String id,
                                        ModelBoundsResult result, Throwable error) {
         if (error != null) {
             JOptionPane.showMessageDialog(this, error.getMessage(), "Modell konnte nicht geladen werden",
@@ -346,7 +366,7 @@ final class AssetsPanel extends JPanel {
             return;
         }
         try {
-            projectController.importModel(primary.toPath(), dependencies, id,
+            projectController.importModel(files.primary.toPath(), files.dependencies, id,
                 result.minX, result.minY, result.minZ, result.maxX, result.maxY, result.maxZ);
             refresh();
         } catch (IOException e) {
@@ -354,11 +374,36 @@ final class AssetsPanel extends JPanel {
         }
     }
 
+    private void onModelReimportBoundsComputed(ModelAsset previous, ModelFiles files,
+                                                ModelBoundsResult result, Throwable error) {
+        if (error != null) {
+            JOptionPane.showMessageDialog(this, error.getMessage(), "Modell konnte nicht geladen werden",
+                JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (!result.success) {
+            JOptionPane.showMessageDialog(this, result.errorMessage, "Modell konnte nicht geladen werden",
+                JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        try {
+            projectController.reimportModel(previous, files.primary.toPath(), files.dependencies,
+                result.minX, result.minY, result.minZ, result.maxX, result.maxY, result.maxZ);
+            refresh();
+        } catch (IOException | IllegalArgumentException e) {
+            showError("Modell konnte nicht neu importiert werden", e);
+        }
+    }
+
     private void onRemoveModel() {
         ModelAsset selected = modelList.getSelectedValue();
         if (selected == null) return;
-        projectController.removeModel(selected);
-        refresh();
+        try {
+            projectController.removeModel(selected);
+            refresh();
+        } catch (IllegalArgumentException e) {
+            showError("Modell kann nicht entfernt werden", e);
+        }
     }
 
     private void onEditModel() {
@@ -455,6 +500,16 @@ final class AssetsPanel extends JPanel {
     private static String stripExtension(String fileName) {
         int dot = fileName.lastIndexOf('.');
         return dot > 0 ? fileName.substring(0, dot) : fileName;
+    }
+
+    private static final class ModelFiles {
+        private final File primary;
+        private final List<Path> dependencies;
+
+        private ModelFiles(File primary, List<Path> dependencies) {
+            this.primary = primary;
+            this.dependencies = new ArrayList<>(dependencies);
+        }
     }
 
     private static <T> ListCellRenderer<T> labelRenderer(Function<T, String> text) {

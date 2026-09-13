@@ -108,13 +108,16 @@ public final class ProjectDocument {
     }
 
     void removeModel(String id) {
+        List<String> placements = new ArrayList<>();
         for (MapAsset map : maps) {
             for (MapProp prop : map.getProps()) {
                 if (prop.modelId.equals(id)) {
-                    throw new IllegalArgumentException(
-                        "Model '" + id + "' is still placed as '" + prop.instanceId + "' on map '" + map.id + "'");
+                    placements.add("'" + prop.instanceId + "' on map '" + map.id + "'");
                 }
             }
+        }
+        if (!placements.isEmpty()) {
+            throw new IllegalArgumentException("Model '" + id + "' is still placed as " + String.join(", ", placements));
         }
         if (!models.removeIf(model -> model.id.equals(id))) {
             throw new IllegalArgumentException("No such model: " + id);

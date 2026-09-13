@@ -302,6 +302,57 @@ public final class ProjectController {
         listener.onProjectChanged();
     }
 
+    /**
+     * Replaces a model's copied source files and geometry bounds while retaining its stable ID and
+     * placement settings. Existing map props therefore keep referring to the updated model.
+     * Old source files are intentionally retained: undoing this document command must still be
+     * able to preview and export the former revision.
+     */
+    public void reimportModel(ModelAsset previous, Path primaryFile, List<Path> dependencyFiles,
+                              float boundsMinX, float boundsMinY, float boundsMinZ,
+                              float boundsMaxX, float boundsMaxY, float boundsMaxZ) throws IOException {
+        requireOpen();
+        if (history.getDocument().findModel(previous.id) == null) {
+            throw new IllegalArgumentException("No such model: " + previous.id);
+        }
+
+        List<Path> files = new ArrayList<>();
+        files.add(primaryFile);
+        files.addAll(dependencyFiles);
+        Set<String> incomingNames = new LinkedHashSet<>();
+        for (Path file : files) {
+            String name = file.getFileName().toString();
+            if (!incomingNames.add(name)) {
+                throw new IOException("Model import contains '" + name + "' more than once");
+            }
+            for (ModelAsset other : history.getDocument().getModels()) {
+                if (!other.id.equals(previous.id)
+                    && (other.fileName.equals(name) || other.getDependencyFileNames().contains(name))) {
+                    throw new IOException("A model file named '" + name + "' is already used by model '" + other.id + "'");
+                }
+            }
+        }
+
+        Files.createDirectories(modelsDirectory());
+        for (Path file : files) {
+            Files.copy(file, modelsDirectory().resolve(file.getFileName().toString()), StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        String fileName = primaryFile.getFileName().toString();
+        List<String> dependencyFileNames = new ArrayList<>();
+        for (Path dependencyFile : dependencyFiles) {
+            dependencyFileNames.add(dependencyFile.getFileName().toString());
+        }
+        boolean binary = fileName.toLowerCase(Locale.ROOT).endsWith(".glb");
+        ModelAsset replacement = new ModelAsset(previous.id, fileName, binary,
+            previous.offsetX, previous.offsetY, previous.offsetZ, previous.scale,
+            boundsMinX, boundsMinY, boundsMinZ, boundsMaxX, boundsMaxY, boundsMaxZ,
+            previous.collisionMinX, previous.collisionMaxX, previous.collisionMinZ, previous.collisionMaxZ,
+            previous.alignToSlope, previous.walkable, previous.walkHeight, dependencyFileNames);
+        history.perform(new UpdateModelCommand(previous, replacement));
+        listener.onProjectChanged();
+    }
+
     /** Copies every registered model's files into catalogs/models/ and writes one models.json. */
     public Path exportModels() throws IOException {
         requireOpen();

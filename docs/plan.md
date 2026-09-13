@@ -311,8 +311,9 @@ und erneut öffnen, ohne Datenverlust oder kaputte Referenzen.
   "Eigenschaften…" im Modelle-Tab zeigt die importierten Bounds und die abgeleitete Höhe und
   bearbeitet Anker, Skalierung, Fußabdruck, Hangausrichtung und begehbare Laufhöhe als eine
   Undo/Redo-Änderung.
-- [ ] Reimport und Umbenennung von Modellquellen anbieten; betroffene Karten vor einer Löschung
-  weiterhin mit ihren Prop-Instanz-IDs auflisten.
+- [x] Reimport und Umbenennung von Modellquellen anbieten; betroffene Karten vor einer Löschung
+  weiterhin mit allen Prop-Instanz-IDs auflisten. Der Reimport behält ID und Platzierungsdaten,
+  aktualisiert aber Quellen und Bounds; alte Quelldateien bleiben für Undo/Redo erhalten.
 
 Abnahme: Tileset und Haus entstehen ausschließlich über die UI und laden im Example Game.
 Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle Referenzen.

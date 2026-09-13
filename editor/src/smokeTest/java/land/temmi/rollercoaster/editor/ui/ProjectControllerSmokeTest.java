@@ -227,6 +227,37 @@ public final class ProjectControllerSmokeTest {
             throw new AssertionError("Exported model bounds/height are wrong");
         }
 
+        controller.updateModel(house, 0.5f, 1f, -0.25f, 1.5f,
+            -2, 3, -1, 2, true, true, 2.5f);
+        Path cabinFile = sourceDirectory.resolve("cabin.gltf");
+        Path cabinBinFile = sourceDirectory.resolve("cabin.bin");
+        Files.writeString(cabinFile, "updated-model");
+        Files.writeString(cabinBinFile, "updated-binary-placeholder");
+        ModelAsset configuredHouse = controller.getModels().get(0);
+        controller.reimportModel(configuredHouse, cabinFile, List.of(cabinBinFile),
+            -2f, -0.5f, -2f, 3f, 6f, 4f);
+        ModelAsset reimported = controller.getModels().get(0);
+        if (!"house".equals(reimported.id) || !"cabin.gltf".equals(reimported.fileName)
+            || !List.of("cabin.bin").equals(reimported.getDependencyFileNames())) {
+            throw new AssertionError("Reimport must preserve the ID and replace every source file");
+        }
+        if (reimported.scale != 1.5f || reimported.offsetX != 0.5f || !reimported.walkable
+            || reimported.boundsMaxY != 6f) {
+            throw new AssertionError("Reimport lost placement settings or did not update model bounds");
+        }
+        controller.undo();
+        if (!"house.gltf".equals(controller.getModels().get(0).fileName)) {
+            throw new AssertionError("Undoing a reimport must restore its previous source metadata");
+        }
+        controller.redo();
+        controller.exportModels();
+        ModelDefinition reimportedDefinition = ModelManifest.load(new FileHandle(manifestFile.toFile())).first();
+        if (!"gltf:models/cabin.gltf".equals(reimportedDefinition.source)
+            || reimportedDefinition.boundsMaxY != 6f
+            || !Files.exists(projectDirectory.resolve("catalogs/models/cabin.bin"))) {
+            throw new AssertionError("Export did not use the reimported source and bounds");
+        }
+
         controller.removeModel(house);
         if (!controller.getModels().isEmpty()) throw new AssertionError("removeModel did not apply");
         controller.undo();

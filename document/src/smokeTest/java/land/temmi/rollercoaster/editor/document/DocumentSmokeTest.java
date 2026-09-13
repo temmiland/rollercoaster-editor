@@ -433,11 +433,14 @@ public final class DocumentSmokeTest {
             }
         }
 
+        history.perform(new PlacePropCommand("valley", new MapProp("house-2", "house", 1f, 2f, 0f, 0f)));
         try {
             document.removeModel("house");
             throw new AssertionError("Removing a model still placed on a map should fail");
         } catch (IllegalArgumentException expected) {
-            // Expected: "house-1" still references it.
+            if (!expected.getMessage().contains("house-1") || !expected.getMessage().contains("house-2")) {
+                throw new AssertionError("The blocked removal should list every affected prop", expected);
+            }
         }
 
         history.perform(new RemovePropCommand("valley", house));
