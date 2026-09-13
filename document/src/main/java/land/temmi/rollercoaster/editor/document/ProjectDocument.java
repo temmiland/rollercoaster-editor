@@ -108,6 +108,14 @@ public final class ProjectDocument {
     }
 
     void removeModel(String id) {
+        for (MapAsset map : maps) {
+            for (MapProp prop : map.getProps()) {
+                if (prop.modelId.equals(id)) {
+                    throw new IllegalArgumentException(
+                        "Model '" + id + "' is still placed as '" + prop.instanceId + "' on map '" + map.id + "'");
+                }
+            }
+        }
         if (!models.removeIf(model -> model.id.equals(id))) {
             throw new IllegalArgumentException("No such model: " + id);
         }

@@ -1,6 +1,9 @@
 package land.temmi.rollercoaster.editor.document;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * A map's terrain grid: which tile type, height and shape each cell has, plus a manual collision
@@ -20,6 +23,7 @@ public final class MapAsset {
     private final float[] heights;
     private final TileShape[] shapes;
     private final boolean[] collision;
+    private final List<MapProp> props = new ArrayList<>();
 
     public MapAsset(String id, int width, int depth, String tilesetId) {
         if (id == null || id.trim().isEmpty()) throw new IllegalArgumentException("Map id is required");
@@ -59,6 +63,29 @@ public final class MapAsset {
         return x >= 0 && x < width && z >= 0 && z < depth;
     }
 
+    public List<MapProp> getProps() {
+        return Collections.unmodifiableList(props);
+    }
+
+    public MapProp findProp(String instanceId) {
+        for (MapProp prop : props) {
+            if (prop.instanceId.equals(instanceId)) return prop;
+        }
+        return null;
+    }
+
+    /** Package-private: mutation goes through a {@link Command} so undo/redo stays consistent. */
+    void addProp(MapProp prop) {
+        if (findProp(prop.instanceId) != null) throw new IllegalArgumentException("Duplicate prop instance id: " + prop.instanceId);
+        props.add(prop);
+    }
+
+    void removeProp(String instanceId) {
+        if (!props.removeIf(prop -> prop.instanceId.equals(instanceId))) {
+            throw new IllegalArgumentException("No such prop: " + instanceId);
+        }
+    }
+
     /** Lets a batch command pre-validate every cell before mutating any of them. */
     public static boolean fitsGrid(float height, TileShape shape) {
         if (Float.isNaN(height) || Float.isInfinite(height)) return false;
@@ -67,7 +94,6 @@ public final class MapAsset {
         return Math.abs(level - Math.round(level)) <= HEIGHT_EPSILON;
     }
 
-    /** Package-private: mutation goes through a {@link Command} so undo/redo stays consistent. */
     void setTile(int x, int z, String tileId) {
         tiles[indexOf(x, z)] = tileId;
     }

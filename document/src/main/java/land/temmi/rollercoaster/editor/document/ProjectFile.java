@@ -116,6 +116,14 @@ public final class ProjectFile {
                     if (shapeRow != null) shapeRow = shapeRow.next;
                     if (collisionRow != null) collisionRow = collisionRow.next;
                 }
+                JsonValue props = mapValue.get("props");
+                if (props != null) {
+                    for (JsonValue prop = props.child; prop != null; prop = prop.next) {
+                        map.addProp(new MapProp(requireString(prop, "instanceId"), requireString(prop, "model"),
+                            prop.getFloat("x", 0f), prop.getFloat("z", 0f),
+                            prop.getFloat("elevation", 0f), prop.getFloat("rotation", 0f)));
+                    }
+                }
                 document.addMap(map);
             }
         }
@@ -247,6 +255,18 @@ public final class ProjectFile {
             for (int z = 0; z < map.depth; z++) {
                 writer.array();
                 for (int x = 0; x < map.width; x++) writer.value(map.isBlocked(x, z) ? 1 : 0);
+                writer.pop();
+            }
+            writer.pop();
+            writer.array("props");
+            for (MapProp prop : map.getProps()) {
+                writer.object();
+                writer.set("instanceId", prop.instanceId);
+                writer.set("model", prop.modelId);
+                writer.set("x", prop.x);
+                writer.set("z", prop.z);
+                writer.set("elevation", prop.elevation);
+                writer.set("rotation", prop.rotation);
                 writer.pop();
             }
             writer.pop();

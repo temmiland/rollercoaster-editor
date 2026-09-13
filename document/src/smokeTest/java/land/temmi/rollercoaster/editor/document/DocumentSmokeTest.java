@@ -18,9 +18,10 @@ public final class DocumentSmokeTest {
         verifyModelCommandsAndRoundtrip();
         verifyMapCommandsAndTerrainGrid();
         verifyMapRoundtrip();
+        verifyPropCommandsAndRoundtrip();
         System.out.println("PASS: undo/redo, dirty tracking after a branching edit, an atomic project.json "
             + "roundtrip across a moved directory, texture/tileset commands with referential integrity, "
-            + "model import/export, and map terrain painting");
+            + "model import/export, map terrain painting, and prop placement");
     }
 
     private static void verifyUndoRedoAndDirtyTracking() {
@@ -332,6 +333,62 @@ public final class DocumentSmokeTest {
         }
         if (!reloaded.isBlocked(2, 1)) throw new AssertionError("Collision layer did not round-trip");
         if (reloaded.isBlocked(0, 0)) throw new AssertionError("Unblocked cells should round-trip as unblocked");
+    }
+
+    private static void verifyPropCommandsAndRoundtrip() throws IOException {
+        ProjectDocument document = new ProjectDocument("Requisitenwelt");
+        CommandHistory history = new CommandHistory(document);
+        document.addTexture(new TextureAsset("grass", "grass.png"));
+        TilesetAsset tileset = new TilesetAsset("overworld");
+        tileset.addTile(new TileEntry("grass", "grass", true));
+        document.addTileset(tileset);
+        document.addModel(ModelAsset.imported("house", "house.gltf", false, -1.8f, 0f, -1.3f, 2.8f, 4f, 2.3f));
+        history.perform(new CreateMapCommand("valley", 4, 3, "overworld"));
+
+        try {
+            history.perform(new PlacePropCommand("valley",
+                new MapProp("house-1", "unknown-model", 1f, 1f, 0f, 0f)));
+            throw new AssertionError("Placing a prop with an unknown model should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: "unknown-model" is not a registered model.
+        }
+
+        MapProp house = new MapProp("house-1", "house", 2f, 1f, 0f, 0f);
+        history.perform(new PlacePropCommand("valley", house));
+        MapAsset map = document.findMap("valley");
+        if (map.findProp("house-1") == null) throw new AssertionError("Prop placement did not apply");
+
+        history.perform(new TransformPropCommand("valley", "house-1", "house", 2f, 1f, 0f, 0f, 3f, 2f, 0.5f, 90f));
+        MapProp moved = map.findProp("house-1");
+        if (moved.x != 3f || moved.z != 2f || moved.elevation != 0.5f || moved.rotation != 90f) {
+            throw new AssertionError("Transform did not apply");
+        }
+        history.undo();
+        MapProp restored = map.findProp("house-1");
+        if (restored.x != 2f || restored.z != 1f || restored.rotation != 0f) {
+            throw new AssertionError("Undo did not restore the previous transform");
+        }
+
+        try {
+            document.removeModel("house");
+            throw new AssertionError("Removing a model still placed on a map should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: "house-1" still references it.
+        }
+
+        history.perform(new RemovePropCommand("valley", house));
+        if (map.findProp("house-1") != null) throw new AssertionError("Prop removal did not apply");
+        history.undo();
+        if (map.findProp("house-1") == null) throw new AssertionError("Undo did not restore the removed prop");
+
+        Path directory = Files.createTempDirectory("trackside-editor-project-props");
+        ProjectFile.save(document, directory);
+        MapAsset reloadedMap = ProjectFile.load(directory).findMap("valley");
+        MapProp reloadedProp = reloadedMap.findProp("house-1");
+        if (reloadedProp == null || !"house".equals(reloadedProp.modelId) || reloadedProp.x != 2f
+            || reloadedProp.z != 1f || reloadedProp.elevation != 0f || reloadedProp.rotation != 0f) {
+            throw new AssertionError("Prop did not round-trip");
+        }
     }
 
     private static void verifyRejectsUnknownVersion() throws IOException {
