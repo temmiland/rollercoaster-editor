@@ -7,4 +7,23 @@ version = '0.1.0'
 
 dependencies {
     implementation project(':preview-protocol')
+    implementation project(':document')
+}
+
+sourceSets {
+    smokeTest {
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+configurations {
+    smokeTestImplementation.extendsFrom implementation
+}
+
+tasks.register('editorSmokeTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks ProjectController: new/open/save/saveAs and autosave restore, without a GUI.'
+    classpath = sourceSets.smokeTest.runtimeClasspath
+    mainClass = 'land.temmi.rollercoaster.editor.ui.ProjectControllerSmokeTest'
 }
