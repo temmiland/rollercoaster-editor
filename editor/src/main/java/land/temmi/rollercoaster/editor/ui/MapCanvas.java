@@ -4,6 +4,7 @@ import land.temmi.rollercoaster.editor.document.MapAsset;
 import land.temmi.rollercoaster.editor.document.MapEntityAsset;
 import land.temmi.rollercoaster.editor.document.MapLightAsset;
 import land.temmi.rollercoaster.editor.document.MapProp;
+import land.temmi.rollercoaster.editor.document.MapTransitionAsset;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
 import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
@@ -56,11 +57,15 @@ final class MapCanvas extends JPanel {
         void onPlaceLight(String mapId, int x, int z);
     }
 
+    interface TransitionListener {
+        void onPlaceTransition(String mapId, int x, int z);
+    }
+
     interface TileListener {
         void onPickTile(String tileId);
     }
 
-    enum Tool { TILE, ERASE_TILE, PICK_TILE, FILL_TILE, RECT_TILE, COPY_TILE, PASTE_TILE, COLLISION, TERRAIN, PROPS, ENTITIES, LIGHTS }
+    enum Tool { TILE, ERASE_TILE, PICK_TILE, FILL_TILE, RECT_TILE, COPY_TILE, PASTE_TILE, COLLISION, TERRAIN, PROPS, ENTITIES, LIGHTS, TRANSITIONS }
 
     private static final int CELL_SIZE = 28;
     private static final Color EMPTY_COLOR = new Color(60, 60, 60);
@@ -73,12 +78,14 @@ final class MapCanvas extends JPanel {
     private static final Color FOOTPRINT_OUTLINE = new Color(255, 60, 60);
     private static final Color LIGHT_COLOR = new Color(255, 235, 120);
     private static final Color SELECTED_LIGHT_OUTLINE = new Color(255, 220, 40);
+    private static final Color TRANSITION_COLOR = new Color(160, 100, 230);
 
     private final StrokeListener strokeListener;
     private final HoverListener hoverListener;
     private final PropListener propListener;
     private final EntityListener entityListener;
     private final LightListener lightListener;
+    private final TransitionListener transitionListener;
     private final TileListener tileListener;
     private final Map<Long, PaintTilesCommand.Edit> pendingTileEdits = new LinkedHashMap<>();
     private final Map<Long, PaintCollisionCommand.Edit> pendingCollisionEdits = new LinkedHashMap<>();
@@ -95,6 +102,7 @@ final class MapCanvas extends JPanel {
     private String selectedPropInstanceId;
     private String selectedEntityInstanceId;
     private String selectedLightInstanceId;
+    private String selectedTransitionInstanceId;
     private boolean showTerrain = true;
     private boolean showGrid = true;
     private boolean showWalkability;
@@ -104,6 +112,7 @@ final class MapCanvas extends JPanel {
     private boolean propPlacedThisPress;
     private boolean entityPlacedThisPress;
     private boolean lightPlacedThisPress;
+    private boolean transitionPlacedThisPress;
     private int lastPaintedX = -1;
     private int lastPaintedZ = -1;
     private int rectangleStartX = -1;
@@ -113,12 +122,14 @@ final class MapCanvas extends JPanel {
     private String[][] tileClipboard;
 
     MapCanvas(StrokeListener strokeListener, HoverListener hoverListener, PropListener propListener,
-              EntityListener entityListener, LightListener lightListener, TileListener tileListener) {
+              EntityListener entityListener, LightListener lightListener, TransitionListener transitionListener,
+              TileListener tileListener) {
         this.strokeListener = strokeListener;
         this.hoverListener = hoverListener;
         this.propListener = propListener;
         this.entityListener = entityListener;
         this.lightListener = lightListener;
+        this.transitionListener = transitionListener;
         this.tileListener = tileListener;
         setBackground(Color.DARK_GRAY);
         MouseAdapter mouse = new MouseAdapter() {
@@ -188,6 +199,11 @@ final class MapCanvas extends JPanel {
         repaint();
     }
 
+    void setSelectedTransitionInstanceId(String instanceId) {
+        selectedTransitionInstanceId = instanceId;
+        repaint();
+    }
+
     void setTileWalkability(Map<String, Boolean> tileWalkability) {
         this.tileWalkability = new LinkedHashMap<>(tileWalkability);
         repaint();
@@ -222,6 +238,7 @@ final class MapCanvas extends JPanel {
         propPlacedThisPress = false;
         entityPlacedThisPress = false;
         lightPlacedThisPress = false;
+        transitionPlacedThisPress = false;
         int x = cellX(e.getX());
         int z = cellZ(e.getY());
         if (!map.contains(x, z)) return;
@@ -309,6 +326,12 @@ final class MapCanvas extends JPanel {
                 if (!lightPlacedThisPress) {
                     lightPlacedThisPress = true;
                     lightListener.onPlaceLight(map.id, x, z);
+                }
+            }
+            case TRANSITIONS -> {
+                if (!transitionPlacedThisPress) {
+                    transitionPlacedThisPress = true;
+                    transitionListener.onPlaceTransition(map.id, x, z);
                 }
             }
             default -> {
@@ -456,6 +479,9 @@ final class MapCanvas extends JPanel {
         for (MapLightAsset light : map.getLights()) {
             drawLight(g, light, light.instanceId.equals(selectedLightInstanceId));
         }
+        for (MapTransitionAsset transition : map.getTransitions()) {
+            drawTransition(g, transition, transition.instanceId.equals(selectedTransitionInstanceId));
+        }
         drawRectangle(g);
     }
 
@@ -581,6 +607,21 @@ final class MapCanvas extends JPanel {
         g.fillPolygon(diamond);
         g.setColor(selected ? SELECTED_LIGHT_OUTLINE : LIGHT_COLOR);
         g.drawPolygon(diamond);
+    }
+
+    /** A triangular "exit" marker, unlike the circular prop, square entity and diamond light shapes. */
+    private static void drawTransition(Graphics g, MapTransitionAsset transition, boolean selected) {
+        int px = transition.x * CELL_SIZE;
+        int py = transition.z * CELL_SIZE;
+        int inset = CELL_SIZE / 5;
+        Polygon triangle = new Polygon();
+        triangle.addPoint(px + inset, py + inset);
+        triangle.addPoint(px + inset, py + CELL_SIZE - inset);
+        triangle.addPoint(px + CELL_SIZE - inset, py + CELL_SIZE / 2);
+        g.setColor(TRANSITION_COLOR);
+        g.fillPolygon(triangle);
+        g.setColor(selected ? SELECTED_LIGHT_OUTLINE : PROP_OUTLINE);
+        g.drawPolygon(triangle);
     }
 
     private static void drawRampIndicator(Graphics g, int px, int py, TileShape shape) {

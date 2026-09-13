@@ -4,6 +4,7 @@ import land.temmi.rollercoaster.editor.document.MapAsset;
 import land.temmi.rollercoaster.editor.document.MapEntityAsset;
 import land.temmi.rollercoaster.editor.document.MapLightAsset;
 import land.temmi.rollercoaster.editor.document.MapProp;
+import land.temmi.rollercoaster.editor.document.MapTransitionAsset;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
 import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
@@ -71,6 +72,8 @@ final class MapPanel extends JPanel {
     private final JList<MapEntityAsset> placedEntitiesList = new JList<>(placedEntitiesListModel);
     private final DefaultListModel<MapLightAsset> placedLightsListModel = new DefaultListModel<>();
     private final JList<MapLightAsset> placedLightsList = new JList<>(placedLightsListModel);
+    private final DefaultListModel<MapTransitionAsset> placedTransitionsListModel = new DefaultListModel<>();
+    private final JList<MapTransitionAsset> placedTransitionsList = new JList<>(placedTransitionsListModel);
     private final MapCanvas canvas;
     private final JToggleButton tileTool = new JToggleButton("Kacheln malen", true);
     private final JToggleButton eraseTileTool = new JToggleButton("Kacheln löschen");
@@ -84,6 +87,7 @@ final class MapPanel extends JPanel {
     private final JToggleButton propsTool = new JToggleButton("Props platzieren");
     private final JToggleButton entitiesTool = new JToggleButton("Entities platzieren");
     private final JToggleButton lightsTool = new JToggleButton("Lichter platzieren");
+    private final JToggleButton transitionsTool = new JToggleButton("Übergänge platzieren");
     private final JSpinner levelSpinner = new JSpinner(new SpinnerNumberModel(0, -20, 20, 1));
     private final JComboBox<TileShape> shapeCombo = new JComboBox<>(TileShape.values());
     private final JCheckBox terrainOverlay = new JCheckBox("Terrain", true);
@@ -125,6 +129,12 @@ final class MapPanel extends JPanel {
             + "  (" + light.x + ", " + light.z + ")" + (light.enabled ? "" : "  (aus)")));
         placedLightsList.addListSelectionListener(e -> canvas.setSelectedLightInstanceId(
             placedLightsList.getSelectedValue() == null ? null : placedLightsList.getSelectedValue().instanceId));
+        placedTransitionsList.setCellRenderer(labelRenderer(transition -> transition.instanceId + "  ("
+            + transition.x + ", " + transition.z + ") -> " + transition.targetMapId
+            + " (" + transition.targetX + ", " + transition.targetZ + ")"));
+        placedTransitionsList.addListSelectionListener(e -> canvas.setSelectedTransitionInstanceId(
+            placedTransitionsList.getSelectedValue() == null ? null
+                : placedTransitionsList.getSelectedValue().instanceId));
 
         ButtonGroup tools = new ButtonGroup();
         tools.add(tileTool);
@@ -139,6 +149,7 @@ final class MapPanel extends JPanel {
         tools.add(propsTool);
         tools.add(entitiesTool);
         tools.add(lightsTool);
+        tools.add(transitionsTool);
         tileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.TILE));
         eraseTileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.ERASE_TILE));
         pickTileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.PICK_TILE));
@@ -151,6 +162,7 @@ final class MapPanel extends JPanel {
         propsTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.PROPS));
         entitiesTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.ENTITIES));
         lightsTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.LIGHTS));
+        transitionsTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.TRANSITIONS));
         levelSpinner.addChangeListener(e -> updateTerrainTarget());
         shapeCombo.addActionListener(e -> updateTerrainTarget());
         terrainOverlay.addActionListener(e -> updateOverlays());
@@ -196,8 +208,10 @@ final class MapPanel extends JPanel {
         MapCanvas.PropListener propListener = this::onPlaceProp;
         MapCanvas.EntityListener entityListener = this::onPlaceEntity;
         MapCanvas.LightListener lightListener = this::onPlaceLight;
+        MapCanvas.TransitionListener transitionListener = this::onPlaceTransition;
         MapCanvas.TileListener tileListener = this::onPickTile;
-        return new MapCanvas(strokeListener, hoverListener, propListener, entityListener, lightListener, tileListener);
+        return new MapCanvas(strokeListener, hoverListener, propListener, entityListener, lightListener,
+            transitionListener, tileListener);
     }
 
     private void onPickTile(String tileId) {
@@ -264,6 +278,21 @@ final class MapPanel extends JPanel {
             selectLight(light.instanceId);
         } catch (IllegalArgumentException e) {
             showError("Licht konnte nicht platziert werden", e);
+        }
+    }
+
+    private void onPlaceTransition(String mapId, int x, int z) {
+        List<MapAsset> maps = projectController.getMaps();
+        if (maps.isEmpty()) return;
+        TransitionSettings settings = askTransitionSettings("Übergang platzieren", x, z, maps.get(0).id, 0, 0);
+        if (settings == null) return;
+        MapTransitionAsset transition = settings.toAsset(UUID.randomUUID().toString());
+        try {
+            projectController.placeTransition(mapId, transition);
+            refresh();
+            selectTransition(transition.instanceId);
+        } catch (IllegalArgumentException e) {
+            showError("Übergang konnte nicht platziert werden", e);
         }
     }
 
@@ -334,12 +363,26 @@ final class MapPanel extends JPanel {
         lightButtons.add(removeLight);
         lightsPanel.add(lightButtons, BorderLayout.SOUTH);
 
-        JSplitPane entityAndLights = new JSplitPane(JSplitPane.VERTICAL_SPLIT, entitiesPanel, lightsPanel);
-        entityAndLights.setResizeWeight(0.5);
+        JPanel transitionsPanel = new JPanel(new BorderLayout());
+        transitionsPanel.setBorder(BorderFactory.createTitledBorder("Übergänge"));
+        transitionsPanel.add(new JScrollPane(placedTransitionsList), BorderLayout.CENTER);
+        JButton removeTransition = new JButton("Löschen");
+        removeTransition.addActionListener(e -> onRemoveTransition());
+        JButton editTransition = new JButton("Bearbeiten…");
+        editTransition.addActionListener(e -> onEditTransition());
+        JPanel transitionButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        transitionButtons.add(editTransition);
+        transitionButtons.add(removeTransition);
+        transitionsPanel.add(transitionButtons, BorderLayout.SOUTH);
+
+        JSplitPane lightsAndTransitions = new JSplitPane(JSplitPane.VERTICAL_SPLIT, lightsPanel, transitionsPanel);
+        lightsAndTransitions.setResizeWeight(0.5);
+        JSplitPane entityAndLights = new JSplitPane(JSplitPane.VERTICAL_SPLIT, entitiesPanel, lightsAndTransitions);
+        entityAndLights.setResizeWeight(0.34);
         JSplitPane placements = new JSplitPane(JSplitPane.VERTICAL_SPLIT, propsPanel, entityAndLights);
-        placements.setResizeWeight(0.34);
+        placements.setResizeWeight(0.25);
         JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mapListPanel, placements);
-        split.setResizeWeight(0.5);
+        split.setResizeWeight(0.4);
         panel.add(split, BorderLayout.CENTER);
         return panel;
     }
@@ -360,6 +403,7 @@ final class MapPanel extends JPanel {
         toolbar.add(propsTool);
         toolbar.add(entitiesTool);
         toolbar.add(lightsTool);
+        toolbar.add(transitionsTool);
         toolbar.add(new JLabel("Level:"));
         toolbar.add(levelSpinner);
         toolbar.add(shapeCombo);
@@ -445,13 +489,16 @@ final class MapPanel extends JPanel {
         MapProp selectedProp = placedPropsList.getSelectedValue();
         MapEntityAsset selectedEntity = placedEntitiesList.getSelectedValue();
         MapLightAsset selectedLight = placedLightsList.getSelectedValue();
+        MapTransitionAsset selectedTransition = placedTransitionsList.getSelectedValue();
         placedPropsListModel.clear();
         placedEntitiesListModel.clear();
         placedLightsListModel.clear();
+        placedTransitionsListModel.clear();
         if (selected != null) {
             selected.getProps().forEach(placedPropsListModel::addElement);
             selected.getEntities().forEach(placedEntitiesListModel::addElement);
             selected.getLights().forEach(placedLightsListModel::addElement);
+            selected.getTransitions().forEach(placedTransitionsListModel::addElement);
             if (selectedProp != null) {
                 for (int i = 0; i < placedPropsListModel.size(); i++) {
                     if (placedPropsListModel.get(i).instanceId.equals(selectedProp.instanceId)) {
@@ -472,6 +519,14 @@ final class MapPanel extends JPanel {
                 for (int i = 0; i < placedLightsListModel.size(); i++) {
                     if (placedLightsListModel.get(i).instanceId.equals(selectedLight.instanceId)) {
                         placedLightsList.setSelectedIndex(i);
+                        break;
+                    }
+                }
+            }
+            if (selectedTransition != null) {
+                for (int i = 0; i < placedTransitionsListModel.size(); i++) {
+                    if (placedTransitionsListModel.get(i).instanceId.equals(selectedTransition.instanceId)) {
+                        placedTransitionsList.setSelectedIndex(i);
                         break;
                     }
                 }
@@ -530,6 +585,30 @@ final class MapPanel extends JPanel {
             selectLight(light.instanceId);
         } catch (IllegalArgumentException e) {
             showError("Licht konnte nicht bearbeitet werden", e);
+        }
+    }
+
+    private void onRemoveTransition() {
+        MapAsset selected = mapList.getSelectedValue();
+        MapTransitionAsset transition = placedTransitionsList.getSelectedValue();
+        if (selected == null || transition == null) return;
+        projectController.removeTransition(selected.id, transition);
+        refresh();
+    }
+
+    private void onEditTransition() {
+        MapAsset map = mapList.getSelectedValue();
+        MapTransitionAsset transition = placedTransitionsList.getSelectedValue();
+        if (map == null || transition == null) return;
+        TransitionSettings settings = askTransitionSettings("Übergang bearbeiten", transition.x, transition.z,
+            transition.targetMapId, transition.targetX, transition.targetZ);
+        if (settings == null) return;
+        try {
+            projectController.updateTransition(map.id, transition, settings.toAsset(transition.instanceId));
+            refresh();
+            selectTransition(transition.instanceId);
+        } catch (IllegalArgumentException e) {
+            showError("Übergang konnte nicht bearbeitet werden", e);
         }
     }
 
@@ -676,6 +755,38 @@ final class MapPanel extends JPanel {
             number(directionX), number(directionY), number(directionZ), number(innerAngle), number(outerAngle));
     }
 
+    private TransitionSettings askTransitionSettings(String title, int x, int z, String targetMapId,
+                                                      int targetX, int targetZ) {
+        List<MapAsset> maps = projectController.getMaps();
+        String[] mapIds = maps.stream().map(m -> m.id).toArray(String[]::new);
+        JSpinner xSpinner = new JSpinner(new SpinnerNumberModel(x, -1_000, 1_000, 1));
+        JSpinner zSpinner = new JSpinner(new SpinnerNumberModel(z, -1_000, 1_000, 1));
+        JComboBox<String> targetMapCombo = new JComboBox<>(mapIds);
+        targetMapCombo.setSelectedItem(targetMapId);
+        JSpinner targetXSpinner = new JSpinner(new SpinnerNumberModel(targetX, -1_000, 1_000, 1));
+        JSpinner targetZSpinner = new JSpinner(new SpinnerNumberModel(targetZ, -1_000, 1_000, 1));
+        JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
+        form.add(new JLabel("X:"));
+        form.add(xSpinner);
+        form.add(new JLabel("Z:"));
+        form.add(zSpinner);
+        form.add(new JLabel("Zielkarte:"));
+        form.add(targetMapCombo);
+        form.add(new JLabel("Ziel-X:"));
+        form.add(targetXSpinner);
+        form.add(new JLabel("Ziel-Z:"));
+        form.add(targetZSpinner);
+        if (JOptionPane.showConfirmDialog(this, form, title, JOptionPane.OK_CANCEL_OPTION,
+            JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return null;
+        String selectedTargetId = (String) targetMapCombo.getSelectedItem();
+        if (selectedTargetId == null) {
+            JOptionPane.showMessageDialog(this, "Bitte eine Zielkarte auswählen.");
+            return null;
+        }
+        return new TransitionSettings((Integer) xSpinner.getValue(), (Integer) zSpinner.getValue(),
+            selectedTargetId, (Integer) targetXSpinner.getValue(), (Integer) targetZSpinner.getValue());
+    }
+
     private void selectProp(String instanceId) {
         for (int i = 0; i < placedPropsListModel.size(); i++) {
             if (placedPropsListModel.get(i).instanceId.equals(instanceId)) {
@@ -703,6 +814,15 @@ final class MapPanel extends JPanel {
         }
     }
 
+    private void selectTransition(String instanceId) {
+        for (int i = 0; i < placedTransitionsListModel.size(); i++) {
+            if (placedTransitionsListModel.get(i).instanceId.equals(instanceId)) {
+                placedTransitionsList.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
     private record PropTransform(float x, float z, float elevation, float rotation) {
     }
 
@@ -716,6 +836,12 @@ final class MapPanel extends JPanel {
         MapLightAsset toAsset(String instanceId) {
             return new MapLightAsset(instanceId, x, y, z, colorR, colorG, colorB, intensity, range, enabled,
                 spot, directionX, directionY, directionZ, innerAngle, outerAngle);
+        }
+    }
+
+    private record TransitionSettings(int x, int z, String targetMapId, int targetX, int targetZ) {
+        MapTransitionAsset toAsset(String instanceId) {
+            return new MapTransitionAsset(instanceId, x, z, targetMapId, targetX, targetZ);
         }
     }
 
