@@ -13,6 +13,7 @@ public final class ProjectDocument {
     private final List<TilesetAsset> tilesets = new ArrayList<>();
     private final List<ModelAsset> models = new ArrayList<>();
     private final List<SpriteAsset> sprites = new ArrayList<>();
+    private final List<DialogueAsset> dialogues = new ArrayList<>();
     private final List<MapAsset> maps = new ArrayList<>();
 
     public ProjectDocument(String name) {
@@ -182,6 +183,54 @@ public final class ProjectDocument {
         throw new IllegalArgumentException("No such sprite: " + id);
     }
 
+    public List<DialogueAsset> getDialogues() {
+        return Collections.unmodifiableList(dialogues);
+    }
+
+    public DialogueAsset findDialogue(String id) {
+        for (DialogueAsset dialogue : dialogues) {
+            if (dialogue.id.equals(id)) return dialogue;
+        }
+        return null;
+    }
+
+    void addDialogue(DialogueAsset dialogue) {
+        if (findDialogue(dialogue.id) != null) throw new IllegalArgumentException("Duplicate dialogue id: " + dialogue.id);
+        dialogues.add(dialogue);
+    }
+
+    void removeDialogue(String id) {
+        List<String> placements = new ArrayList<>();
+        for (MapAsset map : maps) {
+            for (GameEventAsset event : map.getEvents()) {
+                for (EventActionAsset action : event.getActions()) {
+                    if (action.type == EventActionAsset.Type.START_DIALOGUE && id.equals(action.targetId)) {
+                        placements.add("'" + event.instanceId + "' on map '" + map.id + "'");
+                    }
+                }
+            }
+        }
+        if (!placements.isEmpty()) {
+            throw new IllegalArgumentException("Dialogue '" + id + "' is still started by " + String.join(", ", placements));
+        }
+        if (!dialogues.removeIf(dialogue -> dialogue.id.equals(id))) {
+            throw new IllegalArgumentException("No such dialogue: " + id);
+        }
+    }
+
+    void replaceDialogue(String id, DialogueAsset replacement) {
+        if (replacement == null || !id.equals(replacement.id)) {
+            throw new IllegalArgumentException("Replacement dialogue must keep ID '" + id + "'");
+        }
+        for (int i = 0; i < dialogues.size(); i++) {
+            if (dialogues.get(i).id.equals(id)) {
+                dialogues.set(i, replacement);
+                return;
+            }
+        }
+        throw new IllegalArgumentException("No such dialogue: " + id);
+    }
+
     public List<MapAsset> getMaps() {
         return Collections.unmodifiableList(maps);
     }
@@ -210,6 +259,14 @@ public final class ProjectDocument {
                 if (transition.targetMapId.equals(id)) {
                     throw new IllegalArgumentException("Map '" + id + "' is still the target of transition '"
                         + transition.instanceId + "' on map '" + map.id + "'");
+                }
+            }
+            for (GameEventAsset event : map.getEvents()) {
+                for (EventActionAsset action : event.getActions()) {
+                    if (action.type == EventActionAsset.Type.CHANGE_MAP && id.equals(action.targetMap)) {
+                        throw new IllegalArgumentException("Map '" + id + "' is still the target of event '"
+                            + event.instanceId + "' on map '" + map.id + "'");
+                    }
                 }
             }
         }

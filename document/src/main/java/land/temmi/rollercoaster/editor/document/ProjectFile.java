@@ -122,6 +122,28 @@ public final class ProjectFile {
             }
         }
 
+        JsonValue dialogues = root.get("dialogues");
+        if (dialogues != null) {
+            for (JsonValue dialogue = dialogues.child; dialogue != null; dialogue = dialogue.next) {
+                List<DialogueNodeAsset> nodes = new ArrayList<>();
+                JsonValue nodeValues = required(dialogue, "nodes");
+                for (JsonValue node = nodeValues.child; node != null; node = node.next) {
+                    List<DialogueResponseAsset> responses = new ArrayList<>();
+                    JsonValue responseValues = node.get("responses");
+                    if (responseValues != null) {
+                        for (JsonValue response = responseValues.child; response != null; response = response.next) {
+                            responses.add(new DialogueResponseAsset(requireString(response, "textId"),
+                                response.getString("targetNode", null), readConditions(response)));
+                        }
+                    }
+                    nodes.add(new DialogueNodeAsset(requireString(node, "id"), requireString(node, "speaker"),
+                        requireString(node, "textId"), node.getString("portrait", null), responses));
+                }
+                document.addDialogue(new DialogueAsset(requireString(dialogue, "id"),
+                    requireString(dialogue, "startNode"), nodes));
+            }
+        }
+
         JsonValue maps = root.get("maps");
         if (maps != null) {
             for (JsonValue mapValue = maps.child; mapValue != null; mapValue = mapValue.next) {
@@ -207,10 +229,62 @@ public final class ProjectFile {
                         map.addTransition(mapTransition);
                     }
                 }
+                JsonValue events = mapValue.get("events");
+                if (events != null) {
+                    for (JsonValue event = events.child; event != null; event = event.next) {
+                        EventTriggerAsset trigger = readTrigger(required(event, "trigger"));
+                        List<ConditionAsset> conditions = readConditions(event);
+                        List<EventActionAsset> actions = new ArrayList<>();
+                        for (JsonValue action = required(event, "actions").child; action != null; action = action.next) {
+                            actions.add(readAction(action));
+                        }
+                        GameEventAsset gameEvent = new GameEventAsset(requireString(event, "instanceId"),
+                            trigger, conditions, actions);
+                        map.requireEventPosition(gameEvent);
+                        map.addEvent(gameEvent);
+                    }
+                }
                 document.addMap(map);
             }
         }
         return document;
+    }
+
+    private static EventTriggerAsset readTrigger(JsonValue trigger) throws IOException {
+        EventTriggerAsset.Type type = requireEnum(trigger, "type", EventTriggerAsset.Type.class);
+        return new EventTriggerAsset(type, trigger.getString("entityId", null),
+            trigger.getInt("x", 0), trigger.getInt("z", 0), trigger.getString("timeOfDay", null));
+    }
+
+    private static EventActionAsset readAction(JsonValue action) throws IOException {
+        EventActionAsset.Type type = requireEnum(action, "type", EventActionAsset.Type.class);
+        return new EventActionAsset(type, action.getString("targetId", null), action.getString("value", null),
+            action.getInt("x", 0), action.getInt("z", 0), action.getString("targetMap", null));
+    }
+
+    private static List<ConditionAsset> readConditions(JsonValue parent) throws IOException {
+        List<ConditionAsset> conditions = new ArrayList<>();
+        JsonValue conditionValues = parent.get("conditions");
+        if (conditionValues != null) {
+            for (JsonValue condition = conditionValues.child; condition != null; condition = condition.next) {
+                ConditionAsset.Type type = requireEnum(condition, "type", ConditionAsset.Type.class);
+                ConditionAsset.Comparison comparison = condition.has("comparison")
+                    ? requireEnum(condition, "comparison", ConditionAsset.Comparison.class)
+                    : ConditionAsset.Comparison.EQUALS;
+                conditions.add(new ConditionAsset(type, requireString(condition, "key"), comparison,
+                    requireString(condition, "value")));
+            }
+        }
+        return conditions;
+    }
+
+    private static <T extends Enum<T>> T requireEnum(JsonValue parent, String field, Class<T> type) throws IOException {
+        String value = requireString(parent, field);
+        try {
+            return Enum.valueOf(type, value.toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IOException("project.json field '" + field + "' has an unknown value: " + value);
+        }
     }
 
     private static JsonValue required(JsonValue parent, String field) throws IOException {
@@ -334,6 +408,34 @@ public final class ProjectFile {
         }
         writer.pop();
 
+        writer.array("dialogues");
+        for (DialogueAsset dialogue : document.getDialogues()) {
+            writer.object();
+            writer.set("id", dialogue.id);
+            writer.set("startNode", dialogue.startNodeId);
+            writer.array("nodes");
+            for (DialogueNodeAsset node : dialogue.getNodes()) {
+                writer.object();
+                writer.set("id", node.id);
+                writer.set("speaker", node.speakerId);
+                writer.set("textId", node.textId);
+                if (node.portrait != null) writer.set("portrait", node.portrait);
+                writer.array("responses");
+                for (DialogueResponseAsset response : node.getResponses()) {
+                    writer.object();
+                    writer.set("textId", response.textId);
+                    if (response.targetNodeId != null) writer.set("targetNode", response.targetNodeId);
+                    writeConditions(writer, response.getConditions());
+                    writer.pop();
+                }
+                writer.pop();
+                writer.pop();
+            }
+            writer.pop();
+            writer.pop();
+        }
+        writer.pop();
+
         writer.array("maps");
         for (MapAsset map : document.getMaps()) {
             writer.object();
@@ -432,12 +534,62 @@ public final class ProjectFile {
                 writer.pop();
             }
             writer.pop();
+            writer.array("events");
+            for (GameEventAsset event : map.getEvents()) {
+                writer.object();
+                writer.set("instanceId", event.instanceId);
+                writeTrigger(writer, event.trigger);
+                writeConditions(writer, event.getConditions());
+                writer.array("actions");
+                for (EventActionAsset action : event.getActions()) writeAction(writer, action);
+                writer.pop();
+                writer.pop();
+            }
+            writer.pop();
             writer.pop();
         }
         writer.pop();
 
         writer.pop();
         return buffer.toString();
+    }
+
+    private static void writeTrigger(JsonWriter writer, EventTriggerAsset trigger) throws IOException {
+        writer.object("trigger");
+        writer.set("type", trigger.type.name().toLowerCase(java.util.Locale.ROOT));
+        if (trigger.entityId != null) writer.set("entityId", trigger.entityId);
+        if (trigger.type == EventTriggerAsset.Type.ENTER_AREA) {
+            writer.set("x", trigger.x);
+            writer.set("z", trigger.z);
+        }
+        if (trigger.timeOfDay != null) writer.set("timeOfDay", trigger.timeOfDay);
+        writer.pop();
+    }
+
+    private static void writeAction(JsonWriter writer, EventActionAsset action) throws IOException {
+        writer.object();
+        writer.set("type", action.type.name().toLowerCase(java.util.Locale.ROOT));
+        if (action.targetId != null) writer.set("targetId", action.targetId);
+        if (action.value != null) writer.set("value", action.value);
+        if (action.type == EventActionAsset.Type.MOVE_NPC || action.type == EventActionAsset.Type.CHANGE_MAP) {
+            writer.set("x", action.x);
+            writer.set("z", action.z);
+        }
+        if (action.targetMap != null) writer.set("targetMap", action.targetMap);
+        writer.pop();
+    }
+
+    private static void writeConditions(JsonWriter writer, List<ConditionAsset> conditions) throws IOException {
+        writer.array("conditions");
+        for (ConditionAsset condition : conditions) {
+            writer.object();
+            writer.set("type", condition.type.name().toLowerCase(java.util.Locale.ROOT));
+            writer.set("key", condition.key);
+            writer.set("comparison", condition.comparison.name().toLowerCase(java.util.Locale.ROOT));
+            writer.set("value", condition.value);
+            writer.pop();
+        }
+        writer.pop();
     }
 
     private static void writeFloatArray(JsonWriter writer, String name, float x, float y, float z)

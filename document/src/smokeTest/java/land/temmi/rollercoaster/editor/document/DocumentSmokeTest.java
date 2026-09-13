@@ -24,9 +24,12 @@ public final class DocumentSmokeTest {
         verifyPropCommandsAndRoundtrip();
         verifyLightCommandsAndRoundtrip();
         verifyTransitionCommandsAndRoundtrip();
+        verifyDialogueCommandsAndRoundtrip();
+        verifyEventCommandsAndRoundtrip();
         System.out.println("PASS: undo/redo, dirty tracking after a branching edit, an atomic project.json "
             + "roundtrip across a moved directory, texture/tileset commands with referential integrity, "
-            + "model import/export, map terrain painting, prop placement, map lighting, and map transitions");
+            + "model import/export, map terrain painting, prop placement, map lighting, map transitions, "
+            + "dialogue trees, and map events");
     }
 
     private static void verifyUndoRedoAndDirtyTracking() {
@@ -659,6 +662,174 @@ public final class DocumentSmokeTest {
         if (reloaded == null || reloaded.x != 1 || reloaded.z != 1 || !"cave".equals(reloaded.targetMapId)
             || reloaded.targetX != 0 || reloaded.targetZ != 0) {
             throw new AssertionError("Transition did not round-trip");
+        }
+    }
+
+    private static void verifyDialogueCommandsAndRoundtrip() throws IOException {
+        ProjectDocument document = new ProjectDocument("Gesprächige Welt");
+        CommandHistory history = new CommandHistory(document);
+
+        try {
+            new DialogueAsset("npc-1-intro", "missing-node",
+                List.of(new DialogueNodeAsset("greet", "npc-1", "dialogue.greet", null, List.of())));
+            throw new AssertionError("A dialogue whose start node is missing should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: startNode must name one of the dialogue's own nodes.
+        }
+
+        try {
+            new DialogueAsset("npc-1-intro", "greet", List.of(new DialogueNodeAsset("greet", "npc-1",
+                "dialogue.greet", null, List.of(new DialogueResponseAsset("dialogue.greet.yes", "nowhere", List.of())))));
+            throw new AssertionError("A response targeting an unknown node should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: a response's targetNode must name a node in the same dialogue.
+        }
+
+        DialogueNodeAsset explain = new DialogueNodeAsset("explain", "npc-1", "dialogue.explain", "npc1_face", List.of());
+        DialogueNodeAsset greet = new DialogueNodeAsset("greet", "npc-1", "dialogue.greet", "npc1_face", List.of(
+            new DialogueResponseAsset("dialogue.greet.yes", "explain",
+                List.of(new ConditionAsset(ConditionAsset.Type.FLAG, "met-npc-1",
+                    ConditionAsset.Comparison.NOT_EQUALS, "true"))),
+            new DialogueResponseAsset("dialogue.greet.no", null, List.of())));
+        DialogueAsset intro = new DialogueAsset("npc-1-intro", "greet", List.of(greet, explain));
+        history.perform(new RegisterDialogueCommand(intro));
+        if (document.findDialogue("npc-1-intro") == null) throw new AssertionError("Dialogue registration did not apply");
+
+        DialogueAsset renamed = new DialogueAsset("npc-1-intro", "explain", List.of(greet, explain));
+        history.perform(new UpdateDialogueCommand(intro, renamed));
+        if (!"explain".equals(document.findDialogue("npc-1-intro").startNodeId)) {
+            throw new AssertionError("Dialogue update did not apply");
+        }
+        history.undo();
+        if (!"greet".equals(document.findDialogue("npc-1-intro").startNodeId)) {
+            throw new AssertionError("Undo did not restore the previous dialogue");
+        }
+
+        history.perform(new RemoveDialogueCommand(intro));
+        if (document.findDialogue("npc-1-intro") != null) throw new AssertionError("Dialogue removal did not apply");
+        history.undo();
+        if (document.findDialogue("npc-1-intro") == null) throw new AssertionError("Undo did not restore the removed dialogue");
+
+        Path directory = Files.createTempDirectory("trackside-editor-project-dialogues");
+        ProjectFile.save(document, directory);
+        DialogueAsset reloaded = ProjectFile.load(directory).findDialogue("npc-1-intro");
+        if (reloaded == null || !"greet".equals(reloaded.startNodeId) || reloaded.getNodes().size() != 2) {
+            throw new AssertionError("Dialogue did not round-trip");
+        }
+        DialogueNodeAsset reloadedGreet = reloaded.findNode("greet");
+        if (reloadedGreet == null || reloadedGreet.getResponses().size() != 2) {
+            throw new AssertionError("Dialogue node did not round-trip");
+        }
+        DialogueResponseAsset reloadedYes = reloadedGreet.getResponses().get(0);
+        if (!"explain".equals(reloadedYes.targetNodeId) || reloadedYes.getConditions().size() != 1
+            || reloadedYes.getConditions().get(0).comparison != ConditionAsset.Comparison.NOT_EQUALS) {
+            throw new AssertionError("Dialogue response and its condition did not round-trip");
+        }
+        if (reloadedGreet.getResponses().get(1).targetNodeId != null) {
+            throw new AssertionError("A response with no target should end the dialogue");
+        }
+    }
+
+    private static void verifyEventCommandsAndRoundtrip() throws IOException {
+        ProjectDocument document = new ProjectDocument("Ereignisreiche Welt");
+        CommandHistory history = new CommandHistory(document);
+        document.addTexture(new TextureAsset("grass", "grass.png"));
+        TilesetAsset tileset = new TilesetAsset("overworld");
+        tileset.addTile(new TileEntry("grass", "grass", true));
+        document.addTileset(tileset);
+        history.perform(new CreateMapCommand("valley", 4, 3, "overworld"));
+        history.perform(new CreateMapCommand("cave", 3, 3, "overworld"));
+        MapAsset valley = document.findMap("valley");
+        history.perform(new PlaceEntityCommand("valley", new MapEntityAsset("npc-1", "npc", null, 1, 1)));
+        history.perform(new PlaceLightCommand("valley", new MapLightAsset("lamp-1", 1f, 1.5f, 1f, 1f, 1f, 1f, 1f, 4f, true)));
+        history.perform(new RegisterDialogueCommand(new DialogueAsset("npc-1-intro", "greet",
+            List.of(new DialogueNodeAsset("greet", "npc-1", "dialogue.greet", null, List.of())))));
+
+        try {
+            history.perform(new PlaceEventCommand("valley", new GameEventAsset("bad-trigger",
+                new EventTriggerAsset(EventTriggerAsset.Type.INTERACTION, "unknown-npc", 0, 0, null),
+                List.of(), List.of(EventActionAsset.setFlag("met-npc-1", "true")))));
+            throw new AssertionError("A trigger referencing an unknown entity should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: "unknown-npc" is not an entity on this map.
+        }
+
+        try {
+            history.perform(new PlaceEventCommand("valley", new GameEventAsset("bad-dialogue",
+                EventTriggerAsset.interaction("npc-1"), List.of(),
+                List.of(EventActionAsset.startDialogue("unknown-dialogue")))));
+            throw new AssertionError("An action referencing an unknown dialogue should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: "unknown-dialogue" is not a registered dialogue.
+        }
+
+        try {
+            history.perform(new PlaceEventCommand("valley", new GameEventAsset("bad-map",
+                new EventTriggerAsset(EventTriggerAsset.Type.MAP_START, null, 0, 0, null), List.of(),
+                List.of(EventActionAsset.changeMap("unknown-map", 0, 0)))));
+            throw new AssertionError("An action referencing an unknown map should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: "unknown-map" is not a registered map.
+        }
+
+        try {
+            history.perform(new PlaceEventCommand("valley", new GameEventAsset("bad-area",
+                new EventTriggerAsset(EventTriggerAsset.Type.ENTER_AREA, null, 9, 0, null), List.of(),
+                List.of(EventActionAsset.setFlag("stepped", "true")))));
+            throw new AssertionError("An ENTER_AREA trigger outside the map should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: the trigger tile has to remain within the map grid.
+        }
+
+        GameEventAsset greetEvent = new GameEventAsset("npc-1-greet", EventTriggerAsset.interaction("npc-1"),
+            List.of(new ConditionAsset(ConditionAsset.Type.FLAG, "met-npc-1", ConditionAsset.Comparison.NOT_EQUALS, "true")),
+            List.of(EventActionAsset.startDialogue("npc-1-intro"), EventActionAsset.setFlag("met-npc-1", "true")));
+        history.perform(new PlaceEventCommand("valley", greetEvent));
+        if (valley.findEvent("npc-1-greet") == null) throw new AssertionError("Event placement did not apply");
+
+        GameEventAsset toggled = new GameEventAsset("npc-1-greet", EventTriggerAsset.interaction("npc-1"),
+            List.of(), List.of(EventActionAsset.toggleLight("lamp-1", false)));
+        history.perform(new UpdateEventCommand("valley", greetEvent, toggled));
+        GameEventAsset updated = valley.findEvent("npc-1-greet");
+        if (updated.getActions().size() != 1 || updated.getActions().get(0).type != EventActionAsset.Type.TOGGLE_LIGHT) {
+            throw new AssertionError("Event update did not apply");
+        }
+        history.undo();
+        GameEventAsset restored = valley.findEvent("npc-1-greet");
+        if (restored.getActions().size() != 2) throw new AssertionError("Undo did not restore the previous event");
+
+        try {
+            document.removeDialogue("npc-1-intro");
+            throw new AssertionError("Removing a dialogue still started by an event should fail");
+        } catch (IllegalArgumentException expected) {
+            if (!expected.getMessage().contains("npc-1-greet")) {
+                throw new AssertionError("The blocked removal should name the offending event", expected);
+            }
+        }
+
+        try {
+            history.perform(new RemoveMapCommand(document.findMap("cave")));
+        } catch (IllegalArgumentException unexpected) {
+            throw new AssertionError("Removing an unrelated map should not be blocked by this map's events", unexpected);
+        }
+
+        history.perform(new RemoveEventCommand("valley", greetEvent));
+        if (valley.findEvent("npc-1-greet") != null) throw new AssertionError("Event removal did not apply");
+        history.undo();
+        if (valley.findEvent("npc-1-greet") == null) throw new AssertionError("Undo did not restore the removed event");
+
+        Path directory = Files.createTempDirectory("trackside-editor-project-events");
+        ProjectFile.save(document, directory);
+        MapAsset reloadedValley = ProjectFile.load(directory).findMap("valley");
+        GameEventAsset reloaded = reloadedValley.findEvent("npc-1-greet");
+        if (reloaded == null || reloaded.trigger.type != EventTriggerAsset.Type.INTERACTION
+            || !"npc-1".equals(reloaded.trigger.entityId) || reloaded.getConditions().size() != 1
+            || reloaded.getActions().size() != 2) {
+            throw new AssertionError("Event did not round-trip");
+        }
+        if (reloaded.getActions().get(0).type != EventActionAsset.Type.START_DIALOGUE
+            || !"npc-1-intro".equals(reloaded.getActions().get(0).targetId)) {
+            throw new AssertionError("Event action did not round-trip");
         }
     }
 

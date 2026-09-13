@@ -29,6 +29,7 @@ public final class MapAsset {
     private final List<MapEntityAsset> entities = new ArrayList<>();
     private final List<MapLightAsset> lights = new ArrayList<>();
     private final List<MapTransitionAsset> transitions = new ArrayList<>();
+    private final List<GameEventAsset> events = new ArrayList<>();
 
     public MapAsset(String id, int width, int depth, String tilesetId) {
         if (id == null || id.trim().isEmpty()) throw new IllegalArgumentException("Map id is required");
@@ -108,6 +109,17 @@ public final class MapAsset {
     public MapTransitionAsset findTransition(String instanceId) {
         for (MapTransitionAsset transition : transitions) {
             if (transition.instanceId.equals(instanceId)) return transition;
+        }
+        return null;
+    }
+
+    public List<GameEventAsset> getEvents() {
+        return Collections.unmodifiableList(events);
+    }
+
+    public GameEventAsset findEvent(String instanceId) {
+        for (GameEventAsset event : events) {
+            if (event.instanceId.equals(instanceId)) return event;
         }
         return null;
     }
@@ -206,6 +218,32 @@ public final class MapAsset {
         throw new IllegalArgumentException("No such transition: " + instanceId);
     }
 
+    void addEvent(GameEventAsset event) {
+        if (findEvent(event.instanceId) != null) {
+            throw new IllegalArgumentException("Duplicate event instance id: " + event.instanceId);
+        }
+        events.add(event);
+    }
+
+    void removeEvent(String instanceId) {
+        if (!events.removeIf(event -> event.instanceId.equals(instanceId))) {
+            throw new IllegalArgumentException("No such event: " + instanceId);
+        }
+    }
+
+    void replaceEvent(String instanceId, GameEventAsset replacement) {
+        if (replacement == null || !instanceId.equals(replacement.instanceId)) {
+            throw new IllegalArgumentException("Replacement event must keep instance ID '" + instanceId + "'");
+        }
+        for (int i = 0; i < events.size(); i++) {
+            if (events.get(i).instanceId.equals(instanceId)) {
+                events.set(i, replacement);
+                return;
+            }
+        }
+        throw new IllegalArgumentException("No such event: " + instanceId);
+    }
+
     /** Restorable grid contents used by {@link ResizeMapCommand}. */
     static final class State {
         private final int width;
@@ -247,6 +285,14 @@ public final class MapAsset {
             if (transition.x >= newWidth || transition.z >= newDepth) {
                 throw new IllegalArgumentException(
                     "Resizing map '" + id + "' would remove transition '" + transition.instanceId + "'");
+            }
+        }
+        for (GameEventAsset event : events) {
+            EventTriggerAsset trigger = event.trigger;
+            if (trigger.type == EventTriggerAsset.Type.ENTER_AREA
+                && (trigger.x >= newWidth || trigger.z >= newDepth)) {
+                throw new IllegalArgumentException(
+                    "Resizing map '" + id + "' would remove event '" + event.instanceId + "'");
             }
         }
         State previous = new State(this);
@@ -308,6 +354,14 @@ public final class MapAsset {
     void requireTransitionPosition(MapTransitionAsset transition) {
         if (!contains(transition.x, transition.z)) {
             throw new IllegalArgumentException("Transition '" + transition.instanceId + "' is outside map '" + id + "'");
+        }
+    }
+
+    /** Only an ENTER_AREA trigger has a map position; other trigger types fire independently of it. */
+    void requireEventPosition(GameEventAsset event) {
+        EventTriggerAsset trigger = event.trigger;
+        if (trigger.type == EventTriggerAsset.Type.ENTER_AREA && !contains(trigger.x, trigger.z)) {
+            throw new IllegalArgumentException("Event '" + event.instanceId + "' area is outside map '" + id + "'");
         }
     }
 
