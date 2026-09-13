@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "house",
+      "source": "gltf:models/house.gltf",
+      "anchor": [-0.5, 0, -0.5],
+      "scale": 1,
+      "height": 4,
+      "bounds": { "min": [-1.8, 0, -1.3], "max": [2.8, 4, 2.3] },
+      "collision": { "min": [-2, -2], "max": [2, 1] }
+    },
+    {
+      "id": "streetLamp",
+      "source": "gltf:models/street-lamp.gltf",
+      "anchor": [0, 0, 0],
+      "scale": 1,
+      "height": 2.9,
+      "bounds": { "min": [-0.2, 0, -0.2], "max": [0.2, 2.9, 0.2] },
+      "collision": { "min": [0, 0], "max": [0, 0] }
+    },
+    {
+      "id": "suspensionBridge",
+      "source": "gltf:models/suspension-bridge.gltf",
+      "anchor": [0, -0.12, 0],
+      "scale": 1,
+      "height": 3.04,
+      "bounds": { "min": [-3.5, 0, -0.45], "max": [3.5, 3.04, 0.45] },
+      "collision": { "min": [-3, 0], "max": [3, 0] },
+      "walkable": true,
+      "walkHeight": 2.12
+    }
+  ]
+}

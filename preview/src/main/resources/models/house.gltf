@@ -1,0 +1,130 @@
+{
+  "asset": {
+    "generator": "GDX glTF exporter 1.0",
+    "version": "2.0"
+  },
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "node1",
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "COLOR_0": 1,
+            "TEXCOORD_0": 2
+          },
+          "indices": 3,
+          "material": 0
+        },
+        {
+          "attributes": {
+            "POSITION": 0,
+            "COLOR_0": 1,
+            "TEXCOORD_0": 2
+          },
+          "indices": 4,
+          "material": 1
+        }
+      ]
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 110,
+      "type": "VEC3",
+      "min": [
+        -1.8,
+        0,
+        -1.3
+      ],
+      "max": [
+        2.8,
+        4,
+        2.3
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 110,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 110,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5123,
+      "count": 90,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5123,
+      "count": 72,
+      "type": "SCALAR"
+    }
+  ],
+  "materials": [
+    {
+      "name": "mtl1"
+    },
+    {
+      "name": "windows",
+      "emissiveFactor": [
+        1.0,
+        0.58,
+        0.18
+      ]
+    }
+  ],
+  "bufferViews": [
+    {
+      "byteLength": 1320,
+      "buffer": 0
+    },
+    {
+      "byteOffset": 1320,
+      "byteLength": 1760,
+      "buffer": 0
+    },
+    {
+      "byteOffset": 3080,
+      "byteLength": 880,
+      "buffer": 0
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 3960,
+      "byteLength": 180
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 4140,
+      "byteLength": 144
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "house.bin",
+      "byteLength": 4284
+    }
+  ]
+}
