@@ -275,12 +275,20 @@ und erneut öffnen, ohne Datenverlust oder kaputte Referenzen.
 
 ### Phase 2 — Texturen, Tilesets und Modelle
 
-- Einzeltexturen importieren, benennen, sortieren und Vorschauen anzeigen.
-- Tiles aus Texturen definieren, Atlas erzeugen und Tileset-Manifest exportieren.
-- Oberflächen-/Seitenzuordnung und Terrainformen gemäß dem abgeschlossenen Engine-Vertrag.
-- GLTF/GLB samt Abhängigkeiten importieren, Modell registrieren und dreidimensional anzeigen.
-- Bounds anzeigen, Maßstab/Pivot/Höhe einstellen und Kollisions-Fußabdruck bearbeiten.
-- Abhängigkeiten bei Umbenennung, Löschung und Reimport prüfen; betroffene Karten auflisten.
+- [x] Atlas erzeugen und Tileset-Manifest exportieren (`asset-pipeline`-Modul): `TilePacker` packt
+  gleich große Tiles als stabiles Grid (kein Bin-Packer/Rotation nötig, da das Manifest ohnehin
+  eine gemeinsame `tileWidth`/`tileHeight` je Tileset annimmt), weist zu große Tilesets
+  (>2048px-Seite), abweichende Tile-Größen und doppelte IDs mit klarer Meldung ab. `TilesetExport`
+  schreibt PNG plus Manifest im exakten `TilesetManifest`-Schema - gegen den echten Engine-Parser
+  geprüft, nicht nur gegen die eigene Ausgabe.
+- [ ] Einzeltexturen importieren, benennen, sortieren und Vorschauen anzeigen - noch keine UI, der
+  Packer nimmt bisher `TileSource`-Objekte direkt entgegen.
+- [ ] Oberflächen-/Seitenzuordnung - Seitenregion fällt aktuell auf die Oberseite zurück (wie vom
+  Engine-Vertrag vorgesehen), eine eigene Seitentextur zuzuweisen ist noch nicht möglich.
+- [ ] Terrainformen gemäß dem abgeschlossenen Engine-Vertrag.
+- [ ] GLTF/GLB samt Abhängigkeiten importieren, Modell registrieren und dreidimensional anzeigen.
+- [ ] Bounds anzeigen, Maßstab/Pivot/Höhe einstellen und Kollisions-Fußabdruck bearbeiten.
+- [ ] Abhängigkeiten bei Umbenennung, Löschung und Reimport prüfen; betroffene Karten auflisten.
 
 Abnahme: Tileset und Haus entstehen ausschließlich über die UI und laden im Example Game.
 Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle Referenzen.
