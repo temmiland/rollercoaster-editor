@@ -121,6 +121,19 @@ public final class ProjectDocument {
         }
     }
 
+    void replaceModel(String id, ModelAsset replacement) {
+        if (replacement == null || !id.equals(replacement.id)) {
+            throw new IllegalArgumentException("Replacement model must keep ID '" + id + "'");
+        }
+        for (int i = 0; i < models.size(); i++) {
+            if (models.get(i).id.equals(id)) {
+                models.set(i, replacement);
+                return;
+            }
+        }
+        throw new IllegalArgumentException("No such model: " + id);
+    }
+
     public List<MapAsset> getMaps() {
         return Collections.unmodifiableList(maps);
     }

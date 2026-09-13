@@ -34,9 +34,7 @@ import java.awt.FlowLayout;
 import java.awt.GridLayout;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
@@ -46,7 +44,8 @@ final class MapPanel extends JPanel {
     /** Fire-and-forget from the UI's side; the returned future carries success/failure back. */
     interface PreviewMapRequester {
         CompletableFuture<ShowMapResult> showMap(String mapFilePath, int width, int depth,
-                                                 String[] tileIds, boolean[] tileWalkable, String[] modelIds);
+                                                 String[] tileIds, boolean[] tileWalkable,
+                                                 String modelManifestFilePath);
     }
 
     private final ProjectController projectController;
@@ -431,10 +430,12 @@ final class MapPanel extends JPanel {
         if (tileset == null) return;
 
         Path mapFile;
+        Path modelManifestFile = null;
         try {
             mapFile = projectController.exportMap(selected.id);
+            if (!selected.getProps().isEmpty()) modelManifestFile = projectController.exportModels();
         } catch (IOException e) {
-            showError("Karte konnte nicht exportiert werden", e);
+            showError("Karte oder Modelle konnten nicht exportiert werden", e);
             return;
         }
 
@@ -445,11 +446,8 @@ final class MapPanel extends JPanel {
             tileIds[i] = tiles.get(i).id;
             tileWalkable[i] = tiles.get(i).walkable;
         }
-        Set<String> modelIds = new LinkedHashSet<>();
-        for (MapProp prop : selected.getProps()) modelIds.add(prop.modelId);
-
         previewMapRequester.showMap(mapFile.toAbsolutePath().toString(), selected.width, selected.depth,
-            tileIds, tileWalkable, modelIds.toArray(new String[0]))
+            tileIds, tileWalkable, modelManifestFile == null ? null : modelManifestFile.toAbsolutePath().toString())
             .whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
                 if (error != null) {
                     JOptionPane.showMessageDialog(this, error.getMessage(), "Vorschau fehlgeschlagen",

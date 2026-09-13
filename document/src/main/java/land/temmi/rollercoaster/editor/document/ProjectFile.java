@@ -10,6 +10,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Reads and writes project.json. Saves are atomic: write a sibling temp file, then rename over the target. */
 public final class ProjectFile {
@@ -67,6 +69,17 @@ public final class ProjectFile {
                 JsonValue collision = required(model, "collision");
                 JsonValue collisionMin = requiredArray(collision, "min", 2);
                 JsonValue collisionMax = requiredArray(collision, "max", 2);
+                List<String> dependencies = new ArrayList<>();
+                JsonValue dependencyValues = model.get("dependencies");
+                if (dependencyValues != null) {
+                    if (!dependencyValues.isArray()) throw new IOException("project.json model dependencies must be an array");
+                    for (JsonValue dependency = dependencyValues.child; dependency != null; dependency = dependency.next) {
+                        if (!dependency.isString() || dependency.asString().trim().isEmpty()) {
+                            throw new IOException("project.json model dependency must be a nonempty string");
+                        }
+                        dependencies.add(dependency.asString());
+                    }
+                }
                 document.addModel(new ModelAsset(requireString(model, "id"), requireString(model, "file"),
                     model.getBoolean("binary", false),
                     offset.getFloat(0), offset.getFloat(1), offset.getFloat(2),
@@ -75,7 +88,7 @@ public final class ProjectFile {
                     boundsMax.getFloat(0), boundsMax.getFloat(1), boundsMax.getFloat(2),
                     collisionMin.getInt(0), collisionMax.getInt(0), collisionMin.getInt(1), collisionMax.getInt(1),
                     model.getBoolean("alignToSlope", false), model.getBoolean("walkable", false),
-                    model.getFloat("walkHeight", 0f)));
+                    model.getFloat("walkHeight", 0f), dependencies));
             }
         }
 
@@ -199,6 +212,9 @@ public final class ProjectFile {
             writer.object();
             writer.set("id", model.id);
             writer.set("file", model.fileName);
+            writer.array("dependencies");
+            for (String dependencyFileName : model.getDependencyFileNames()) writer.value(dependencyFileName);
+            writer.pop();
             writer.set("binary", model.binary);
             writeFloatArray(writer, "offset", model.offsetX, model.offsetY, model.offsetZ);
             writer.set("scale", model.scale);

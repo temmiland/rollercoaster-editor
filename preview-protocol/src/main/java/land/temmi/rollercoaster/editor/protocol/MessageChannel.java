@@ -17,7 +17,7 @@ import java.nio.charset.StandardCharsets;
  * Message classes are tagged so the wire format survives Java class renames.
  */
 public final class MessageChannel implements Closeable {
-    public static final int PROTOCOL_VERSION = 1;
+    public static final int PROTOCOL_VERSION = 2;
 
     private final Socket socket;
     private final Json json;

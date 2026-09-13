@@ -1,6 +1,7 @@
 package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.asset.MapExport;
+import land.temmi.rollercoaster.editor.asset.ModelManifestExport;
 import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
 import land.temmi.rollercoaster.editor.protocol.ShowMapResult;
 
@@ -9,6 +10,7 @@ import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.List;
 
 /**
  * Spawns the real preview subprocess and asks it to compute bounds for a real sample GLTF file -
@@ -48,6 +50,16 @@ public final class PreviewProcessSmokeTest {
             }
 
             Path mapDirectory = Files.createTempDirectory("preview-process-smoke-test-map");
+            Path sourceGltf = Path.of(sampleGltfPath);
+            Path sourceBin = sourceGltf.resolveSibling("house.bin");
+            Path modelDirectory = mapDirectory.resolve("models");
+            Files.createDirectories(modelDirectory);
+            Files.copy(sourceGltf, modelDirectory.resolve(sourceGltf.getFileName()));
+            Files.copy(sourceBin, modelDirectory.resolve(sourceBin.getFileName()));
+            ModelManifestExport.write(List.of(new ModelManifestExport.Entry("house",
+                "gltf:models/" + sourceGltf.getFileName(), 0f, 0f, 0f, 1f, result.maxY - result.minY,
+                result.minX, result.minY, result.minZ, result.maxX, result.maxY, result.maxZ,
+                0, 0, 0, 0, false, false, 0f)), mapDirectory);
             MapExport.write("valley", 2, 2, "overworld",
                 new String[] {"grass", "grass", "grass", "grass"}, new float[] {0f, 0f, 0f, 0f},
                 new String[] {"flat", "flat", "flat", "flat"}, new boolean[] {false, false, false, false},
@@ -55,7 +67,8 @@ public final class PreviewProcessSmokeTest {
             String mapFilePath = mapDirectory.resolve("valley.json").toAbsolutePath().toString();
 
             CompletableFuture<ShowMapResult> showMapFuture = process.showMap(mapFilePath, 2, 2,
-                new String[] {"grass"}, new boolean[] {true}, new String[] {"house"});
+                new String[] {"grass"}, new boolean[] {true},
+                mapDirectory.resolve("models.json").toAbsolutePath().toString());
             ShowMapResult showMapResult = showMapFuture.get(20, TimeUnit.SECONDS);
             if (!showMapResult.success) throw new AssertionError("ShowMap failed: " + showMapResult.errorMessage);
             System.out.println("ShowMap succeeded for a real exported map, built through a real WorldSceneLoader");

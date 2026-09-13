@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.List;
 
 /** Checks undo/redo, dirty tracking and the project.json roundtrip; no GL context involved. */
 public final class DocumentSmokeTest {
@@ -193,7 +194,8 @@ public final class DocumentSmokeTest {
         ProjectDocument document = new ProjectDocument("Modellwelt");
         CommandHistory history = new CommandHistory(document);
 
-        ModelAsset house = ModelAsset.imported("house", "house.gltf", false, -1.8f, 0f, -1.3f, 2.8f, 4f, 2.3f);
+        ModelAsset house = ModelAsset.imported("house", "house.gltf", false,
+            -1.8f, 0f, -1.3f, 2.8f, 4f, 2.3f, List.of("house.bin"));
         if (house.getHeight() != 4f) throw new AssertionError("Height should derive from bounds and scale");
         if (!"gltf:models/house.gltf".equals(house.getSource())) throw new AssertionError("Wrong source string");
 
@@ -204,6 +206,17 @@ public final class DocumentSmokeTest {
         if (document.findModel("house") != null) throw new AssertionError("Model removal did not apply");
         history.undo();
         if (document.findModel("house") == null) throw new AssertionError("Undo did not restore the model");
+
+        ModelAsset configuredHouse = house.withPlacement(0.25f, 1f, -0.5f, 1.5f,
+            -1, 2, -2, 3, true, true, 2f);
+        history.perform(new UpdateModelCommand(house, configuredHouse));
+        ModelAsset updated = document.findModel("house");
+        if (updated.scale != 1.5f || updated.offsetY != 1f || updated.collisionMaxZ != 3
+            || !updated.alignToSlope || !updated.walkable || updated.walkHeight != 2f) {
+            throw new AssertionError("Model metadata update did not apply");
+        }
+        history.undo();
+        if (document.findModel("house").scale != 1f) throw new AssertionError("Undo did not restore model metadata");
 
         try {
             document.addModel(house);
@@ -219,6 +232,9 @@ public final class DocumentSmokeTest {
         if (reloaded.binary != house.binary || reloaded.getHeight() != house.getHeight()
             || reloaded.boundsMaxX != house.boundsMaxX || reloaded.collisionMaxX != house.collisionMaxX) {
             throw new AssertionError("Model fields did not round-trip");
+        }
+        if (!reloaded.getDependencyFileNames().equals(List.of("house.bin"))) {
+            throw new AssertionError("Model dependencies did not round-trip");
         }
     }
 
@@ -342,7 +358,8 @@ public final class DocumentSmokeTest {
         TilesetAsset tileset = new TilesetAsset("overworld");
         tileset.addTile(new TileEntry("grass", "grass", true));
         document.addTileset(tileset);
-        document.addModel(ModelAsset.imported("house", "house.gltf", false, -1.8f, 0f, -1.3f, 2.8f, 4f, 2.3f));
+        document.addModel(ModelAsset.imported("house", "house.gltf", false,
+            -1.8f, 0f, -1.3f, 2.8f, 4f, 2.3f, List.of("house.bin")));
         history.perform(new CreateMapCommand("valley", 4, 3, "overworld"));
 
         try {
@@ -414,6 +431,10 @@ public final class DocumentSmokeTest {
         if (reloadedProp == null || !"house".equals(reloadedProp.modelId) || reloadedProp.x != 2f
             || reloadedProp.z != 1f || reloadedProp.elevation != 0f || reloadedProp.rotation != 0f) {
             throw new AssertionError("Prop did not round-trip");
+        }
+        ModelAsset reloadedModel = ProjectFile.load(directory).findModel("house");
+        if (!reloadedModel.getDependencyFileNames().equals(List.of("house.bin"))) {
+            throw new AssertionError("Model dependencies did not round-trip");
         }
     }
 

@@ -301,12 +301,17 @@ und erneut öffnen, ohne Datenverlust oder kaputte Referenzen.
   `sources/models/` kopiert; die Bounds kommen aus einem echten `Model`/`Mesh`, das nur die
   Vorschau (mit GL-Kontext) bauen kann - `ComputeModelBounds`/`ModelBoundsResult` holen sie per
   Roundtrip, `ModelBoundsService` spiegelt `GltfModelFactory`s Ladepfad exakt. Export schreibt
-  `catalogs/models/` plus ein gemeinsames `models.json`, gegen den echten `ModelManifest`-Parser
-  geprüft. **Dreidimensional anzeigen fehlt noch** - die Vorschau zeigt importierte Modelle noch
-  nicht isoliert an, nur ganze Karten (`SampleScene`).
-- [ ] Bounds anzeigen, Maßstab/Pivot/Höhe einstellen und Kollisions-Fußabdruck bearbeiten - Import
-  setzt bisher feste Startwerte (Skalierung 1, Anker (0,0,0), Kollision auf eine Zelle).
-- [ ] Abhängigkeiten bei Umbenennung, Löschung und Reimport prüfen; betroffene Karten auflisten.
+  `catalogs/models/` plus ein gemeinsames `models.json`; primäre Dateien und registrierte
+  Abhängigkeiten werden zusammen exportiert und über den echten `ModelManifest`-Parser geprüft.
+  Die Karten-Vorschau löst die relativen Quellen gegen dieses Manifest auf und rendert damit das
+  reale GLTF/GLB. Dateinamen sind auf einzelne Projektdateien beschränkt, damit ein gespeichertes
+  Projekt nicht beim Export aus seinem Asset-Ordner ausbrechen kann.
+- [x] Bounds anzeigen, Maßstab/Pivot/Höhe einstellen und Kollisions-Fußabdruck bearbeiten:
+  "Eigenschaften…" im Modelle-Tab zeigt die importierten Bounds und die abgeleitete Höhe und
+  bearbeitet Anker, Skalierung, Fußabdruck, Hangausrichtung und begehbare Laufhöhe als eine
+  Undo/Redo-Änderung.
+- [ ] Reimport und Umbenennung von Modellquellen anbieten; betroffene Karten vor einer Löschung
+  weiterhin mit ihren Prop-Instanz-IDs auflisten.
 
 Abnahme: Tileset und Haus entstehen ausschließlich über die UI und laden im Example Game.
 Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle Referenzen.
@@ -355,10 +360,8 @@ Steilkanten und gesperrte Flächen verhalten sich genauso wie im exportierten Sp
 - [x] Registrierte Modelle als Props platzieren, wählen, verschieben, drehen, duplizieren und
   löschen: Die Modellpalette und das Prop-Werkzeug arbeiten auf Rasterkacheln; eine Instanzliste
   mit Transformdialog verwaltet Höhenversatz und Drehung. Die 2D-Ansicht markiert Props farbig,
-  die Vorschau zeigt sie als modell-ID-gefärbte Boxen. Ungültige oder aus der Karte verschobene
-  Anker werden abgewiesen, bevor ein Command das Dokument verändert.
-- [ ] Reale GLTF/GLB-Modelle statt Platzhalter in der Karten-Vorschau laden; dafür zuerst den
-  Projekt-Asset-Resolver mit der Engine abstimmen.
+  die Vorschau lädt die exportierten GLTF/GLB-Dateien mit ihren Abhängigkeiten. Ungültige oder aus
+  der Karte verschobene Anker werden abgewiesen, bevor ein Command das Dokument verändert.
 - Terrainbezug, Höhenversatz und Kollisions-Fußabdruck sichtbar bearbeiten.
 - Sprite-Atlanten registrieren; Richtungen, Idle-/Laufsequenzen, Frame-Dauer und Fußpunkt zuordnen.
 - Startpunkte, NPCs, Triggerflächen und Übergänge mit stabilen Instanz-IDs platzieren.

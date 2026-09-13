@@ -210,9 +210,10 @@ public final class ProjectControllerSmokeTest {
 
         controller.exportModels();
         Path exportedGltf = projectDirectory.resolve("catalogs/models/house.gltf");
+        Path exportedBin = projectDirectory.resolve("catalogs/models/house.bin");
         Path manifestFile = projectDirectory.resolve("catalogs/models.json");
-        if (!Files.exists(exportedGltf) || !Files.exists(manifestFile)) {
-            throw new AssertionError("exportModels did not write the copied model and the manifest");
+        if (!Files.exists(exportedGltf) || !Files.exists(exportedBin) || !Files.exists(manifestFile)) {
+            throw new AssertionError("exportModels did not write the model, its dependency, and the manifest");
         }
 
         com.badlogic.gdx.utils.Array<ModelDefinition> definitions =

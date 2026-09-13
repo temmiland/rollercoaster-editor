@@ -18,8 +18,9 @@ import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.graphics.g3d.utils.shapebuilders.BoxShapeBuilder;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
+import land.temmi.rollercoaster.asset.GltfModelFactory;
 import land.temmi.rollercoaster.asset.ModelCatalog;
-import land.temmi.rollercoaster.asset.ModelDefinition;
+import land.temmi.rollercoaster.asset.ModelManifest;
 import land.temmi.rollercoaster.editor.protocol.ComputeModelBounds;
 import land.temmi.rollercoaster.editor.protocol.PickResult;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
@@ -165,12 +166,7 @@ public final class PreviewApplication extends ApplicationAdapter {
                     .setColor(colorFor(request.tileIds[i]), DOCUMENT_TILE_SIDE_TINT)
                     .setWalkable(request.tileWalkable[i]));
             }
-            ModelCatalog catalog = new ModelCatalog();
-            if (request.modelIds != null) {
-                for (String modelId : request.modelIds) {
-                    catalog.register(placeholderDefinition(modelId), placeholderFactory(modelId));
-                }
-            }
+            ModelCatalog catalog = loadModelCatalog(request.modelManifestFilePath);
             WorldScene scene = new WorldSceneLoader().load(
                 new FileHandle(request.mapFilePath), tileset, new Material(), catalog);
 
@@ -205,37 +201,16 @@ public final class PreviewApplication extends ApplicationAdapter {
         return new Color(0f, 0f, 0f, 1f).fromHsv(hue, 0.45f, 0.75f);
     }
 
-    /** A single-cell placeholder footprint - real bounds/collision need the model's own file,
-     * which this process has no way to resolve from an arbitrary project path yet. */
-    private static ModelDefinition placeholderDefinition(String modelId) {
-        return new ModelDefinition(modelId, "placeholder:" + modelId, 0f, 0f, 0f, 1f, 1f,
-            -0.5f, 0f, -0.5f, 0.5f, 1f, 0.5f, 0, 0, 0, 0);
-    }
-
-    /** Builds its box once and hands out the same Model every time, matching the shared-Model
-     * contract ModelCatalog expects (dispose() is called once per registered id, not per prop). */
-    private static ModelCatalog.Factory placeholderFactory(String modelId) {
-        return new ModelCatalog.Factory() {
-            private Model model;
-
-            @Override
-            public Model create() {
-                if (model == null) {
-                    ModelBuilder builder = new ModelBuilder();
-                    builder.begin();
-                    BoxShapeBuilder.build(builder.part("prop", GL20.GL_TRIANGLES, Usage.Position | Usage.Normal,
-                            new Material(ColorAttribute.createDiffuse(colorFor(modelId)))),
-                        0f, 0.5f, 0f, 0.8f, 1f, 0.8f);
-                    model = builder.end();
-                }
-                return model;
-            }
-
-            @Override
-            public void dispose() {
-                if (model != null) model.dispose();
-            }
-        };
+    private static ModelCatalog loadModelCatalog(String modelManifestFilePath) {
+        ModelCatalog catalog = new ModelCatalog();
+        if (modelManifestFilePath == null) return catalog;
+        FileHandle manifestFile = new FileHandle(modelManifestFilePath);
+        for (land.temmi.rollercoaster.asset.ModelDefinition definition : ModelManifest.load(manifestFile)) {
+            int separator = definition.source.indexOf(':');
+            String relativePath = definition.source.substring(separator + 1);
+            catalog.register(definition, new GltfModelFactory(definition, manifestFile.parent().child(relativePath)));
+        }
+        return catalog;
     }
 
     @Override

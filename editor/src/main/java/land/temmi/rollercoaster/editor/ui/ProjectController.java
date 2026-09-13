@@ -31,6 +31,7 @@ import land.temmi.rollercoaster.editor.document.TextureAsset;
 import land.temmi.rollercoaster.editor.document.TileEntry;
 import land.temmi.rollercoaster.editor.document.TilesetAsset;
 import land.temmi.rollercoaster.editor.document.TransformPropCommand;
+import land.temmi.rollercoaster.editor.document.UpdateModelCommand;
 
 import javax.swing.Timer;
 import java.io.IOException;
@@ -38,8 +39,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Owns the currently open project: its document, undo history, disk location and autosave.
@@ -253,19 +256,30 @@ public final class ProjectController {
         requireOpen();
         Files.createDirectories(modelsDirectory());
         String fileName = primaryFile.getFileName().toString();
-        Path destination = modelsDirectory().resolve(fileName);
-        if (Files.exists(destination)) {
-            throw new IOException("A model file named '" + fileName + "' is already in this project");
+        List<Path> files = new ArrayList<>();
+        files.add(primaryFile);
+        files.addAll(dependencyFiles);
+        Set<String> importedFileNames = new LinkedHashSet<>();
+        List<String> dependencyFileNames = new ArrayList<>();
+        for (int i = 0; i < files.size(); i++) {
+            Path file = files.get(i);
+            String importedFileName = file.getFileName().toString();
+            if (!importedFileNames.add(importedFileName)) {
+                throw new IOException("Model import contains '" + importedFileName + "' more than once");
+            }
+            if (Files.exists(modelsDirectory().resolve(importedFileName))) {
+                throw new IOException("A model file named '" + importedFileName + "' is already in this project");
+            }
+            if (i > 0) dependencyFileNames.add(importedFileName);
         }
-        Files.copy(primaryFile, destination);
+        Files.copy(primaryFile, modelsDirectory().resolve(fileName));
         for (Path dependency : dependencyFiles) {
-            Files.copy(dependency, modelsDirectory().resolve(dependency.getFileName().toString()),
-                StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(dependency, modelsDirectory().resolve(dependency.getFileName().toString()));
         }
 
         boolean binary = fileName.toLowerCase(Locale.ROOT).endsWith(".glb");
         ModelAsset asset = ModelAsset.imported(id, fileName, binary,
-            boundsMinX, boundsMinY, boundsMinZ, boundsMaxX, boundsMaxY, boundsMaxZ);
+            boundsMinX, boundsMinY, boundsMinZ, boundsMaxX, boundsMaxY, boundsMaxZ, dependencyFileNames);
         history.perform(new ImportModelCommand(asset));
         listener.onProjectChanged();
         return asset;
@@ -277,8 +291,18 @@ public final class ProjectController {
         listener.onProjectChanged();
     }
 
+    public void updateModel(ModelAsset previous, float offsetX, float offsetY, float offsetZ, float scale,
+                            int collisionMinX, int collisionMaxX, int collisionMinZ, int collisionMaxZ,
+                            boolean alignToSlope, boolean walkable, float walkHeight) {
+        requireOpen();
+        ModelAsset replacement = previous.withPlacement(offsetX, offsetY, offsetZ, scale,
+            collisionMinX, collisionMaxX, collisionMinZ, collisionMaxZ, alignToSlope, walkable, walkHeight);
+        history.perform(new UpdateModelCommand(previous, replacement));
+        listener.onProjectChanged();
+    }
+
     /** Copies every registered model's files into catalogs/models/ and writes one models.json. */
-    public void exportModels() throws IOException {
+    public Path exportModels() throws IOException {
         requireOpen();
         List<ModelAsset> models = history.getDocument().getModels();
         if (models.isEmpty()) throw new IOException("No models to export");
@@ -287,8 +311,10 @@ public final class ProjectController {
         Files.createDirectories(outputDirectory);
         List<ModelManifestExport.Entry> entries = new ArrayList<>();
         for (ModelAsset model : models) {
-            Files.copy(modelsDirectory().resolve(model.fileName), outputDirectory.resolve(model.fileName),
-                StandardCopyOption.REPLACE_EXISTING);
+            copyModelFile(model.fileName, outputDirectory);
+            for (String dependencyFileName : model.getDependencyFileNames()) {
+                copyModelFile(dependencyFileName, outputDirectory);
+            }
             entries.add(new ModelManifestExport.Entry(model.id, model.getSource(),
                 model.offsetX, model.offsetY, model.offsetZ, model.scale, model.getHeight(),
                 model.boundsMinX, model.boundsMinY, model.boundsMinZ,
@@ -297,6 +323,7 @@ public final class ProjectController {
                 model.alignToSlope, model.walkable, model.walkHeight));
         }
         ModelManifestExport.write(entries, catalogsDirectory());
+        return catalogsDirectory().resolve(ModelManifestExport.FILE_NAME);
     }
 
     public List<MapAsset> getMaps() {
@@ -385,6 +412,12 @@ public final class ProjectController {
 
     private Path modelsDirectory() {
         return projectDirectory.resolve(MODELS_DIRECTORY_NAME);
+    }
+
+    private void copyModelFile(String fileName, Path outputDirectory) throws IOException {
+        Path source = modelsDirectory().resolve(fileName);
+        if (!Files.isRegularFile(source)) throw new IOException("Missing imported model file: " + fileName);
+        Files.copy(source, outputDirectory.resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
     }
 
     private Path requireTextureFile(String tileId, String textureId) throws IOException {

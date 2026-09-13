@@ -7,20 +7,25 @@ import land.temmi.rollercoaster.editor.document.TilesetAsset;
 import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
 
 import javax.swing.BorderFactory;
+import javax.swing.JCheckBox;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
+import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.ListCellRenderer;
+import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
+import java.awt.GridLayout;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -118,12 +123,15 @@ final class AssetsPanel extends JPanel {
         importButton.addActionListener(e -> onImportModel());
         JButton removeButton = new JButton("Entfernen");
         removeButton.addActionListener(e -> onRemoveModel());
+        JButton propertiesButton = new JButton("Eigenschaften…");
+        propertiesButton.addActionListener(e -> onEditModel());
         JButton export = new JButton("Exportieren");
         export.addActionListener(e -> onExportModels());
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
         buttons.add(importButton);
         buttons.add(removeButton);
+        buttons.add(propertiesButton);
         buttons.add(export);
         panel.add(buttons, BorderLayout.SOUTH);
         return panel;
@@ -137,6 +145,7 @@ final class AssetsPanel extends JPanel {
         modelList.setEnabled(open);
 
         TilesetAsset selectedTileset = tilesetList.getSelectedValue();
+        ModelAsset selectedModel = modelList.getSelectedValue();
 
         textureListModel.clear();
         if (open) projectController.getTextures().forEach(textureListModel::addElement);
@@ -151,6 +160,14 @@ final class AssetsPanel extends JPanel {
             for (int i = 0; i < tilesetListModel.size(); i++) {
                 if (tilesetListModel.get(i).id.equals(selectedTileset.id)) {
                     tilesetList.setSelectedIndex(i);
+                    break;
+                }
+            }
+        }
+        if (selectedModel != null) {
+            for (int i = 0; i < modelListModel.size(); i++) {
+                if (modelListModel.get(i).id.equals(selectedModel.id)) {
+                    modelList.setSelectedIndex(i);
                     break;
                 }
             }
@@ -331,6 +348,84 @@ final class AssetsPanel extends JPanel {
         if (selected == null) return;
         projectController.removeModel(selected);
         refresh();
+    }
+
+    private void onEditModel() {
+        ModelAsset model = modelList.getSelectedValue();
+        if (model == null) return;
+        ModelSettings settings = askModelSettings(model);
+        if (settings == null) return;
+        try {
+            projectController.updateModel(model, settings.offsetX, settings.offsetY, settings.offsetZ, settings.scale,
+                settings.collisionMinX, settings.collisionMaxX, settings.collisionMinZ, settings.collisionMaxZ,
+                settings.alignToSlope, settings.walkable, settings.walkHeight);
+            refresh();
+        } catch (IllegalArgumentException e) {
+            showError("Modelleigenschaften konnten nicht geändert werden", e);
+        }
+    }
+
+    private ModelSettings askModelSettings(ModelAsset model) {
+        JSpinner offsetX = decimalSpinner(model.offsetX, 0.1d);
+        JSpinner offsetY = decimalSpinner(model.offsetY, 0.1d);
+        JSpinner offsetZ = decimalSpinner(model.offsetZ, 0.1d);
+        JSpinner scale = decimalSpinner(model.scale, 0.1d);
+        JSpinner collisionMinX = integerSpinner(model.collisionMinX);
+        JSpinner collisionMaxX = integerSpinner(model.collisionMaxX);
+        JSpinner collisionMinZ = integerSpinner(model.collisionMinZ);
+        JSpinner collisionMaxZ = integerSpinner(model.collisionMaxZ);
+        JCheckBox alignToSlope = new JCheckBox("Am Hang ausrichten", model.alignToSlope);
+        JCheckBox walkable = new JCheckBox("Begehbare Oberfläche", model.walkable);
+        JSpinner walkHeight = decimalSpinner(model.walkHeight, 0.1d);
+
+        JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
+        addRow(form, "Bounds:", String.format(Locale.ROOT, "X %.2f…%.2f, Y %.2f…%.2f, Z %.2f…%.2f",
+            model.boundsMinX, model.boundsMaxX, model.boundsMinY, model.boundsMaxY, model.boundsMinZ, model.boundsMaxZ));
+        addRow(form, "Höhe:", String.format(Locale.ROOT, "%.2f", model.getHeight()));
+        addRow(form, "Anker X:", offsetX);
+        addRow(form, "Anker Y:", offsetY);
+        addRow(form, "Anker Z:", offsetZ);
+        addRow(form, "Skalierung:", scale);
+        addRow(form, "Kollision min. X:", collisionMinX);
+        addRow(form, "Kollision max. X:", collisionMaxX);
+        addRow(form, "Kollision min. Z:", collisionMinZ);
+        addRow(form, "Kollision max. Z:", collisionMaxZ);
+        addRow(form, "Hangausrichtung:", alignToSlope);
+        addRow(form, "Begehbar:", walkable);
+        addRow(form, "Laufhöhe:", walkHeight);
+
+        if (JOptionPane.showConfirmDialog(this, form, "Modell: " + model.id,
+            JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return null;
+        return new ModelSettings(number(offsetX), number(offsetY), number(offsetZ), number(scale),
+            integer(collisionMinX), integer(collisionMaxX), integer(collisionMinZ), integer(collisionMaxZ),
+            alignToSlope.isSelected(), walkable.isSelected(), number(walkHeight));
+    }
+
+    private static void addRow(JPanel form, String label, Object component) {
+        form.add(new JLabel(label));
+        if (component instanceof java.awt.Component) form.add((java.awt.Component) component);
+        else form.add(new JLabel(String.valueOf(component)));
+    }
+
+    private static JSpinner decimalSpinner(float value, double step) {
+        return new JSpinner(new SpinnerNumberModel((double) value, -10_000d, 10_000d, step));
+    }
+
+    private static JSpinner integerSpinner(int value) {
+        return new JSpinner(new SpinnerNumberModel(value, -1_024, 1_024, 1));
+    }
+
+    private static float number(JSpinner spinner) {
+        return ((Number) spinner.getValue()).floatValue();
+    }
+
+    private static int integer(JSpinner spinner) {
+        return ((Number) spinner.getValue()).intValue();
+    }
+
+    private record ModelSettings(float offsetX, float offsetY, float offsetZ, float scale,
+                                 int collisionMinX, int collisionMaxX, int collisionMinZ, int collisionMaxZ,
+                                 boolean alignToSlope, boolean walkable, float walkHeight) {
     }
 
     private void onExportModels() {

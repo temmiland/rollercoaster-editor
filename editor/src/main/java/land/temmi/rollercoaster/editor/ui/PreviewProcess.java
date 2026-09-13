@@ -81,7 +81,8 @@ public final class PreviewProcess {
 
     /** Asks the preview to render an already-exported map file, replacing whatever it currently shows. */
     public CompletableFuture<ShowMapResult> showMap(String mapFilePath, int width, int depth,
-                                                    String[] tileIds, boolean[] tileWalkable, String[] modelIds) {
+                                                    String[] tileIds, boolean[] tileWalkable,
+                                                    String modelManifestFilePath) {
         CompletableFuture<ShowMapResult> future = new CompletableFuture<>();
         MessageChannel current = channel;
         if (current == null) {
@@ -90,7 +91,7 @@ public final class PreviewProcess {
         }
         pendingShowMapRequest = future;
         try {
-            current.send(new ShowMap(mapFilePath, width, depth, tileIds, tileWalkable, modelIds));
+            current.send(new ShowMap(mapFilePath, width, depth, tileIds, tileWalkable, modelManifestFilePath));
         } catch (IOException e) {
             pendingShowMapRequest = null;
             future.completeExceptionally(e);
