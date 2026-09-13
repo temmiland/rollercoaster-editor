@@ -8,6 +8,7 @@ version = '0.1.0'
 dependencies {
     implementation project(':preview-protocol')
     implementation project(':document')
+    implementation project(':asset-pipeline')
 }
 
 sourceSets {
@@ -19,6 +20,12 @@ sourceSets {
 
 configurations {
     smokeTestImplementation.extendsFrom implementation
+}
+
+dependencies {
+    // Only the smoke test needs the engine - it verifies the exported tileset against the
+    // real parser, same as asset-pipeline's own smoke test.
+    smokeTestImplementation 'land.temmi:rollercoaster:0.1.0'
 }
 
 tasks.register('editorSmokeTest', JavaExec) {

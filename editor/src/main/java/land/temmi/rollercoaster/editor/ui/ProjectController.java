@@ -1,14 +1,28 @@
 package land.temmi.rollercoaster.editor.ui;
 
+import land.temmi.rollercoaster.editor.asset.TilePacker;
+import land.temmi.rollercoaster.editor.asset.TileSource;
+import land.temmi.rollercoaster.editor.asset.TilesetExport;
+import land.temmi.rollercoaster.editor.document.AddTileCommand;
 import land.temmi.rollercoaster.editor.document.CommandHistory;
+import land.temmi.rollercoaster.editor.document.CreateTilesetCommand;
+import land.temmi.rollercoaster.editor.document.ImportTextureCommand;
 import land.temmi.rollercoaster.editor.document.ProjectDocument;
 import land.temmi.rollercoaster.editor.document.ProjectFile;
+import land.temmi.rollercoaster.editor.document.RemoveTextureCommand;
+import land.temmi.rollercoaster.editor.document.RemoveTilesetCommand;
+import land.temmi.rollercoaster.editor.document.RemoveTileCommand;
 import land.temmi.rollercoaster.editor.document.RenameProjectCommand;
+import land.temmi.rollercoaster.editor.document.TextureAsset;
+import land.temmi.rollercoaster.editor.document.TileEntry;
+import land.temmi.rollercoaster.editor.document.TilesetAsset;
 
 import javax.swing.Timer;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Owns the currently open project: its document, undo history, disk location and autosave.
@@ -22,6 +36,8 @@ public final class ProjectController {
 
     private static final int AUTOSAVE_INTERVAL_MS = 30_000;
     private static final String AUTOSAVE_DIRECTORY_NAME = ".editor";
+    private static final String TEXTURES_DIRECTORY_NAME = "sources/textures";
+    private static final String CATALOGS_DIRECTORY_NAME = "catalogs";
 
     private final Listener listener;
     private final Timer autosaveTimer;
@@ -125,6 +141,90 @@ public final class ProjectController {
         requireOpen();
         history.redo();
         listener.onProjectChanged();
+    }
+
+    public List<TextureAsset> getTextures() {
+        requireOpen();
+        return history.getDocument().getTextures();
+    }
+
+    public List<TilesetAsset> getTilesets() {
+        requireOpen();
+        return history.getDocument().getTilesets();
+    }
+
+    /** Copies the source file into the project's sources/textures/ folder, then imports it. */
+    public TextureAsset importTexture(Path sourceImageFile, String id) throws IOException {
+        requireOpen();
+        String fileName = sourceImageFile.getFileName().toString();
+        Path destination = texturesDirectory().resolve(fileName);
+        if (Files.exists(destination)) {
+            throw new IOException("A texture file named '" + fileName + "' is already in this project");
+        }
+        Files.createDirectories(texturesDirectory());
+        Files.copy(sourceImageFile, destination);
+
+        TextureAsset asset = new TextureAsset(id, fileName);
+        history.perform(new ImportTextureCommand(asset));
+        listener.onProjectChanged();
+        return asset;
+    }
+
+    public void removeTexture(TextureAsset asset) {
+        requireOpen();
+        history.perform(new RemoveTextureCommand(asset));
+        listener.onProjectChanged();
+    }
+
+    public void createTileset(String id) {
+        requireOpen();
+        history.perform(new CreateTilesetCommand(id));
+        listener.onProjectChanged();
+    }
+
+    public void removeTileset(TilesetAsset tileset) {
+        requireOpen();
+        history.perform(new RemoveTilesetCommand(tileset));
+        listener.onProjectChanged();
+    }
+
+    public void addTile(String tilesetId, String tileId, String textureId, boolean walkable) {
+        requireOpen();
+        history.perform(new AddTileCommand(tilesetId, new TileEntry(tileId, textureId, walkable)));
+        listener.onProjectChanged();
+    }
+
+    public void removeTile(String tilesetId, TileEntry entry) {
+        requireOpen();
+        history.perform(new RemoveTileCommand(tilesetId, entry));
+        listener.onProjectChanged();
+    }
+
+    /** Packs a tileset's tiles into an atlas and writes texture + manifest to catalogs/. */
+    public void exportTileset(String tilesetId) throws IOException {
+        requireOpen();
+        TilesetAsset tileset = history.getDocument().findTileset(tilesetId);
+        if (tileset == null) throw new IOException("No such tileset: " + tilesetId);
+        if (tileset.getTiles().isEmpty()) throw new IOException("Tileset '" + tilesetId + "' has no tiles");
+
+        List<TileSource> sources = new ArrayList<>();
+        for (TileEntry tile : tileset.getTiles()) {
+            TextureAsset texture = history.getDocument().findTexture(tile.textureId);
+            if (texture == null) {
+                throw new IOException("Tile '" + tile.id + "' references unknown texture '" + tile.textureId + "'");
+            }
+            sources.add(TileSource.load(tile.id, texturesDirectory().resolve(texture.fileName), tile.walkable));
+        }
+        TilePacker.PackedTileset packed = TilePacker.pack(sources);
+        TilesetExport.write(packed, tilesetId, tilesetId + ".png", catalogsDirectory());
+    }
+
+    private Path texturesDirectory() {
+        return projectDirectory.resolve(TEXTURES_DIRECTORY_NAME);
+    }
+
+    private Path catalogsDirectory() {
+        return projectDirectory.resolve(CATALOGS_DIRECTORY_NAME);
     }
 
     private void autosave() {

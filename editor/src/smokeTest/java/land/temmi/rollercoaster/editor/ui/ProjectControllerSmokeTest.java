@@ -1,8 +1,14 @@
 package land.temmi.rollercoaster.editor.ui;
 
+import com.badlogic.gdx.files.FileHandle;
 import land.temmi.rollercoaster.editor.document.ProjectDocument;
 import land.temmi.rollercoaster.editor.document.ProjectFile;
+import land.temmi.rollercoaster.editor.document.TextureAsset;
+import land.temmi.rollercoaster.world.TilesetManifest;
 
+import java.awt.Color;
+import java.awt.Graphics;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,8 +23,9 @@ public final class ProjectControllerSmokeTest {
         verifySaveAsLeavesTheOriginalUntouched();
         verifyOpenProjectReadsWhatWasSaved();
         verifyOperationsRequireAnOpenProject();
-        System.out.println("PASS: ProjectController new/rename/save/undo/redo, "
-            + "autosave detection and restore, and saveAs isolation");
+        verifyTextureImportAndTilesetExport();
+        System.out.println("PASS: ProjectController new/rename/save/undo/redo, autosave detection and restore, "
+            + "saveAs isolation, and a texture-import-to-tileset-export roundtrip read back by the real parser");
     }
 
     private static void verifyNewRenameSaveUndoRedo() throws IOException {
@@ -96,6 +103,64 @@ public final class ProjectControllerSmokeTest {
         controller.openProject(directory);
         if (!"Von der Platte geladen".equals(controller.getName())) throw new AssertionError("openProject did not read project.json");
         if (controller.isDirty()) throw new AssertionError("A freshly opened project should not be dirty");
+    }
+
+    private static void verifyTextureImportAndTilesetExport() throws IOException {
+        Path projectDirectory = Files.createTempDirectory("trackside-editor-controller-assets");
+        ProjectController controller = new ProjectController(() -> { });
+        controller.newProject(projectDirectory, "Textured World");
+
+        Path grassPng = solidColorPng("grass", 16, 16, Color.GREEN);
+        TextureAsset grass = controller.importTexture(grassPng, "grass");
+        if (!Files.exists(projectDirectory.resolve("sources/textures/grass.png"))) {
+            throw new AssertionError("importTexture did not copy the file into the project");
+        }
+        if (controller.getTextures().size() != 1) throw new AssertionError("Texture was not added to the document");
+
+        controller.createTileset("overworld");
+        controller.addTile("overworld", "grass", grass.id, true);
+        if (controller.getTilesets().get(0).getTiles().size() != 1) throw new AssertionError("Tile was not added");
+
+        try {
+            controller.removeTexture(grass);
+            throw new AssertionError("Removing a texture still used by a tile should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected.
+        }
+
+        controller.exportTileset("overworld");
+        Path manifestFile = projectDirectory.resolve("catalogs/overworld.json");
+        Path textureFile = projectDirectory.resolve("catalogs/overworld.png");
+        if (!Files.exists(manifestFile) || !Files.exists(textureFile)) {
+            throw new AssertionError("exportTileset did not write both files");
+        }
+
+        TilesetManifest manifest = TilesetManifest.load(new FileHandle(manifestFile.toFile()));
+        if (manifest.tiles.size != 1 || !"grass".equals(manifest.tiles.first().id)) {
+            throw new AssertionError("Exported manifest does not match the tileset");
+        }
+        if (!manifest.tiles.first().walkable) throw new AssertionError("Walkable flag lost on export");
+
+        controller.undo(); // undoes addTile
+        controller.undo(); // undoes createTileset
+        controller.undo(); // undoes importTexture
+        if (!controller.getTextures().isEmpty() || !controller.getTilesets().isEmpty()) {
+            throw new AssertionError("Undo did not fully unwind the texture/tileset edits");
+        }
+    }
+
+    private static Path solidColorPng(String name, int width, int height, Color color) throws IOException {
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics graphics = image.getGraphics();
+        try {
+            graphics.setColor(color);
+            graphics.fillRect(0, 0, width, height);
+        } finally {
+            graphics.dispose();
+        }
+        Path file = Files.createTempDirectory("trackside-editor-texture-source").resolve(name + ".png");
+        javax.imageio.ImageIO.write(image, "PNG", file.toFile());
+        return file;
     }
 
     private static void verifyOperationsRequireAnOpenProject() {
