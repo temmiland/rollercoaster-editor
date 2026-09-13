@@ -11,6 +11,7 @@ public final class ProjectDocument {
     private String name;
     private final List<TextureAsset> textures = new ArrayList<>();
     private final List<TilesetAsset> tilesets = new ArrayList<>();
+    private final List<ModelAsset> models = new ArrayList<>();
 
     public ProjectDocument(String name) {
         setName(name);
@@ -38,6 +39,17 @@ public final class ProjectDocument {
     public TilesetAsset findTileset(String id) {
         for (TilesetAsset tileset : tilesets) {
             if (tileset.id.equals(id)) return tileset;
+        }
+        return null;
+    }
+
+    public List<ModelAsset> getModels() {
+        return Collections.unmodifiableList(models);
+    }
+
+    public ModelAsset findModel(String id) {
+        for (ModelAsset model : models) {
+            if (model.id.equals(id)) return model;
         }
         return null;
     }
@@ -82,5 +94,16 @@ public final class ProjectDocument {
         TilesetAsset tileset = findTileset(id);
         if (tileset == null) throw new IllegalArgumentException("No such tileset: " + id);
         return tileset;
+    }
+
+    void addModel(ModelAsset model) {
+        if (findModel(model.id) != null) throw new IllegalArgumentException("Duplicate model id: " + model.id);
+        models.add(model);
+    }
+
+    void removeModel(String id) {
+        if (!models.removeIf(model -> model.id.equals(id))) {
+            throw new IllegalArgumentException("No such model: " + id);
+        }
     }
 }

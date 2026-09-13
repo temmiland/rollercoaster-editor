@@ -14,8 +14,10 @@ public final class DocumentSmokeTest {
         verifyTextureAndTilesetRoundtrip();
         verifySideTextureRoundtrip();
         verifyRemoveTextureBlockedBySideReference();
+        verifyModelCommandsAndRoundtrip();
         System.out.println("PASS: undo/redo, dirty tracking after a branching edit, an atomic project.json "
-            + "roundtrip across a moved directory, and texture/tileset commands with referential integrity");
+            + "roundtrip across a moved directory, texture/tileset commands with referential integrity, "
+            + "and model import/export");
     }
 
     private static void verifyUndoRedoAndDirtyTracking() {
@@ -181,6 +183,39 @@ public final class DocumentSmokeTest {
         ProjectFile.save(document, directory);
         TileEntry reloaded = ProjectFile.load(directory).findTileset("overworld").findTile("plateau");
         if (!"cliff".equals(reloaded.sideTextureId)) throw new AssertionError("Side texture id did not round-trip");
+    }
+
+    private static void verifyModelCommandsAndRoundtrip() throws IOException {
+        ProjectDocument document = new ProjectDocument("Modellwelt");
+        CommandHistory history = new CommandHistory(document);
+
+        ModelAsset house = ModelAsset.imported("house", "house.gltf", false, -1.8f, 0f, -1.3f, 2.8f, 4f, 2.3f);
+        if (house.getHeight() != 4f) throw new AssertionError("Height should derive from bounds and scale");
+        if (!"gltf:models/house.gltf".equals(house.getSource())) throw new AssertionError("Wrong source string");
+
+        history.perform(new ImportModelCommand(house));
+        if (document.findModel("house") == null) throw new AssertionError("Model import did not apply");
+
+        history.perform(new RemoveModelCommand(house));
+        if (document.findModel("house") != null) throw new AssertionError("Model removal did not apply");
+        history.undo();
+        if (document.findModel("house") == null) throw new AssertionError("Undo did not restore the model");
+
+        try {
+            document.addModel(house);
+            throw new AssertionError("Adding a duplicate model id should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected.
+        }
+
+        Path directory = Files.createTempDirectory("trackside-editor-project-models");
+        ProjectFile.save(document, directory);
+        ModelAsset reloaded = ProjectFile.load(directory).findModel("house");
+        if (reloaded == null) throw new AssertionError("Model did not round-trip");
+        if (reloaded.binary != house.binary || reloaded.getHeight() != house.getHeight()
+            || reloaded.boundsMaxX != house.boundsMaxX || reloaded.collisionMaxX != house.collisionMaxX) {
+            throw new AssertionError("Model fields did not round-trip");
+        }
     }
 
     private static void verifyRejectsUnknownVersion() throws IOException {

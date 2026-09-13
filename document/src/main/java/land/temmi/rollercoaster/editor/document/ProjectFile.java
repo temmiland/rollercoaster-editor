@@ -56,7 +56,43 @@ public final class ProjectFile {
                 document.addTileset(asset);
             }
         }
+
+        JsonValue models = root.get("models");
+        if (models != null) {
+            for (JsonValue model = models.child; model != null; model = model.next) {
+                JsonValue offset = requiredArray(model, "offset", 3);
+                JsonValue bounds = required(model, "bounds");
+                JsonValue boundsMin = requiredArray(bounds, "min", 3);
+                JsonValue boundsMax = requiredArray(bounds, "max", 3);
+                JsonValue collision = required(model, "collision");
+                JsonValue collisionMin = requiredArray(collision, "min", 2);
+                JsonValue collisionMax = requiredArray(collision, "max", 2);
+                document.addModel(new ModelAsset(requireString(model, "id"), requireString(model, "file"),
+                    model.getBoolean("binary", false),
+                    offset.getFloat(0), offset.getFloat(1), offset.getFloat(2),
+                    model.getFloat("scale", 1f),
+                    boundsMin.getFloat(0), boundsMin.getFloat(1), boundsMin.getFloat(2),
+                    boundsMax.getFloat(0), boundsMax.getFloat(1), boundsMax.getFloat(2),
+                    collisionMin.getInt(0), collisionMax.getInt(0), collisionMin.getInt(1), collisionMax.getInt(1),
+                    model.getBoolean("alignToSlope", false), model.getBoolean("walkable", false),
+                    model.getFloat("walkHeight", 0f)));
+            }
+        }
         return document;
+    }
+
+    private static JsonValue required(JsonValue parent, String field) throws IOException {
+        JsonValue value = parent.get(field);
+        if (value == null) throw new IOException("project.json entry is missing '" + field + "'");
+        return value;
+    }
+
+    private static JsonValue requiredArray(JsonValue parent, String field, int size) throws IOException {
+        JsonValue value = required(parent, field);
+        if (!value.isArray() || value.size < size) {
+            throw new IOException("project.json field '" + field + "' must contain " + size + " values");
+        }
+        return value;
     }
 
     private static String requireString(JsonValue parent, String field) throws IOException {
@@ -109,7 +145,45 @@ public final class ProjectFile {
         }
         writer.pop();
 
+        writer.array("models");
+        for (ModelAsset model : document.getModels()) {
+            writer.object();
+            writer.set("id", model.id);
+            writer.set("file", model.fileName);
+            writer.set("binary", model.binary);
+            writeFloatArray(writer, "offset", model.offsetX, model.offsetY, model.offsetZ);
+            writer.set("scale", model.scale);
+            writer.object("bounds");
+            writeFloatArray(writer, "min", model.boundsMinX, model.boundsMinY, model.boundsMinZ);
+            writeFloatArray(writer, "max", model.boundsMaxX, model.boundsMaxY, model.boundsMaxZ);
+            writer.pop();
+            writer.object("collision");
+            writer.array("min");
+            writer.value(model.collisionMinX);
+            writer.value(model.collisionMinZ);
+            writer.pop();
+            writer.array("max");
+            writer.value(model.collisionMaxX);
+            writer.value(model.collisionMaxZ);
+            writer.pop();
+            writer.pop();
+            writer.set("alignToSlope", model.alignToSlope);
+            writer.set("walkable", model.walkable);
+            writer.set("walkHeight", model.walkHeight);
+            writer.pop();
+        }
+        writer.pop();
+
         writer.pop();
         return buffer.toString();
+    }
+
+    private static void writeFloatArray(JsonWriter writer, String name, float x, float y, float z)
+        throws IOException {
+        writer.array(name);
+        writer.value(x);
+        writer.value(y);
+        writer.value(z);
+        writer.pop();
     }
 }
