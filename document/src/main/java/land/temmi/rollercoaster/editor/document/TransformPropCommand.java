@@ -33,8 +33,15 @@ public final class TransformPropCommand implements Command {
     @Override
     public void execute(ProjectDocument document) {
         MapAsset map = document.requireMap(mapId);
+        MapProp existing = map.findProp(instanceId);
+        if (existing == null) throw new IllegalArgumentException("No such prop: " + instanceId);
+        if (!existing.modelId.equals(modelId)) {
+            throw new IllegalArgumentException("Prop '" + instanceId + "' does not use model '" + modelId + "'");
+        }
+        MapProp transformed = new MapProp(instanceId, modelId, newX, newZ, newElevation, newRotation);
+        map.requirePropPosition(transformed);
         map.removeProp(instanceId);
-        map.addProp(new MapProp(instanceId, modelId, newX, newZ, newElevation, newRotation));
+        map.addProp(transformed);
     }
 
     @Override

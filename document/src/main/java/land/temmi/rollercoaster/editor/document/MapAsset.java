@@ -86,6 +86,13 @@ public final class MapAsset {
         }
     }
 
+    /** Props use grid coordinates; their anchor must remain on this map. */
+    void requirePropPosition(MapProp prop) {
+        if (prop.x < 0f || prop.x >= width || prop.z < 0f || prop.z >= depth) {
+            throw new IllegalArgumentException("Prop '" + prop.instanceId + "' is outside map '" + id + "'");
+        }
+    }
+
     /** Lets a batch command pre-validate every cell before mutating any of them. */
     public static boolean fitsGrid(float height, TileShape shape) {
         if (Float.isNaN(height) || Float.isInfinite(height)) return false;

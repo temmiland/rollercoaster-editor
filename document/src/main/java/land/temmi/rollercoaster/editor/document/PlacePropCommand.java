@@ -15,6 +15,7 @@ public final class PlacePropCommand implements Command {
         if (document.findModel(prop.modelId) == null) {
             throw new IllegalArgumentException("Unknown model '" + prop.modelId + "'");
         }
+        map.requirePropPosition(prop);
         map.addProp(prop);
     }
 

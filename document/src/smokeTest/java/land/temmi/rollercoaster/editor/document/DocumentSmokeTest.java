@@ -353,6 +353,21 @@ public final class DocumentSmokeTest {
             // Expected: "unknown-model" is not a registered model.
         }
 
+        try {
+            new MapProp("invalid", "house", Float.NaN, 1f, 0f, 0f);
+            throw new AssertionError("A prop transform with NaN should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: every saved transform component is finite.
+        }
+
+        try {
+            history.perform(new PlacePropCommand("valley",
+                new MapProp("outside", "house", 4f, 1f, 0f, 0f)));
+            throw new AssertionError("Placing a prop outside its map should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: the anchor has to remain within the map grid.
+        }
+
         MapProp house = new MapProp("house-1", "house", 2f, 1f, 0f, 0f);
         history.perform(new PlacePropCommand("valley", house));
         MapAsset map = document.findMap("valley");
@@ -367,6 +382,17 @@ public final class DocumentSmokeTest {
         MapProp restored = map.findProp("house-1");
         if (restored.x != 2f || restored.z != 1f || restored.rotation != 0f) {
             throw new AssertionError("Undo did not restore the previous transform");
+        }
+
+        try {
+            history.perform(new TransformPropCommand("valley", "house-1", "house",
+                2f, 1f, 0f, 0f, 4f, 1f, 0f, 0f));
+            throw new AssertionError("Moving a prop outside its map should fail");
+        } catch (IllegalArgumentException expected) {
+            MapProp unchanged = map.findProp("house-1");
+            if (unchanged == null || unchanged.x != 2f || unchanged.z != 1f) {
+                throw new AssertionError("A rejected transform must leave the prop untouched");
+            }
         }
 
         try {

@@ -1,6 +1,7 @@
 package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.document.MapAsset;
+import land.temmi.rollercoaster.editor.document.MapProp;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
 import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
 import land.temmi.rollercoaster.editor.document.PaintTilesCommand;
@@ -36,15 +37,22 @@ final class MapCanvas extends JPanel {
         void onHover(MapAsset map, int x, int z);
     }
 
-    enum Tool { TILE, COLLISION, TERRAIN }
+    interface PropListener {
+        void onPlaceProp(String mapId, int x, int z);
+    }
+
+    enum Tool { TILE, COLLISION, TERRAIN, PROPS }
 
     private static final int CELL_SIZE = 28;
     private static final Color EMPTY_COLOR = new Color(60, 60, 60);
     private static final Color BLOCKED_TINT = new Color(220, 30, 30, 130);
     private static final Color GRID_LINE = new Color(20, 20, 20);
+    private static final Color PROP_OUTLINE = Color.WHITE;
+    private static final Color SELECTED_PROP_OUTLINE = new Color(255, 220, 40);
 
     private final StrokeListener strokeListener;
     private final HoverListener hoverListener;
+    private final PropListener propListener;
     private final Map<Long, PaintTilesCommand.Edit> pendingTileEdits = new LinkedHashMap<>();
     private final Map<Long, PaintCollisionCommand.Edit> pendingCollisionEdits = new LinkedHashMap<>();
     private final Map<Long, PaintTerrainCommand.Edit> pendingTerrainEdits = new LinkedHashMap<>();
@@ -54,13 +62,16 @@ final class MapCanvas extends JPanel {
     private String paintTileId;
     private float terrainTargetHeight;
     private TileShape terrainTargetShape = TileShape.FLAT;
+    private String selectedPropInstanceId;
     private Boolean collisionStrokeValue;
+    private boolean propPlacedThisPress;
     private int lastPaintedX = -1;
     private int lastPaintedZ = -1;
 
-    MapCanvas(StrokeListener strokeListener, HoverListener hoverListener) {
+    MapCanvas(StrokeListener strokeListener, HoverListener hoverListener, PropListener propListener) {
         this.strokeListener = strokeListener;
         this.hoverListener = hoverListener;
+        this.propListener = propListener;
         setBackground(Color.DARK_GRAY);
         MouseAdapter mouse = new MouseAdapter() {
             @Override
@@ -112,11 +123,17 @@ final class MapCanvas extends JPanel {
         this.terrainTargetShape = shape;
     }
 
+    void setSelectedPropInstanceId(String instanceId) {
+        selectedPropInstanceId = instanceId;
+        repaint();
+    }
+
     private void beginStroke(MouseEvent e) {
         if (map == null) return;
         lastPaintedX = -1;
         lastPaintedZ = -1;
         collisionStrokeValue = null;
+        propPlacedThisPress = false;
         paintAt(e.getX(), e.getY());
     }
 
@@ -168,6 +185,12 @@ final class MapCanvas extends JPanel {
             }
             case TERRAIN -> pendingTerrainEdits.putIfAbsent(key, new PaintTerrainCommand.Edit(
                 x, z, map.getHeight(x, z), map.getShape(x, z), terrainTargetHeight, terrainTargetShape));
+            case PROPS -> {
+                if (!propPlacedThisPress) {
+                    propPlacedThisPress = true;
+                    propListener.onPlaceProp(map.id, x, z);
+                }
+            }
         }
         repaint();
     }
@@ -199,6 +222,18 @@ final class MapCanvas extends JPanel {
                 g.drawRect(px, py, CELL_SIZE, CELL_SIZE);
             }
         }
+        for (MapProp prop : map.getProps()) drawProp(g, prop, prop.instanceId.equals(selectedPropInstanceId));
+    }
+
+    private static void drawProp(Graphics g, MapProp prop, boolean selected) {
+        // Grid coordinate (x, z) is the centre of its matching canvas cell.
+        int cx = Math.round((prop.x + 0.5f) * CELL_SIZE);
+        int cz = Math.round((prop.z + 0.5f) * CELL_SIZE);
+        int r = CELL_SIZE / 3;
+        g.setColor(colorFor(prop.modelId));
+        g.fillOval(cx - r, cz - r, r * 2, r * 2);
+        g.setColor(selected ? SELECTED_PROP_OUTLINE : PROP_OUTLINE);
+        g.drawOval(cx - r, cz - r, r * 2, r * 2);
     }
 
     private static void drawRampIndicator(Graphics g, int px, int py, TileShape shape) {

@@ -18,6 +18,9 @@ public final class MapProp {
             throw new IllegalArgumentException("Prop instance id is required");
         }
         if (modelId == null || modelId.trim().isEmpty()) throw new IllegalArgumentException("Prop model id is required");
+        if (!Float.isFinite(x) || !Float.isFinite(z) || !Float.isFinite(elevation) || !Float.isFinite(rotation)) {
+            throw new IllegalArgumentException("Prop transform must be finite: " + instanceId);
+        }
         this.instanceId = instanceId;
         this.modelId = modelId;
         this.x = x;

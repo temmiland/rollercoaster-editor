@@ -337,8 +337,9 @@ Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle 
   Vorschauprozess. Dieser baut daraus mit `WorldSceneLoader`/`ChunkMesher` - denselben Klassen wie
   das Spiel - eine echte Szene; Kachelfarben werden aus der ID gehasht, damit sie ohne Atlas exakt
   zur 2D-Ansicht passen. Damit lässt sich zum ersten Mal eine in der UI gemalte Rampe tatsächlich
-  in 3D befahren sehen, nicht nur als Dreieck im Grid. Props/Entities fehlen der Vorschau noch
-  (Phase 4), Kollisions-Overlay ebenso.
+  in 3D befahren sehen, nicht nur als Dreieck im Grid. Props erscheinen als modell-ID-gefärbte
+  Platzhalterboxen; das echte GLTF-Laden aus dem Projektordner braucht noch den Asset-Resolver.
+  Entities und ein Kollisions-Overlay fehlen weiterhin.
 - [ ] Terrain, Gitter, Begehbarkeit, Kanten und manuelle Sperren getrennt ein-/ausblenden.
 - [x] Picking auf der tatsächlichen Terrainoberfläche: `ClickPicker` marschiert den Pick-Strahl
   gegen `TerrainSurface.heightAt` und verfeinert den Treffer per Bisektion, statt immer die
@@ -351,7 +352,13 @@ Steilkanten und gesperrte Flächen verhalten sich genauso wie im exportierten Sp
 
 ### Phase 4 — Props, Entities, Sprites und Interaktionen
 
-- Modelle mit Vorschau platzieren, wählen, verschieben, drehen, duplizieren und löschen.
+- [x] Registrierte Modelle als Props platzieren, wählen, verschieben, drehen, duplizieren und
+  löschen: Die Modellpalette und das Prop-Werkzeug arbeiten auf Rasterkacheln; eine Instanzliste
+  mit Transformdialog verwaltet Höhenversatz und Drehung. Die 2D-Ansicht markiert Props farbig,
+  die Vorschau zeigt sie als modell-ID-gefärbte Boxen. Ungültige oder aus der Karte verschobene
+  Anker werden abgewiesen, bevor ein Command das Dokument verändert.
+- [ ] Reale GLTF/GLB-Modelle statt Platzhalter in der Karten-Vorschau laden; dafür zuerst den
+  Projekt-Asset-Resolver mit der Engine abstimmen.
 - Terrainbezug, Höhenversatz und Kollisions-Fußabdruck sichtbar bearbeiten.
 - Sprite-Atlanten registrieren; Richtungen, Idle-/Laufsequenzen, Frame-Dauer und Fußpunkt zuordnen.
 - Startpunkte, NPCs, Triggerflächen und Übergänge mit stabilen Instanz-IDs platzieren.
