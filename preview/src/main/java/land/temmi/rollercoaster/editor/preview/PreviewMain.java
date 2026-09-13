@@ -27,7 +27,7 @@ public final class PreviewMain {
         }
 
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
-        config.setTitle("Trackside Editor — Preview");
+        config.setTitle("Rollercoaster Editor — Preview");
         config.useVsync(true);
         config.setWindowedMode(1280, 720);
         new Lwjgl3Application(new PreviewApplication(connection), config);

@@ -51,7 +51,7 @@ public final class EditorFrame extends JFrame {
 
     public EditorFrame(Runnable onRestartPreviewRequested, ProjectController projectController,
                        RecentProjects recentProjects) {
-        super("Trackside Editor");
+        super("Rollercoaster Editor");
         this.projectController = projectController;
         this.recentProjects = recentProjects;
 
@@ -290,7 +290,7 @@ public final class EditorFrame extends JFrame {
     public void refreshProjectUi() {
         boolean open = projectController.isOpen();
 
-        String title = "Trackside Editor";
+        String title = "Rollercoaster Editor";
         if (open) {
             title += " - " + projectController.getName();
             if (projectController.isDirty()) title += " *";
