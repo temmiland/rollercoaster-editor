@@ -1,8 +1,10 @@
 package land.temmi.rollercoaster.editor.ui;
 
+import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.TextureAsset;
 import land.temmi.rollercoaster.editor.document.TileEntry;
 import land.temmi.rollercoaster.editor.document.TilesetAsset;
+import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
@@ -15,27 +17,37 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.ListCellRenderer;
+import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 /** Texture import and tileset authoring - the editor's asset catalog for the open project. */
 final class AssetsPanel extends JPanel {
     private final ProjectController projectController;
+    private final Function<String, CompletableFuture<ModelBoundsResult>> modelBoundsComputer;
     private final DefaultListModel<TextureAsset> textureListModel = new DefaultListModel<>();
     private final JList<TextureAsset> textureList = new JList<>(textureListModel);
     private final DefaultListModel<TilesetAsset> tilesetListModel = new DefaultListModel<>();
     private final JList<TilesetAsset> tilesetList = new JList<>(tilesetListModel);
     private final DefaultListModel<TileEntry> tileListModel = new DefaultListModel<>();
     private final JList<TileEntry> tileList = new JList<>(tileListModel);
+    private final DefaultListModel<ModelAsset> modelListModel = new DefaultListModel<>();
+    private final JList<ModelAsset> modelList = new JList<>(modelListModel);
 
-    AssetsPanel(ProjectController projectController) {
+    AssetsPanel(ProjectController projectController,
+               Function<String, CompletableFuture<ModelBoundsResult>> modelBoundsComputer) {
         super(new BorderLayout());
         this.projectController = projectController;
+        this.modelBoundsComputer = modelBoundsComputer;
         setBorder(BorderFactory.createTitledBorder("Assets"));
 
         textureList.setCellRenderer(labelRenderer(t -> t.id + "  (" + t.fileName + ")"));
@@ -43,11 +55,14 @@ final class AssetsPanel extends JPanel {
         tileList.setCellRenderer(labelRenderer(t -> t.id + " -> " + t.textureId
             + (t.sideTextureId != null ? " / Seite: " + t.sideTextureId : "")
             + (t.walkable ? "" : "  (nicht begehbar)")));
+        modelList.setCellRenderer(labelRenderer(m -> m.id + "  (" + m.fileName
+            + String.format(Locale.ROOT, ", H=%.2f)", m.getHeight())));
         tilesetList.addListSelectionListener(e -> refreshTiles());
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Texturen", buildTexturesTab());
         tabs.addTab("Tilesets", buildTilesetsTab());
+        tabs.addTab("Modelle", buildModelsTab());
         add(tabs, BorderLayout.CENTER);
     }
 
@@ -95,11 +110,31 @@ final class AssetsPanel extends JPanel {
         return panel;
     }
 
+    private JPanel buildModelsTab() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.add(new JScrollPane(modelList), BorderLayout.CENTER);
+
+        JButton importButton = new JButton("Importieren…");
+        importButton.addActionListener(e -> onImportModel());
+        JButton removeButton = new JButton("Entfernen");
+        removeButton.addActionListener(e -> onRemoveModel());
+        JButton export = new JButton("Exportieren");
+        export.addActionListener(e -> onExportModels());
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        buttons.add(importButton);
+        buttons.add(removeButton);
+        buttons.add(export);
+        panel.add(buttons, BorderLayout.SOUTH);
+        return panel;
+    }
+
     void refresh() {
         boolean open = projectController.isOpen();
         textureList.setEnabled(open);
         tilesetList.setEnabled(open);
         tileList.setEnabled(open);
+        modelList.setEnabled(open);
 
         TilesetAsset selectedTileset = tilesetList.getSelectedValue();
 
@@ -108,6 +143,9 @@ final class AssetsPanel extends JPanel {
 
         tilesetListModel.clear();
         if (open) projectController.getTilesets().forEach(tilesetListModel::addElement);
+
+        modelListModel.clear();
+        if (open) projectController.getModels().forEach(modelListModel::addElement);
 
         if (selectedTileset != null) {
             for (int i = 0; i < tilesetListModel.size(); i++) {
@@ -227,6 +265,80 @@ final class AssetsPanel extends JPanel {
             JOptionPane.showMessageDialog(this, "Tileset '" + tileset.id + "' exportiert.");
         } catch (IOException e) {
             showError("Tileset konnte nicht exportiert werden", e);
+        }
+    }
+
+    private void onImportModel() {
+        if (!projectController.isOpen()) return;
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Modell importieren (Hauptdatei + Abhängigkeiten wie .bin zusammen auswählen)");
+        chooser.setMultiSelectionEnabled(true);
+        chooser.setFileFilter(new FileNameExtensionFilter("3D-Modelle und Abhängigkeiten", "gltf", "glb", "bin"));
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+
+        File[] selected = chooser.getSelectedFiles();
+        File primary = null;
+        List<Path> dependencies = new ArrayList<>();
+        for (File file : selected) {
+            String lower = file.getName().toLowerCase(Locale.ROOT);
+            if (lower.endsWith(".gltf") || lower.endsWith(".glb")) {
+                if (primary != null) {
+                    JOptionPane.showMessageDialog(this, "Bitte nur eine .gltf- oder .glb-Hauptdatei auswählen.");
+                    return;
+                }
+                primary = file;
+            } else {
+                dependencies.add(file.toPath());
+            }
+        }
+        if (primary == null) {
+            JOptionPane.showMessageDialog(this, "Bitte eine .gltf- oder .glb-Datei auswählen.");
+            return;
+        }
+
+        String id = JOptionPane.showInputDialog(this, "Modell-ID:", stripExtension(primary.getName()));
+        if (id == null || id.trim().isEmpty()) return;
+
+        File finalPrimary = primary;
+        String finalId = id.trim();
+        modelBoundsComputer.apply(finalPrimary.getAbsolutePath()).whenComplete((result, error) ->
+            SwingUtilities.invokeLater(() -> onModelBoundsComputed(finalPrimary, dependencies, finalId, result, error)));
+    }
+
+    private void onModelBoundsComputed(File primary, List<Path> dependencies, String id,
+                                       ModelBoundsResult result, Throwable error) {
+        if (error != null) {
+            JOptionPane.showMessageDialog(this, error.getMessage(), "Modell konnte nicht geladen werden",
+                JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (!result.success) {
+            JOptionPane.showMessageDialog(this, result.errorMessage, "Modell konnte nicht geladen werden",
+                JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        try {
+            projectController.importModel(primary.toPath(), dependencies, id,
+                result.minX, result.minY, result.minZ, result.maxX, result.maxY, result.maxZ);
+            refresh();
+        } catch (IOException e) {
+            showError("Modell konnte nicht importiert werden", e);
+        }
+    }
+
+    private void onRemoveModel() {
+        ModelAsset selected = modelList.getSelectedValue();
+        if (selected == null) return;
+        projectController.removeModel(selected);
+        refresh();
+    }
+
+    private void onExportModels() {
+        try {
+            projectController.exportModels();
+            JOptionPane.showMessageDialog(this, "Modelle exportiert.");
+        } catch (IOException e) {
+            showError("Modelle konnten nicht exportiert werden", e);
         }
     }
 

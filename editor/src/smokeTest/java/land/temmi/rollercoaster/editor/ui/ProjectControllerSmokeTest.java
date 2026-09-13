@@ -1,6 +1,9 @@
 package land.temmi.rollercoaster.editor.ui;
 
 import com.badlogic.gdx.files.FileHandle;
+import land.temmi.rollercoaster.asset.ModelDefinition;
+import land.temmi.rollercoaster.asset.ModelManifest;
+import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.ProjectDocument;
 import land.temmi.rollercoaster.editor.document.ProjectFile;
 import land.temmi.rollercoaster.editor.document.TextureAsset;
@@ -15,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
+import java.util.List;
 
 /** Checks ProjectController's new/open/save/saveAs and autosave-restore logic; no GUI involved. */
 public final class ProjectControllerSmokeTest {
@@ -26,9 +30,10 @@ public final class ProjectControllerSmokeTest {
         verifyOperationsRequireAnOpenProject();
         verifyTextureImportAndTilesetExport();
         verifyExportWithSideTexture();
+        verifyModelImportAndExport();
         System.out.println("PASS: ProjectController new/rename/save/undo/redo, autosave detection and restore, "
             + "saveAs isolation, a texture-import-to-tileset-export roundtrip read back by the real parser, "
-            + "and a separately packed side texture");
+            + "a separately packed side texture, and a model import/export roundtrip");
     }
 
     private static void verifyNewRenameSaveUndoRedo() throws IOException {
@@ -169,6 +174,50 @@ public final class ProjectControllerSmokeTest {
         if (definition.sideX == definition.atlasX && definition.sideY == definition.atlasY) {
             throw new AssertionError("Side texture should pack to a different atlas region than the top");
         }
+    }
+
+    private static void verifyModelImportAndExport() throws IOException {
+        Path projectDirectory = Files.createTempDirectory("trackside-editor-controller-models");
+        ProjectController controller = new ProjectController(() -> { });
+        controller.newProject(projectDirectory, "Model World");
+
+        Path sourceDirectory = Files.createTempDirectory("trackside-editor-model-source");
+        Path gltfFile = sourceDirectory.resolve("house.gltf");
+        Path binFile = sourceDirectory.resolve("house.bin");
+        Files.writeString(gltfFile, "{}"); // content is irrelevant here - only the copy/manifest logic is under test
+        Files.writeString(binFile, "binary-placeholder");
+
+        ModelAsset house = controller.importModel(gltfFile, List.of(binFile), "house",
+            -1.8f, 0f, -1.3f, 2.8f, 4f, 2.3f);
+        if (!Files.exists(projectDirectory.resolve("sources/models/house.gltf"))
+            || !Files.exists(projectDirectory.resolve("sources/models/house.bin"))) {
+            throw new AssertionError("importModel did not copy the primary file and its dependency");
+        }
+        if (house.getHeight() != 4f) throw new AssertionError("Height was not derived from bounds and scale");
+        if (controller.getModels().size() != 1) throw new AssertionError("Model was not added to the document");
+
+        controller.exportModels();
+        Path exportedGltf = projectDirectory.resolve("catalogs/models/house.gltf");
+        Path manifestFile = projectDirectory.resolve("catalogs/models.json");
+        if (!Files.exists(exportedGltf) || !Files.exists(manifestFile)) {
+            throw new AssertionError("exportModels did not write the copied model and the manifest");
+        }
+
+        com.badlogic.gdx.utils.Array<ModelDefinition> definitions =
+            ModelManifest.load(new FileHandle(manifestFile.toFile()));
+        if (definitions.size != 1) throw new AssertionError("Expected 1 model in the exported manifest");
+        ModelDefinition definition = definitions.first();
+        if (!"house".equals(definition.id) || !"gltf:models/house.gltf".equals(definition.source)) {
+            throw new AssertionError("Exported model id/source is wrong");
+        }
+        if (definition.height != 4f || definition.boundsMaxX != 2.8f) {
+            throw new AssertionError("Exported model bounds/height are wrong");
+        }
+
+        controller.removeModel(house);
+        if (!controller.getModels().isEmpty()) throw new AssertionError("removeModel did not apply");
+        controller.undo();
+        if (controller.getModels().isEmpty()) throw new AssertionError("Undo did not restore the model");
     }
 
     private static Path solidColorPng(String name, int width, int height, Color color) throws IOException {

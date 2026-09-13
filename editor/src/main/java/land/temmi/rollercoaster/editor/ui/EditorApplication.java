@@ -18,7 +18,8 @@ public final class EditorApplication {
                 previewProcess[0].setLevelOpen(projectController[0].isOpen());
             });
 
-            frame[0] = new EditorFrame(() -> previewProcess[0].restart(), projectController[0], recentProjects);
+            frame[0] = new EditorFrame(() -> previewProcess[0].restart(), projectController[0], recentProjects,
+                path -> previewProcess[0].computeModelBounds(path));
             previewProcess[0] = new PreviewProcess(previewClasspath, frame[0]::onPreviewStatusChanged, frame[0]::onPick);
 
             frame[0].setVisible(true);

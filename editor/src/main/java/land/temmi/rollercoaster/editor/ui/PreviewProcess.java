@@ -1,8 +1,10 @@
 package land.temmi.rollercoaster.editor.ui;
 
+import land.temmi.rollercoaster.editor.protocol.ComputeModelBounds;
 import land.temmi.rollercoaster.editor.protocol.Hello;
 import land.temmi.rollercoaster.editor.protocol.HelloAck;
 import land.temmi.rollercoaster.editor.protocol.MessageChannel;
+import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
 import land.temmi.rollercoaster.editor.protocol.PickResult;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
 import land.temmi.rollercoaster.editor.protocol.ShowSampleLevel;
@@ -15,6 +17,7 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 
 /** Starts, monitors and restarts the preview subprocess; runs the editor's half of the handshake. */
 public final class PreviewProcess {
@@ -36,6 +39,7 @@ public final class PreviewProcess {
     private ServerSocket serverSocket;
     private volatile MessageChannel channel;
     private volatile boolean levelOpen;
+    private volatile CompletableFuture<ModelBoundsResult> pendingBoundsRequest;
 
     public PreviewProcess(String previewClasspath, StatusListener listener, PickListener pickListener) {
         this.previewClasspath = previewClasspath;
@@ -48,6 +52,28 @@ public final class PreviewProcess {
         if (this.levelOpen == levelOpen) return;
         this.levelOpen = levelOpen;
         sendLevelState();
+    }
+
+    /**
+     * Asks the preview to load a GLTF/GLB file and report its bounds - the editor's Swing process
+     * has no GL context, so it cannot build the Model/Mesh needed to compute this itself. Only one
+     * request is in flight at a time, which matches the one-model-at-a-time import dialog flow.
+     */
+    public CompletableFuture<ModelBoundsResult> computeModelBounds(String modelFilePath) {
+        CompletableFuture<ModelBoundsResult> future = new CompletableFuture<>();
+        MessageChannel current = channel;
+        if (current == null) {
+            future.completeExceptionally(new IOException("Preview is not connected"));
+            return future;
+        }
+        pendingBoundsRequest = future;
+        try {
+            current.send(new ComputeModelBounds(modelFilePath));
+        } catch (IOException e) {
+            pendingBoundsRequest = null;
+            future.completeExceptionally(e);
+        }
+        return future;
     }
 
     private void sendLevelState() {
@@ -144,6 +170,10 @@ public final class PreviewProcess {
                 if (incoming instanceof PickResult) {
                     PickResult pick = (PickResult) incoming;
                     pickListener.onPick(pick.worldX, pick.worldY, pick.worldZ);
+                } else if (incoming instanceof ModelBoundsResult) {
+                    CompletableFuture<ModelBoundsResult> future = pendingBoundsRequest;
+                    pendingBoundsRequest = null;
+                    if (future != null) future.complete((ModelBoundsResult) incoming);
                 }
             }
             listener.onPreviewStatusChanged(Status.DISCONNECTED, "Preview closed the connection");
@@ -151,6 +181,9 @@ public final class PreviewProcess {
             listener.onPreviewStatusChanged(Status.DISCONNECTED, e.getMessage());
         } finally {
             channel = null;
+            CompletableFuture<ModelBoundsResult> future = pendingBoundsRequest;
+            pendingBoundsRequest = null;
+            if (future != null) future.completeExceptionally(new IOException("Preview disconnected"));
         }
     }
 

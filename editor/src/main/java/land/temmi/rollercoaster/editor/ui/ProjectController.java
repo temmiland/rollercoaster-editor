@@ -1,14 +1,18 @@
 package land.temmi.rollercoaster.editor.ui;
 
+import land.temmi.rollercoaster.editor.asset.ModelManifestExport;
 import land.temmi.rollercoaster.editor.asset.TilePacker;
 import land.temmi.rollercoaster.editor.asset.TileSource;
 import land.temmi.rollercoaster.editor.asset.TilesetExport;
 import land.temmi.rollercoaster.editor.document.AddTileCommand;
 import land.temmi.rollercoaster.editor.document.CommandHistory;
 import land.temmi.rollercoaster.editor.document.CreateTilesetCommand;
+import land.temmi.rollercoaster.editor.document.ImportModelCommand;
 import land.temmi.rollercoaster.editor.document.ImportTextureCommand;
+import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.ProjectDocument;
 import land.temmi.rollercoaster.editor.document.ProjectFile;
+import land.temmi.rollercoaster.editor.document.RemoveModelCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTextureCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTilesetCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTileCommand;
@@ -21,8 +25,10 @@ import javax.swing.Timer;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Owns the currently open project: its document, undo history, disk location and autosave.
@@ -37,6 +43,7 @@ public final class ProjectController {
     private static final int AUTOSAVE_INTERVAL_MS = 30_000;
     private static final String AUTOSAVE_DIRECTORY_NAME = ".editor";
     private static final String TEXTURES_DIRECTORY_NAME = "sources/textures";
+    private static final String MODELS_DIRECTORY_NAME = "sources/models";
     private static final String CATALOGS_DIRECTORY_NAME = "catalogs";
 
     private final Listener listener;
@@ -215,6 +222,73 @@ public final class ProjectController {
         }
         TilePacker.PackedTileset packed = TilePacker.pack(sources);
         TilesetExport.write(packed, tilesetId, tilesetId + ".png", catalogsDirectory());
+    }
+
+    public List<ModelAsset> getModels() {
+        requireOpen();
+        return history.getDocument().getModels();
+    }
+
+    /**
+     * Copies the model file and any dependency files (e.g. a GLTF's .bin buffer) into the
+     * project's sources/models/ folder, then imports it. Bounds must already be known - the
+     * editor's Swing process has no GL context to compute them itself; the caller gets them from
+     * PreviewProcess.computeModelBounds(), which runs in the process that does.
+     */
+    public ModelAsset importModel(Path primaryFile, List<Path> dependencyFiles, String id,
+                                  float boundsMinX, float boundsMinY, float boundsMinZ,
+                                  float boundsMaxX, float boundsMaxY, float boundsMaxZ) throws IOException {
+        requireOpen();
+        Files.createDirectories(modelsDirectory());
+        String fileName = primaryFile.getFileName().toString();
+        Path destination = modelsDirectory().resolve(fileName);
+        if (Files.exists(destination)) {
+            throw new IOException("A model file named '" + fileName + "' is already in this project");
+        }
+        Files.copy(primaryFile, destination);
+        for (Path dependency : dependencyFiles) {
+            Files.copy(dependency, modelsDirectory().resolve(dependency.getFileName().toString()),
+                StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        boolean binary = fileName.toLowerCase(Locale.ROOT).endsWith(".glb");
+        ModelAsset asset = ModelAsset.imported(id, fileName, binary,
+            boundsMinX, boundsMinY, boundsMinZ, boundsMaxX, boundsMaxY, boundsMaxZ);
+        history.perform(new ImportModelCommand(asset));
+        listener.onProjectChanged();
+        return asset;
+    }
+
+    public void removeModel(ModelAsset asset) {
+        requireOpen();
+        history.perform(new RemoveModelCommand(asset));
+        listener.onProjectChanged();
+    }
+
+    /** Copies every registered model's files into catalogs/models/ and writes one models.json. */
+    public void exportModels() throws IOException {
+        requireOpen();
+        List<ModelAsset> models = history.getDocument().getModels();
+        if (models.isEmpty()) throw new IOException("No models to export");
+
+        Path outputDirectory = catalogsDirectory().resolve("models");
+        Files.createDirectories(outputDirectory);
+        List<ModelManifestExport.Entry> entries = new ArrayList<>();
+        for (ModelAsset model : models) {
+            Files.copy(modelsDirectory().resolve(model.fileName), outputDirectory.resolve(model.fileName),
+                StandardCopyOption.REPLACE_EXISTING);
+            entries.add(new ModelManifestExport.Entry(model.id, model.getSource(),
+                model.offsetX, model.offsetY, model.offsetZ, model.scale, model.getHeight(),
+                model.boundsMinX, model.boundsMinY, model.boundsMinZ,
+                model.boundsMaxX, model.boundsMaxY, model.boundsMaxZ,
+                model.collisionMinX, model.collisionMaxX, model.collisionMinZ, model.collisionMaxZ,
+                model.alignToSlope, model.walkable, model.walkHeight));
+        }
+        ModelManifestExport.write(entries, catalogsDirectory());
+    }
+
+    private Path modelsDirectory() {
+        return projectDirectory.resolve(MODELS_DIRECTORY_NAME);
     }
 
     private Path requireTextureFile(String tileId, String textureId) throws IOException {

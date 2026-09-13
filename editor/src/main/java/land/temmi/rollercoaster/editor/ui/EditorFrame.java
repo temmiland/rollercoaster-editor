@@ -16,6 +16,7 @@ import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
+import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -32,6 +33,8 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 /** Main editor window. Asset list and map view are empty until Phase 2/3 fill them in. */
 public final class EditorFrame extends JFrame {
@@ -51,11 +54,12 @@ public final class EditorFrame extends JFrame {
     private final AssetsPanel assetsPanel;
 
     public EditorFrame(Runnable onRestartPreviewRequested, ProjectController projectController,
-                       RecentProjects recentProjects) {
+                       RecentProjects recentProjects,
+                       Function<String, CompletableFuture<ModelBoundsResult>> modelBoundsComputer) {
         super("Rollercoaster Editor");
         this.projectController = projectController;
         this.recentProjects = recentProjects;
-        this.assetsPanel = new AssetsPanel(projectController);
+        this.assetsPanel = new AssetsPanel(projectController, modelBoundsComputer);
 
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {

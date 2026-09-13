@@ -26,6 +26,12 @@ dependencies {
     // Only the smoke test needs the engine - it verifies the exported tileset against the
     // real parser, same as asset-pipeline's own smoke test.
     smokeTestImplementation 'land.temmi:rollercoaster:0.1.0'
+    // Only for PreviewProcessSmokeTest, which spawns :preview as its own subprocess the same way
+    // the real editor does - this is a normal Gradle project dependency (safe, ordered
+    // resolution), not the ad-hoc cross-project project(':preview').tasks.named(...) access that
+    // :platforms:desktop:run needs (there, :preview must stay off the *main* classpath; here, on
+    // the smokeTest classpath of a JVM that never touches Swing, it's harmless).
+    smokeTestImplementation project(':preview')
 }
 
 tasks.register('editorSmokeTest', JavaExec) {
@@ -33,4 +39,17 @@ tasks.register('editorSmokeTest', JavaExec) {
     description = 'Checks ProjectController: new/open/save/saveAs and autosave restore, without a GUI.'
     classpath = sourceSets.smokeTest.runtimeClasspath
     mainClass = 'land.temmi.rollercoaster.editor.ui.ProjectControllerSmokeTest'
+}
+
+def sampleGltfPath = project(':preview').file('src/main/resources/models/house.gltf').absolutePath
+
+tasks.register('previewProcessSmokeTest', JavaExec) {
+    group = 'verification'
+    description = 'Spawns the real preview process and asks it to compute bounds for a sample GLTF over the live protocol.'
+    classpath = sourceSets.smokeTest.runtimeClasspath
+    mainClass = 'land.temmi.rollercoaster.editor.ui.PreviewProcessSmokeTest'
+    args sampleGltfPath
+    doFirst {
+        systemProperty 'trackside.editor.previewClasspath', sourceSets.smokeTest.runtimeClasspath.asPath
+    }
 }
