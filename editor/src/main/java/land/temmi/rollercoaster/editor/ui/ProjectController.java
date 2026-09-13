@@ -19,6 +19,7 @@ import land.temmi.rollercoaster.editor.document.MapAsset;
 import land.temmi.rollercoaster.editor.document.MapEntityAsset;
 import land.temmi.rollercoaster.editor.document.MapLightAsset;
 import land.temmi.rollercoaster.editor.document.MapProp;
+import land.temmi.rollercoaster.editor.document.MapTransitionAsset;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
 import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
@@ -26,6 +27,7 @@ import land.temmi.rollercoaster.editor.document.PaintTilesCommand;
 import land.temmi.rollercoaster.editor.document.PlaceLightCommand;
 import land.temmi.rollercoaster.editor.document.PlacePropCommand;
 import land.temmi.rollercoaster.editor.document.PlaceEntityCommand;
+import land.temmi.rollercoaster.editor.document.PlaceTransitionCommand;
 import land.temmi.rollercoaster.editor.document.ProjectDocument;
 import land.temmi.rollercoaster.editor.document.ProjectFile;
 import land.temmi.rollercoaster.editor.document.RemoveMapCommand;
@@ -33,6 +35,7 @@ import land.temmi.rollercoaster.editor.document.RemoveModelCommand;
 import land.temmi.rollercoaster.editor.document.RemoveLightCommand;
 import land.temmi.rollercoaster.editor.document.RemovePropCommand;
 import land.temmi.rollercoaster.editor.document.RemoveEntityCommand;
+import land.temmi.rollercoaster.editor.document.RemoveTransitionCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTextureCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTilesetCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTileCommand;
@@ -51,6 +54,7 @@ import land.temmi.rollercoaster.editor.document.UpdateModelCommand;
 import land.temmi.rollercoaster.editor.document.UpdateSpriteCommand;
 import land.temmi.rollercoaster.editor.document.UpdateEntityCommand;
 import land.temmi.rollercoaster.editor.document.UpdateLightCommand;
+import land.temmi.rollercoaster.editor.document.UpdateTransitionCommand;
 
 import javax.swing.Timer;
 import javax.imageio.ImageIO;
@@ -544,8 +548,13 @@ public final class ProjectController {
                 light.colorR, light.colorG, light.colorB, light.intensity, light.range, light.enabled,
                 light.spot, light.directionX, light.directionY, light.directionZ, light.innerAngle, light.outerAngle));
         }
+        List<MapExport.Transition> transitions = new ArrayList<>();
+        for (MapTransitionAsset transition : map.getTransitions()) {
+            transitions.add(new MapExport.Transition(transition.instanceId, transition.x, transition.z,
+                transition.targetMapId, transition.targetX, transition.targetZ));
+        }
         MapExport.write(map.id, map.width, map.depth, map.tilesetId, tiles, heights, shapes, collision,
-            props, entities, lights, mapsDirectory());
+            props, entities, lights, transitions, mapsDirectory());
         return mapsDirectory().resolve(map.id + ".json");
     }
 
@@ -564,6 +573,24 @@ public final class ProjectController {
     public void updateLight(String mapId, MapLightAsset previous, MapLightAsset replacement) {
         requireOpen();
         history.perform(new UpdateLightCommand(mapId, previous, replacement));
+        listener.onProjectChanged();
+    }
+
+    public void placeTransition(String mapId, MapTransitionAsset transition) {
+        requireOpen();
+        history.perform(new PlaceTransitionCommand(mapId, transition));
+        listener.onProjectChanged();
+    }
+
+    public void removeTransition(String mapId, MapTransitionAsset transition) {
+        requireOpen();
+        history.perform(new RemoveTransitionCommand(mapId, transition));
+        listener.onProjectChanged();
+    }
+
+    public void updateTransition(String mapId, MapTransitionAsset previous, MapTransitionAsset replacement) {
+        requireOpen();
+        history.perform(new UpdateTransitionCommand(mapId, previous, replacement));
         listener.onProjectChanged();
     }
 

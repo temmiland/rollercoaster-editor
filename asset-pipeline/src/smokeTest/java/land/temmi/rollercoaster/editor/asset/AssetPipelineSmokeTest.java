@@ -55,7 +55,7 @@ public final class AssetPipelineSmokeTest {
 
         Path directory = Files.createTempDirectory("trackside-editor-map");
         MapExport.write("valley", width, depth, "overworld", tiles, heights, shapes, collision,
-            List.of(), List.of(), List.of(), directory);
+            List.of(), List.of(), List.of(), List.of(), directory);
 
         Path mapFile = directory.resolve("valley.json");
         if (!Files.exists(mapFile)) throw new AssertionError("Map JSON was not written");
@@ -118,8 +118,9 @@ public final class AssetPipelineSmokeTest {
         List<MapExport.Light> lights = List.of(
             new MapExport.Light("lamp-1", 8f, 1.5f, 10f, 1f, 0.9f, 0.7f, 1.2f, 5f, true),
             new MapExport.Light("spot-1", 3f, 3f, 3f, 1f, 1f, 1f, 1f, 6f, true, true, 0f, -1f, 0f, 20f, 35f));
+        List<MapExport.Transition> transitions = List.of(new MapExport.Transition("to-cave", 0, 0, "cave", 2, 3));
         MapExport.write("withProps", 1, 1, "overworld", tiles, heights, shapes, collision, props,
-            List.of(new MapExport.Entity("player-start", "player", "player", 0, 0)), lights, directory);
+            List.of(new MapExport.Entity("player-start", "player", "player", 0, 0)), lights, transitions, directory);
 
         Tileset tileset = new Tileset().add(new TileSurface("grass"));
         LoadedMap loaded = new MapLoader().load(
@@ -145,6 +146,12 @@ public final class AssetPipelineSmokeTest {
         if (!spot.spot || spot.innerAngle != 20f || spot.outerAngle != 35f || spot.directionY != -1f) {
             throw new AssertionError("Spot light did not round-trip");
         }
+        if (loaded.transitions.size != 1) throw new AssertionError("Expected 1 transition, got " + loaded.transitions.size);
+        land.temmi.rollercoaster.world.MapTransition transition = loaded.transitions.first();
+        if (!"to-cave".equals(transition.id) || transition.x != 0 || transition.z != 0
+            || !"cave".equals(transition.targetMap) || transition.targetX != 2 || transition.targetZ != 3) {
+            throw new AssertionError("Transition did not round-trip");
+        }
     }
 
     private static void verifyRejectsUnpaintedMap() throws IOException {
@@ -155,7 +162,7 @@ public final class AssetPipelineSmokeTest {
         Path directory = Files.createTempDirectory("trackside-editor-map-empty");
         try {
             MapExport.write("empty", 2, 2, "overworld", tiles, heights, shapes, collision,
-                List.of(), List.of(), List.of(), directory);
+                List.of(), List.of(), List.of(), List.of(), directory);
             throw new AssertionError("Exporting a map with unpainted cells should fail");
         } catch (IllegalArgumentException expected) {
             // Expected.

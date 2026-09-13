@@ -98,6 +98,25 @@ public final class MapExport {
         }
     }
 
+    /** A tile that warps the player to a spawn point on another map. */
+    public static final class Transition {
+        public final String id;
+        public final int x;
+        public final int z;
+        public final String targetMap;
+        public final int targetX;
+        public final int targetZ;
+
+        public Transition(String id, int x, int z, String targetMap, int targetX, int targetZ) {
+            this.id = id;
+            this.x = x;
+            this.z = z;
+            this.targetMap = targetMap;
+            this.targetX = targetX;
+            this.targetZ = targetZ;
+        }
+    }
+
     /**
      * @param tiles per-cell tile type id, row-major (z outer, x inner); every cell must be filled
      * @param heights per-cell surface height at the tile centre, same layout as {@code tiles}
@@ -106,7 +125,8 @@ public final class MapExport {
      */
     public static void write(String id, int width, int depth, String tilesetId,
                              String[] tiles, float[] heights, String[] shapes, boolean[] collision,
-                             List<Prop> props, List<Entity> entities, List<Light> lights, Path mapsDirectory)
+                             List<Prop> props, List<Entity> entities, List<Light> lights,
+                             List<Transition> transitions, Path mapsDirectory)
         throws IOException {
         int cells = width * depth;
         if (tiles.length != cells || heights.length != cells || shapes.length != cells || collision.length != cells) {
@@ -122,14 +142,16 @@ public final class MapExport {
         Path target = mapsDirectory.resolve(id + ".json");
         Path temp = mapsDirectory.resolve(id + ".json.tmp");
         Files.writeString(temp,
-            toJson(id, width, depth, tilesetId, tiles, heights, shapes, collision, props, entities, lights),
+            toJson(id, width, depth, tilesetId, tiles, heights, shapes, collision, props, entities, lights,
+                transitions),
             StandardCharsets.UTF_8);
         Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
 
     private static String toJson(String id, int width, int depth, String tilesetId,
                                  String[] tiles, float[] heights, String[] shapes, boolean[] collision,
-                                 List<Prop> props, List<Entity> entities, List<Light> lights)
+                                 List<Prop> props, List<Entity> entities, List<Light> lights,
+                                 List<Transition> transitions)
         throws IOException {
         StringWriter buffer = new StringWriter();
         JsonWriter writer = new JsonWriter(buffer);
@@ -194,6 +216,18 @@ public final class MapExport {
                 writer.set("innerAngle", light.innerAngle);
                 writer.set("outerAngle", light.outerAngle);
             }
+            writer.pop();
+        }
+        writer.pop();
+        writer.array("transitions");
+        for (Transition transition : transitions) {
+            writer.object();
+            writer.set("id", transition.id);
+            writer.set("x", transition.x);
+            writer.set("y", transition.z);
+            writer.set("targetMap", transition.targetMap);
+            writer.set("targetX", transition.targetX);
+            writer.set("targetY", transition.targetZ);
             writer.pop();
         }
         writer.pop();
