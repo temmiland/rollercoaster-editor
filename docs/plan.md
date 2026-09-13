@@ -259,8 +259,14 @@ weder Originalquellen überschreiben noch den letzten gültigen Export beschädi
 - [x] Autosave alle 30s nach `<projekt>/.editor/`, getrennt vom letzten expliziten Speicherstand;
   beim Öffnen wird eine neuere automatische Sicherung erkannt und zur Wiederherstellung angeboten.
 - [ ] Relative Assetpfade - noch nicht relevant, da Phase 1 keine Assets referenziert.
-- [ ] Vorschau mit Spielkamera (statt freier Kamera) und Picking-Treffer als Nachricht zurück an
-  die UI - noch offen, da es dafür ein geladenes Dokument mit echtem Karteninhalt braucht.
+- [x] Picking-Treffer als Nachricht zurück an die UI: `PickResult` (Y=0-Bodenebene, echtes
+  Terrain-Picking ist Phase 3). `ClickPicker` teilt sich den Input-Multiplexer mit
+  `CameraInputController` und feuert nur bei einem echten Klick ohne Kamera-Drag.
+- [x] Vorschau zeigt eine generische Szene, bis im Editor ein Projekt offen ist; `ShowGenericScene`/
+  `ShowSampleLevel` schaltet um. Solange es keine Dokument-Karte gibt, steht `SampleScene`
+  (das aus `example-game` kopierte Testfeld) für "ein Projekt ist offen".
+- [ ] Vorschau mit Spielkamera (statt freier Kamera) - noch offen, sinnvoll erst mit echtem
+  Karteninhalt aus dem Dokument statt der `SampleScene`.
 - [ ] UI mit Assetliste und Kartenansicht - Layout steht, Inhalte fehlen noch (Eigenschaften-Panel
   hat mit dem Projektnamen sein erstes echtes Feld).
 
