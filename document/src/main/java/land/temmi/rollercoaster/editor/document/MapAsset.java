@@ -55,6 +55,18 @@ public final class MapAsset {
         return collision[indexOf(x, z)];
     }
 
+    public boolean contains(int x, int z) {
+        return x >= 0 && x < width && z >= 0 && z < depth;
+    }
+
+    /** Lets a batch command pre-validate every cell before mutating any of them. */
+    public static boolean fitsGrid(float height, TileShape shape) {
+        if (Float.isNaN(height) || Float.isInfinite(height)) return false;
+        float midpoint = shape.isRamp() ? LEVEL_HEIGHT * 0.5f : 0f;
+        float level = (height - midpoint) / LEVEL_HEIGHT;
+        return Math.abs(level - Math.round(level)) <= HEIGHT_EPSILON;
+    }
+
     /** Package-private: mutation goes through a {@link Command} so undo/redo stays consistent. */
     void setTile(int x, int z, String tileId) {
         tiles[indexOf(x, z)] = tileId;
@@ -97,13 +109,10 @@ public final class MapAsset {
 
     /** Mirrors {@code TileMap.requireGridHeight}: flat tiles sit at whole levels, ramps at half levels. */
     private static void requireGridHeight(float height, TileShape shape) {
+        if (fitsGrid(height, shape)) return;
         if (Float.isNaN(height) || Float.isInfinite(height)) {
             throw new IllegalArgumentException("Terrain height must be finite");
         }
-        float midpoint = shape.isRamp() ? LEVEL_HEIGHT * 0.5f : 0f;
-        float level = (height - midpoint) / LEVEL_HEIGHT;
-        if (Math.abs(level - Math.round(level)) > HEIGHT_EPSILON) {
-            throw new IllegalArgumentException("Height does not fit the terrain grid: " + height);
-        }
+        throw new IllegalArgumentException("Height does not fit the terrain grid: " + height);
     }
 }

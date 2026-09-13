@@ -38,6 +38,16 @@ public final class PaintTerrainCommand implements Command {
     @Override
     public void execute(ProjectDocument document) {
         MapAsset map = document.requireMap(mapId);
+        // Validate the whole stroke before touching the map, so a bad cell can't leave earlier
+        // cells in this same stroke mutated without a matching undo entry.
+        for (Edit edit : edits) {
+            if (!map.contains(edit.x, edit.z)) {
+                throw new IndexOutOfBoundsException("Cell (" + edit.x + "," + edit.z + ") is outside map '" + mapId + "'");
+            }
+            if (edit.newShape == null || !MapAsset.fitsGrid(edit.newHeight, edit.newShape)) {
+                throw new IllegalArgumentException("Height " + edit.newHeight + " does not fit shape " + edit.newShape);
+            }
+        }
         for (Edit edit : edits) map.setTerrain(edit.x, edit.z, edit.newHeight, edit.newShape);
     }
 

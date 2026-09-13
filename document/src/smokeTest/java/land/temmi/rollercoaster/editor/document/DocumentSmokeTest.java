@@ -251,6 +251,19 @@ public final class DocumentSmokeTest {
             // Expected: "unknown-tile" is not in the map's tileset.
         }
 
+        // A stroke where the first cell is valid and the second is not must apply neither: a
+        // partly-applied stroke would leave an undo-stack entry that doesn't match its own effect.
+        try {
+            history.perform(new PaintTilesCommand("valley", java.util.Arrays.asList(
+                new PaintTilesCommand.Edit(3, 0, null, "grass"),
+                new PaintTilesCommand.Edit(3, 1, null, "unknown-tile"))));
+            throw new AssertionError("A stroke with any invalid cell should fail entirely");
+        } catch (IllegalArgumentException expected) {
+            if (map.getTile(3, 0) != null) {
+                throw new AssertionError("A rejected stroke must not leave earlier cells painted");
+            }
+        }
+
         // A ramp climbing to level 1, matching the engine's own testfield: two ramp midpoints then a plateau.
         history.perform(new PaintTerrainCommand("valley", java.util.Arrays.asList(
             new PaintTerrainCommand.Edit(0, 0, 0f, TileShape.FLAT, 0.5f, TileShape.RAMP_SOUTH),

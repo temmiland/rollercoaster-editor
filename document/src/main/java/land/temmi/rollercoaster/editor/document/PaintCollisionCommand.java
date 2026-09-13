@@ -30,6 +30,13 @@ public final class PaintCollisionCommand implements Command {
     @Override
     public void execute(ProjectDocument document) {
         MapAsset map = document.requireMap(mapId);
+        // Validate the whole stroke before touching the map, so a bad cell can't leave earlier
+        // cells in this same stroke mutated without a matching undo entry.
+        for (Edit edit : edits) {
+            if (!map.contains(edit.x, edit.z)) {
+                throw new IndexOutOfBoundsException("Cell (" + edit.x + "," + edit.z + ") is outside map '" + mapId + "'");
+            }
+        }
         for (Edit edit : edits) map.setBlocked(edit.x, edit.z, edit.newBlocked);
     }
 

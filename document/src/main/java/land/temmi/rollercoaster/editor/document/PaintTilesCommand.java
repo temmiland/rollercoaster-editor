@@ -31,12 +31,17 @@ public final class PaintTilesCommand implements Command {
     public void execute(ProjectDocument document) {
         MapAsset map = document.requireMap(mapId);
         TilesetAsset tileset = document.requireTileset(map.tilesetId);
+        // Validate the whole stroke before touching the map, so a bad cell can't leave earlier
+        // cells in this same stroke mutated without a matching undo entry.
         for (Edit edit : edits) {
+            if (!map.contains(edit.x, edit.z)) {
+                throw new IndexOutOfBoundsException("Cell (" + edit.x + "," + edit.z + ") is outside map '" + mapId + "'");
+            }
             if (edit.newTileId != null && tileset.findTile(edit.newTileId) == null) {
                 throw new IllegalArgumentException("Unknown tile '" + edit.newTileId + "' in tileset '" + map.tilesetId + "'");
             }
-            map.setTile(edit.x, edit.z, edit.newTileId);
         }
+        for (Edit edit : edits) map.setTile(edit.x, edit.z, edit.newTileId);
     }
 
     @Override
