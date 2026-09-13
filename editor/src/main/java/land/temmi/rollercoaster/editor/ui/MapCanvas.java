@@ -2,6 +2,7 @@ package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.document.MapAsset;
 import land.temmi.rollercoaster.editor.document.MapEntityAsset;
+import land.temmi.rollercoaster.editor.document.MapLightAsset;
 import land.temmi.rollercoaster.editor.document.MapProp;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
@@ -51,11 +52,15 @@ final class MapCanvas extends JPanel {
         void onPlaceEntity(String mapId, int x, int z);
     }
 
+    interface LightListener {
+        void onPlaceLight(String mapId, int x, int z);
+    }
+
     interface TileListener {
         void onPickTile(String tileId);
     }
 
-    enum Tool { TILE, ERASE_TILE, PICK_TILE, FILL_TILE, RECT_TILE, COPY_TILE, PASTE_TILE, COLLISION, TERRAIN, PROPS, ENTITIES }
+    enum Tool { TILE, ERASE_TILE, PICK_TILE, FILL_TILE, RECT_TILE, COPY_TILE, PASTE_TILE, COLLISION, TERRAIN, PROPS, ENTITIES, LIGHTS }
 
     private static final int CELL_SIZE = 28;
     private static final Color EMPTY_COLOR = new Color(60, 60, 60);
@@ -66,11 +71,14 @@ final class MapCanvas extends JPanel {
     private static final Color PROP_OUTLINE = Color.WHITE;
     private static final Color SELECTED_PROP_OUTLINE = new Color(255, 220, 40);
     private static final Color FOOTPRINT_OUTLINE = new Color(255, 60, 60);
+    private static final Color LIGHT_COLOR = new Color(255, 235, 120);
+    private static final Color SELECTED_LIGHT_OUTLINE = new Color(255, 220, 40);
 
     private final StrokeListener strokeListener;
     private final HoverListener hoverListener;
     private final PropListener propListener;
     private final EntityListener entityListener;
+    private final LightListener lightListener;
     private final TileListener tileListener;
     private final Map<Long, PaintTilesCommand.Edit> pendingTileEdits = new LinkedHashMap<>();
     private final Map<Long, PaintCollisionCommand.Edit> pendingCollisionEdits = new LinkedHashMap<>();
@@ -86,6 +94,7 @@ final class MapCanvas extends JPanel {
     private Map<String, ModelAsset> models = Map.of();
     private String selectedPropInstanceId;
     private String selectedEntityInstanceId;
+    private String selectedLightInstanceId;
     private boolean showTerrain = true;
     private boolean showGrid = true;
     private boolean showWalkability;
@@ -94,6 +103,7 @@ final class MapCanvas extends JPanel {
     private Boolean collisionStrokeValue;
     private boolean propPlacedThisPress;
     private boolean entityPlacedThisPress;
+    private boolean lightPlacedThisPress;
     private int lastPaintedX = -1;
     private int lastPaintedZ = -1;
     private int rectangleStartX = -1;
@@ -103,11 +113,12 @@ final class MapCanvas extends JPanel {
     private String[][] tileClipboard;
 
     MapCanvas(StrokeListener strokeListener, HoverListener hoverListener, PropListener propListener,
-              EntityListener entityListener, TileListener tileListener) {
+              EntityListener entityListener, LightListener lightListener, TileListener tileListener) {
         this.strokeListener = strokeListener;
         this.hoverListener = hoverListener;
         this.propListener = propListener;
         this.entityListener = entityListener;
+        this.lightListener = lightListener;
         this.tileListener = tileListener;
         setBackground(Color.DARK_GRAY);
         MouseAdapter mouse = new MouseAdapter() {
@@ -172,6 +183,11 @@ final class MapCanvas extends JPanel {
         repaint();
     }
 
+    void setSelectedLightInstanceId(String instanceId) {
+        selectedLightInstanceId = instanceId;
+        repaint();
+    }
+
     void setTileWalkability(Map<String, Boolean> tileWalkability) {
         this.tileWalkability = new LinkedHashMap<>(tileWalkability);
         repaint();
@@ -205,6 +221,7 @@ final class MapCanvas extends JPanel {
         collisionStrokeValue = null;
         propPlacedThisPress = false;
         entityPlacedThisPress = false;
+        lightPlacedThisPress = false;
         int x = cellX(e.getX());
         int z = cellZ(e.getY());
         if (!map.contains(x, z)) return;
@@ -286,6 +303,12 @@ final class MapCanvas extends JPanel {
                 if (!entityPlacedThisPress) {
                     entityPlacedThisPress = true;
                     entityListener.onPlaceEntity(map.id, x, z);
+                }
+            }
+            case LIGHTS -> {
+                if (!lightPlacedThisPress) {
+                    lightPlacedThisPress = true;
+                    lightListener.onPlaceLight(map.id, x, z);
                 }
             }
             default -> {
@@ -430,6 +453,9 @@ final class MapCanvas extends JPanel {
         for (MapEntityAsset entity : map.getEntities()) {
             drawEntity(g, entity, entity.instanceId.equals(selectedEntityInstanceId));
         }
+        for (MapLightAsset light : map.getLights()) {
+            drawLight(g, light, light.instanceId.equals(selectedLightInstanceId));
+        }
         drawRectangle(g);
     }
 
@@ -538,6 +564,25 @@ final class MapCanvas extends JPanel {
         g.drawRect(px + inset, py + inset, CELL_SIZE - inset * 2, CELL_SIZE - inset * 2);
     }
 
+    /** A diamond, unlike the circular prop and square entity markers, tinted by the light's own color. */
+    private static void drawLight(Graphics g, MapLightAsset light, boolean selected) {
+        int cx = Math.round((light.x + 0.5f) * CELL_SIZE);
+        int cz = Math.round((light.z + 0.5f) * CELL_SIZE);
+        int r = CELL_SIZE / 3;
+        Polygon diamond = new Polygon();
+        diamond.addPoint(cx, cz - r);
+        diamond.addPoint(cx + r, cz);
+        diamond.addPoint(cx, cz + r);
+        diamond.addPoint(cx - r, cz);
+        // AWT's Color requires components in [0, 1]; the engine's own Color does not, so a
+        // deliberately bright authored value is clamped here purely for this 2D marker.
+        Color tint = new Color(clamp01(light.colorR), clamp01(light.colorG), clamp01(light.colorB));
+        g.setColor(light.enabled ? tint : tint.darker().darker());
+        g.fillPolygon(diamond);
+        g.setColor(selected ? SELECTED_LIGHT_OUTLINE : LIGHT_COLOR);
+        g.drawPolygon(diamond);
+    }
+
     private static void drawRampIndicator(Graphics g, int px, int py, TileShape shape) {
         int cx = px + CELL_SIZE / 2;
         int cy = py + CELL_SIZE / 2;
@@ -575,6 +620,10 @@ final class MapCanvas extends JPanel {
     private static Color colorFor(String tileId) {
         int hue = Math.floorMod(tileId.hashCode(), 360);
         return Color.getHSBColor(hue / 360f, 0.45f, 0.75f);
+    }
+
+    private static float clamp01(float value) {
+        return Math.max(0f, Math.min(1f, value));
     }
 
     private static long key(int x, int z) {

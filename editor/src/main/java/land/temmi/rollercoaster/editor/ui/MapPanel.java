@@ -2,6 +2,7 @@ package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.document.MapAsset;
 import land.temmi.rollercoaster.editor.document.MapEntityAsset;
+import land.temmi.rollercoaster.editor.document.MapLightAsset;
 import land.temmi.rollercoaster.editor.document.MapProp;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
@@ -68,6 +69,8 @@ final class MapPanel extends JPanel {
     private final JList<MapProp> placedPropsList = new JList<>(placedPropsListModel);
     private final DefaultListModel<MapEntityAsset> placedEntitiesListModel = new DefaultListModel<>();
     private final JList<MapEntityAsset> placedEntitiesList = new JList<>(placedEntitiesListModel);
+    private final DefaultListModel<MapLightAsset> placedLightsListModel = new DefaultListModel<>();
+    private final JList<MapLightAsset> placedLightsList = new JList<>(placedLightsListModel);
     private final MapCanvas canvas;
     private final JToggleButton tileTool = new JToggleButton("Kacheln malen", true);
     private final JToggleButton eraseTileTool = new JToggleButton("Kacheln löschen");
@@ -80,6 +83,7 @@ final class MapPanel extends JPanel {
     private final JToggleButton terrainTool = new JToggleButton("Terrain formen");
     private final JToggleButton propsTool = new JToggleButton("Props platzieren");
     private final JToggleButton entitiesTool = new JToggleButton("Entities platzieren");
+    private final JToggleButton lightsTool = new JToggleButton("Lichter platzieren");
     private final JSpinner levelSpinner = new JSpinner(new SpinnerNumberModel(0, -20, 20, 1));
     private final JComboBox<TileShape> shapeCombo = new JComboBox<>(TileShape.values());
     private final JCheckBox terrainOverlay = new JCheckBox("Terrain", true);
@@ -117,6 +121,10 @@ final class MapPanel extends JPanel {
             + (entity.spriteId == null ? "" : " / " + entity.spriteId) + "  (" + entity.x + ", " + entity.z + ")"));
         placedEntitiesList.addListSelectionListener(e -> canvas.setSelectedEntityInstanceId(
             placedEntitiesList.getSelectedValue() == null ? null : placedEntitiesList.getSelectedValue().instanceId));
+        placedLightsList.setCellRenderer(labelRenderer(light -> (light.spot ? "Spot " : "Punkt ") + light.instanceId
+            + "  (" + light.x + ", " + light.z + ")" + (light.enabled ? "" : "  (aus)")));
+        placedLightsList.addListSelectionListener(e -> canvas.setSelectedLightInstanceId(
+            placedLightsList.getSelectedValue() == null ? null : placedLightsList.getSelectedValue().instanceId));
 
         ButtonGroup tools = new ButtonGroup();
         tools.add(tileTool);
@@ -130,6 +138,7 @@ final class MapPanel extends JPanel {
         tools.add(terrainTool);
         tools.add(propsTool);
         tools.add(entitiesTool);
+        tools.add(lightsTool);
         tileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.TILE));
         eraseTileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.ERASE_TILE));
         pickTileTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.PICK_TILE));
@@ -141,6 +150,7 @@ final class MapPanel extends JPanel {
         terrainTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.TERRAIN));
         propsTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.PROPS));
         entitiesTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.ENTITIES));
+        lightsTool.addActionListener(e -> canvas.setTool(MapCanvas.Tool.LIGHTS));
         levelSpinner.addChangeListener(e -> updateTerrainTarget());
         shapeCombo.addActionListener(e -> updateTerrainTarget());
         terrainOverlay.addActionListener(e -> updateOverlays());
@@ -185,8 +195,9 @@ final class MapPanel extends JPanel {
             map.getTile(x, z) == null ? "leer" : map.getTile(x, z), map.isBlocked(x, z) ? "  gesperrt" : ""));
         MapCanvas.PropListener propListener = this::onPlaceProp;
         MapCanvas.EntityListener entityListener = this::onPlaceEntity;
+        MapCanvas.LightListener lightListener = this::onPlaceLight;
         MapCanvas.TileListener tileListener = this::onPickTile;
-        return new MapCanvas(strokeListener, hoverListener, propListener, entityListener, tileListener);
+        return new MapCanvas(strokeListener, hoverListener, propListener, entityListener, lightListener, tileListener);
     }
 
     private void onPickTile(String tileId) {
@@ -233,6 +244,26 @@ final class MapPanel extends JPanel {
             selectEntity(entity.instanceId);
         } catch (IllegalArgumentException e) {
             showError("Entity konnte nicht platziert werden", e);
+        }
+    }
+
+    private void onPlaceLight(String mapId, int x, int z) {
+        MapAsset map = mapList.getSelectedValue();
+        if (map != null && map.getLights().size() >= MapAsset.MAX_LIGHTS) {
+            JOptionPane.showMessageDialog(this, "Diese Karte hat bereits " + MapAsset.MAX_LIGHTS
+                + " Lichter - das gemeinsame Budget der Engine für Punkt- und Spotlichter.");
+            return;
+        }
+        LightSettings settings = askLightSettings("Licht platzieren",
+            new MapLightAsset(UUID.randomUUID().toString(), x, 1.5f, z, 1f, 1f, 1f, 1f, 4f, true));
+        if (settings == null) return;
+        MapLightAsset light = settings.toAsset(UUID.randomUUID().toString());
+        try {
+            projectController.placeLight(mapId, light);
+            refresh();
+            selectLight(light.instanceId);
+        } catch (IllegalArgumentException e) {
+            showError("Licht konnte nicht platziert werden", e);
         }
     }
 
@@ -291,10 +322,24 @@ final class MapPanel extends JPanel {
         entityButtons.add(removeEntity);
         entitiesPanel.add(entityButtons, BorderLayout.SOUTH);
 
-        JSplitPane placements = new JSplitPane(JSplitPane.VERTICAL_SPLIT, propsPanel, entitiesPanel);
-        placements.setResizeWeight(0.5);
+        JPanel lightsPanel = new JPanel(new BorderLayout());
+        lightsPanel.setBorder(BorderFactory.createTitledBorder("Lichter"));
+        lightsPanel.add(new JScrollPane(placedLightsList), BorderLayout.CENTER);
+        JButton removeLight = new JButton("Löschen");
+        removeLight.addActionListener(e -> onRemoveLight());
+        JButton editLight = new JButton("Bearbeiten…");
+        editLight.addActionListener(e -> onEditLight());
+        JPanel lightButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        lightButtons.add(editLight);
+        lightButtons.add(removeLight);
+        lightsPanel.add(lightButtons, BorderLayout.SOUTH);
+
+        JSplitPane entityAndLights = new JSplitPane(JSplitPane.VERTICAL_SPLIT, entitiesPanel, lightsPanel);
+        entityAndLights.setResizeWeight(0.5);
+        JSplitPane placements = new JSplitPane(JSplitPane.VERTICAL_SPLIT, propsPanel, entityAndLights);
+        placements.setResizeWeight(0.34);
         JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mapListPanel, placements);
-        split.setResizeWeight(0.6);
+        split.setResizeWeight(0.5);
         panel.add(split, BorderLayout.CENTER);
         return panel;
     }
@@ -314,6 +359,7 @@ final class MapPanel extends JPanel {
         toolbar.add(terrainTool);
         toolbar.add(propsTool);
         toolbar.add(entitiesTool);
+        toolbar.add(lightsTool);
         toolbar.add(new JLabel("Level:"));
         toolbar.add(levelSpinner);
         toolbar.add(shapeCombo);
@@ -398,11 +444,14 @@ final class MapPanel extends JPanel {
 
         MapProp selectedProp = placedPropsList.getSelectedValue();
         MapEntityAsset selectedEntity = placedEntitiesList.getSelectedValue();
+        MapLightAsset selectedLight = placedLightsList.getSelectedValue();
         placedPropsListModel.clear();
         placedEntitiesListModel.clear();
+        placedLightsListModel.clear();
         if (selected != null) {
             selected.getProps().forEach(placedPropsListModel::addElement);
             selected.getEntities().forEach(placedEntitiesListModel::addElement);
+            selected.getLights().forEach(placedLightsListModel::addElement);
             if (selectedProp != null) {
                 for (int i = 0; i < placedPropsListModel.size(); i++) {
                     if (placedPropsListModel.get(i).instanceId.equals(selectedProp.instanceId)) {
@@ -415,6 +464,14 @@ final class MapPanel extends JPanel {
                 for (int i = 0; i < placedEntitiesListModel.size(); i++) {
                     if (placedEntitiesListModel.get(i).instanceId.equals(selectedEntity.instanceId)) {
                         placedEntitiesList.setSelectedIndex(i);
+                        break;
+                    }
+                }
+            }
+            if (selectedLight != null) {
+                for (int i = 0; i < placedLightsListModel.size(); i++) {
+                    if (placedLightsListModel.get(i).instanceId.equals(selectedLight.instanceId)) {
+                        placedLightsList.setSelectedIndex(i);
                         break;
                     }
                 }
@@ -450,6 +507,29 @@ final class MapPanel extends JPanel {
             selectEntity(entity.instanceId);
         } catch (IllegalArgumentException e) {
             showError("Entity konnte nicht bearbeitet werden", e);
+        }
+    }
+
+    private void onRemoveLight() {
+        MapAsset selected = mapList.getSelectedValue();
+        MapLightAsset light = placedLightsList.getSelectedValue();
+        if (selected == null || light == null) return;
+        projectController.removeLight(selected.id, light);
+        refresh();
+    }
+
+    private void onEditLight() {
+        MapAsset map = mapList.getSelectedValue();
+        MapLightAsset light = placedLightsList.getSelectedValue();
+        if (map == null || light == null) return;
+        LightSettings settings = askLightSettings("Licht bearbeiten", light);
+        if (settings == null) return;
+        try {
+            projectController.updateLight(map.id, light, settings.toAsset(light.instanceId));
+            refresh();
+            selectLight(light.instanceId);
+        } catch (IllegalArgumentException e) {
+            showError("Licht konnte nicht bearbeitet werden", e);
         }
     }
 
@@ -541,6 +621,61 @@ final class MapPanel extends JPanel {
             (Integer) xSpinner.getValue(), (Integer) zSpinner.getValue());
     }
 
+    private LightSettings askLightSettings(String title, MapLightAsset light) {
+        JSpinner x = decimalSpinner(light.x, 0.25d);
+        JSpinner y = decimalSpinner(light.y, 0.25d);
+        JSpinner z = decimalSpinner(light.z, 0.25d);
+        JSpinner colorR = decimalSpinner(light.colorR, 0.05d);
+        JSpinner colorG = decimalSpinner(light.colorG, 0.05d);
+        JSpinner colorB = decimalSpinner(light.colorB, 0.05d);
+        JSpinner intensity = decimalSpinner(light.intensity, 0.1d);
+        JSpinner range = decimalSpinner(light.range, 0.5d);
+        JCheckBox enabled = new JCheckBox("Aktiv", light.enabled);
+        JCheckBox spot = new JCheckBox("Spotlicht", light.spot);
+        JSpinner directionX = decimalSpinner(light.directionX, 0.1d);
+        JSpinner directionY = decimalSpinner(light.directionY, 0.1d);
+        JSpinner directionZ = decimalSpinner(light.directionZ, 0.1d);
+        JSpinner innerAngle = decimalSpinner(light.innerAngle, 1d);
+        JSpinner outerAngle = decimalSpinner(light.outerAngle, 1d);
+
+        JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
+        form.add(new JLabel("X:"));
+        form.add(x);
+        form.add(new JLabel("Y (Höhe):"));
+        form.add(y);
+        form.add(new JLabel("Z:"));
+        form.add(z);
+        form.add(new JLabel("Farbe R:"));
+        form.add(colorR);
+        form.add(new JLabel("Farbe G:"));
+        form.add(colorG);
+        form.add(new JLabel("Farbe B:"));
+        form.add(colorB);
+        form.add(new JLabel("Intensität:"));
+        form.add(intensity);
+        form.add(new JLabel("Reichweite:"));
+        form.add(range);
+        form.add(new JLabel());
+        form.add(enabled);
+        form.add(new JLabel());
+        form.add(spot);
+        form.add(new JLabel("Richtung X (Spot):"));
+        form.add(directionX);
+        form.add(new JLabel("Richtung Y (Spot):"));
+        form.add(directionY);
+        form.add(new JLabel("Richtung Z (Spot):"));
+        form.add(directionZ);
+        form.add(new JLabel("Innerer Winkel (Spot):"));
+        form.add(innerAngle);
+        form.add(new JLabel("Äußerer Winkel (Spot):"));
+        form.add(outerAngle);
+        if (JOptionPane.showConfirmDialog(this, form, title, JOptionPane.OK_CANCEL_OPTION,
+            JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return null;
+        return new LightSettings(number(x), number(y), number(z), number(colorR), number(colorG), number(colorB),
+            number(intensity), number(range), enabled.isSelected(), spot.isSelected(),
+            number(directionX), number(directionY), number(directionZ), number(innerAngle), number(outerAngle));
+    }
+
     private void selectProp(String instanceId) {
         for (int i = 0; i < placedPropsListModel.size(); i++) {
             if (placedPropsListModel.get(i).instanceId.equals(instanceId)) {
@@ -559,10 +694,29 @@ final class MapPanel extends JPanel {
         }
     }
 
+    private void selectLight(String instanceId) {
+        for (int i = 0; i < placedLightsListModel.size(); i++) {
+            if (placedLightsListModel.get(i).instanceId.equals(instanceId)) {
+                placedLightsList.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
     private record PropTransform(float x, float z, float elevation, float rotation) {
     }
 
     private record EntitySettings(String type, String spriteId, int x, int z) {
+    }
+
+    private record LightSettings(float x, float y, float z, float colorR, float colorG, float colorB,
+                                 float intensity, float range, boolean enabled, boolean spot,
+                                 float directionX, float directionY, float directionZ,
+                                 float innerAngle, float outerAngle) {
+        MapLightAsset toAsset(String instanceId) {
+            return new MapLightAsset(instanceId, x, y, z, colorR, colorG, colorB, intensity, range, enabled,
+                spot, directionX, directionY, directionZ, innerAngle, outerAngle);
+        }
     }
 
     /**
