@@ -11,6 +11,7 @@ import javax.swing.JPanel;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics;
+import java.awt.Image;
 import java.awt.Polygon;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -72,6 +73,7 @@ final class MapCanvas extends JPanel {
     private float terrainTargetHeight;
     private TileShape terrainTargetShape = TileShape.FLAT;
     private Map<String, Boolean> tileWalkability = Map.of();
+    private Map<String, Image> tileImages = Map.of();
     private String selectedPropInstanceId;
     private boolean showTerrain = true;
     private boolean showGrid = true;
@@ -154,6 +156,12 @@ final class MapCanvas extends JPanel {
 
     void setTileWalkability(Map<String, Boolean> tileWalkability) {
         this.tileWalkability = new LinkedHashMap<>(tileWalkability);
+        repaint();
+    }
+
+    /** Tile-id keyed source previews; missing or unreadable images deliberately fall back to color. */
+    void setTileImages(Map<String, Image> tileImages) {
+        this.tileImages = new LinkedHashMap<>(tileImages);
         repaint();
     }
 
@@ -360,8 +368,13 @@ final class MapCanvas extends JPanel {
 
                 int px = x * CELL_SIZE;
                 int py = z * CELL_SIZE;
-                g.setColor(tileId == null ? EMPTY_COLOR : colorFor(tileId));
-                g.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+                Image image = tileId == null ? null : tileImages.get(tileId);
+                if (image == null) {
+                    g.setColor(tileId == null ? EMPTY_COLOR : colorFor(tileId));
+                    g.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+                } else {
+                    g.drawImage(image, px, py, CELL_SIZE, CELL_SIZE, this);
+                }
                 if (showManualCollision && blocked) {
                     g.setColor(BLOCKED_TINT);
                     g.fillRect(px, py, CELL_SIZE, CELL_SIZE);

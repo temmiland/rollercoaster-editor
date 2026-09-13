@@ -29,10 +29,12 @@ import javax.swing.JToggleButton;
 import javax.swing.ListCellRenderer;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
+import javax.imageio.ImageIO;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridLayout;
+import java.awt.Image;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -312,16 +314,20 @@ final class MapPanel extends JPanel {
 
         paletteListModel.clear();
         Map<String, Boolean> tileWalkability = new LinkedHashMap<>();
+        Map<String, Image> tileImages = new LinkedHashMap<>();
         if (selected != null) {
             TilesetAsset tileset = findTileset(selected.tilesetId);
             if (tileset != null) {
                 for (TileEntry tile : tileset.getTiles()) {
                     paletteListModel.addElement(tile);
                     tileWalkability.put(tile.id, tile.walkable);
+                    Image image = tileImage(tile);
+                    if (image != null) tileImages.put(tile.id, image);
                 }
             }
         }
         canvas.setTileWalkability(tileWalkability);
+        canvas.setTileImages(tileImages);
 
         MapProp selectedProp = placedPropsList.getSelectedValue();
         placedPropsListModel.clear();
@@ -440,6 +446,19 @@ final class MapPanel extends JPanel {
     private TilesetAsset findTileset(String id) {
         for (TilesetAsset tileset : projectController.getTilesets()) {
             if (tileset.id.equals(id)) return tileset;
+        }
+        return null;
+    }
+
+    private Image tileImage(TileEntry tile) {
+        for (land.temmi.rollercoaster.editor.document.TextureAsset texture : projectController.getTextures()) {
+            if (!texture.id.equals(tile.textureId)) continue;
+            Path file = projectController.getProjectDirectory().resolve("sources/textures").resolve(texture.fileName);
+            try {
+                return ImageIO.read(file.toFile());
+            } catch (IOException ignored) {
+                return null;
+            }
         }
         return null;
     }

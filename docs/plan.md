@@ -336,7 +336,8 @@ Ein zweiter Export derselben Quellen erzeugt dieselben Inhalte und erhält alle 
   übergeben. Rampenrichtung wird als kleines Dreieck angezeigt. Löschen, Pipette, Flutfüllung,
   Rechteck, Kopieren und Einfügen arbeiten für die Kachelebene direkt auf der Karte und erzeugen
   jeweils nur eine Undo-Aktion; der interne Kachel-Zwischenspeicher wird beim Projektwechsel nicht
-  persistiert. Textur-Thumbnails statt Farbflächen fehlen noch.
+  persistiert. Die Karte zeichnet importierte Oberflächentexturen direkt in der Tile-Ansicht;
+  bei einer fehlenden oder unlesbaren Quelle bleibt die eindeutige ID-Farbe als Fallback erhalten.
 - [x] Höhen ändern, Plateaus und Rampen setzen und ihre Orientierung über die Formebene bearbeiten:
   Werkzeug "Terrain formen" nimmt Level (das Plateau, zu dem eine Rampe hinaufführt) und Form
   entgegen statt einer rohen Höhe - jede Kombination, die es erzeugen kann, ist dadurch bereits
