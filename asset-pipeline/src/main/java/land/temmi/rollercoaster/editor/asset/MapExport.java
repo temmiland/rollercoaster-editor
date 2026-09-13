@@ -8,12 +8,30 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
 
 /** Writes a map matching MapLoader's schema exactly - one file per map, named "<id>.json". */
 public final class MapExport {
     public static final int FORMAT_VERSION = 1;
 
     private MapExport() {
+    }
+
+    /** A placed model. The runtime format has no id for a prop - it's purely positional. */
+    public static final class Prop {
+        public final String model;
+        public final float x;
+        public final float z;
+        public final float elevation;
+        public final float rotation;
+
+        public Prop(String model, float x, float z, float elevation, float rotation) {
+            this.model = model;
+            this.x = x;
+            this.z = z;
+            this.elevation = elevation;
+            this.rotation = rotation;
+        }
     }
 
     /**
@@ -24,7 +42,7 @@ public final class MapExport {
      */
     public static void write(String id, int width, int depth, String tilesetId,
                              String[] tiles, float[] heights, String[] shapes, boolean[] collision,
-                             Path mapsDirectory) throws IOException {
+                             List<Prop> props, Path mapsDirectory) throws IOException {
         int cells = width * depth;
         if (tiles.length != cells || heights.length != cells || shapes.length != cells || collision.length != cells) {
             throw new IllegalArgumentException("Map layer arrays must have " + cells + " cells: " + id);
@@ -38,13 +56,14 @@ public final class MapExport {
         Files.createDirectories(mapsDirectory);
         Path target = mapsDirectory.resolve(id + ".json");
         Path temp = mapsDirectory.resolve(id + ".json.tmp");
-        Files.writeString(temp, toJson(id, width, depth, tilesetId, tiles, heights, shapes, collision),
+        Files.writeString(temp, toJson(id, width, depth, tilesetId, tiles, heights, shapes, collision, props),
             StandardCharsets.UTF_8);
         Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
 
     private static String toJson(String id, int width, int depth, String tilesetId,
-                                 String[] tiles, float[] heights, String[] shapes, boolean[] collision)
+                                 String[] tiles, float[] heights, String[] shapes, boolean[] collision,
+                                 List<Prop> props)
         throws IOException {
         StringWriter buffer = new StringWriter();
         JsonWriter writer = new JsonWriter(buffer);
@@ -63,6 +82,15 @@ public final class MapExport {
         writeGrid(writer, "collision", width, depth, (x, z) -> writer.value(collision[z * width + x] ? 1 : 0));
         writer.pop();
         writer.array("props");
+        for (Prop prop : props) {
+            writer.object();
+            writer.set("model", prop.model);
+            writer.set("x", prop.x);
+            writer.set("y", prop.z);
+            writer.set("elevation", prop.elevation);
+            writer.set("rot", prop.rotation);
+            writer.pop();
+        }
         writer.pop();
         writer.array("entities");
         writer.pop();

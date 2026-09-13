@@ -32,6 +32,7 @@ public final class AssetPipelineSmokeTest {
         verifyRejectsOversizedTileset();
         verifyModelManifestExportRoundtrip();
         verifyMapExportRoundtrip();
+        verifyMapExportWithPropsRoundtrip();
         verifyRejectsUnpaintedMap();
         System.out.println("PASS: tile packing and tileset export read back correctly "
             + "by the real TilesetManifest parser, model manifest export read back by the real "
@@ -48,7 +49,8 @@ public final class AssetPipelineSmokeTest {
         boolean[] collision = {false, false, false, false, false, true};
 
         Path directory = Files.createTempDirectory("trackside-editor-map");
-        MapExport.write("valley", width, depth, "overworld", tiles, heights, shapes, collision, directory);
+        MapExport.write("valley", width, depth, "overworld", tiles, heights, shapes, collision,
+            List.of(), directory);
 
         Path mapFile = directory.resolve("valley.json");
         if (!Files.exists(mapFile)) throw new AssertionError("Map JSON was not written");
@@ -69,6 +71,27 @@ public final class AssetPipelineSmokeTest {
         }
     }
 
+    private static void verifyMapExportWithPropsRoundtrip() throws IOException {
+        String[] tiles = {"grass"};
+        float[] heights = {0f};
+        String[] shapes = {"flat"};
+        boolean[] collision = {false};
+        List<MapExport.Prop> props = List.of(new MapExport.Prop("house", 8f, 10f, 0.25f, 90f));
+
+        Path directory = Files.createTempDirectory("trackside-editor-map-props");
+        MapExport.write("withProps", 1, 1, "overworld", tiles, heights, shapes, collision, props, directory);
+
+        Tileset tileset = new Tileset().add(new TileSurface("grass"));
+        LoadedMap loaded = new MapLoader().load(
+            new FileHandle(directory.resolve("withProps.json").toFile()), tileset);
+        if (loaded.props.size != 1) throw new AssertionError("Expected 1 prop, got " + loaded.props.size);
+        land.temmi.rollercoaster.world.MapProp prop = loaded.props.first();
+        if (!"house".equals(prop.model) || prop.x != 8f || prop.z != 10f
+            || prop.elevation != 0.25f || prop.rotation != 90f) {
+            throw new AssertionError("Prop did not round-trip: " + prop.model + " " + prop.x + "," + prop.z);
+        }
+    }
+
     private static void verifyRejectsUnpaintedMap() throws IOException {
         String[] tiles = new String[4];
         float[] heights = new float[4];
@@ -76,7 +99,7 @@ public final class AssetPipelineSmokeTest {
         boolean[] collision = new boolean[4];
         Path directory = Files.createTempDirectory("trackside-editor-map-empty");
         try {
-            MapExport.write("empty", 2, 2, "overworld", tiles, heights, shapes, collision, directory);
+            MapExport.write("empty", 2, 2, "overworld", tiles, heights, shapes, collision, List.of(), directory);
             throw new AssertionError("Exporting a map with unpainted cells should fail");
         } catch (IllegalArgumentException expected) {
             // Expected.

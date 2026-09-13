@@ -51,7 +51,7 @@ public final class PreviewProcessSmokeTest {
             MapExport.write("valley", 2, 2, "overworld",
                 new String[] {"grass", "grass", "grass", "grass"}, new float[] {0f, 0f, 0f, 0f},
                 new String[] {"flat", "flat", "flat", "flat"}, new boolean[] {false, false, false, false},
-                mapDirectory);
+                java.util.List.of(), mapDirectory);
             String mapFilePath = mapDirectory.resolve("valley.json").toAbsolutePath().toString();
 
             CompletableFuture<ShowMapResult> showMapFuture = process.showMap(mapFilePath, 2, 2,

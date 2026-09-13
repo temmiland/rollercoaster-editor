@@ -12,14 +12,17 @@ import land.temmi.rollercoaster.editor.document.CreateTilesetCommand;
 import land.temmi.rollercoaster.editor.document.ImportModelCommand;
 import land.temmi.rollercoaster.editor.document.ImportTextureCommand;
 import land.temmi.rollercoaster.editor.document.MapAsset;
+import land.temmi.rollercoaster.editor.document.MapProp;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
 import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
 import land.temmi.rollercoaster.editor.document.PaintTilesCommand;
+import land.temmi.rollercoaster.editor.document.PlacePropCommand;
 import land.temmi.rollercoaster.editor.document.ProjectDocument;
 import land.temmi.rollercoaster.editor.document.ProjectFile;
 import land.temmi.rollercoaster.editor.document.RemoveMapCommand;
 import land.temmi.rollercoaster.editor.document.RemoveModelCommand;
+import land.temmi.rollercoaster.editor.document.RemovePropCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTextureCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTilesetCommand;
 import land.temmi.rollercoaster.editor.document.RemoveTileCommand;
@@ -27,6 +30,7 @@ import land.temmi.rollercoaster.editor.document.RenameProjectCommand;
 import land.temmi.rollercoaster.editor.document.TextureAsset;
 import land.temmi.rollercoaster.editor.document.TileEntry;
 import land.temmi.rollercoaster.editor.document.TilesetAsset;
+import land.temmi.rollercoaster.editor.document.TransformPropCommand;
 
 import javax.swing.Timer;
 import java.io.IOException;
@@ -350,9 +354,33 @@ public final class ProjectController {
                 collision[index] = map.isBlocked(x, z);
             }
         }
+        List<MapExport.Prop> props = new ArrayList<>();
+        for (MapProp prop : map.getProps()) {
+            props.add(new MapExport.Prop(prop.modelId, prop.x, prop.z, prop.elevation, prop.rotation));
+        }
         MapExport.write(map.id, map.width, map.depth, map.tilesetId, tiles, heights, shapes, collision,
-            mapsDirectory());
+            props, mapsDirectory());
         return mapsDirectory().resolve(map.id + ".json");
+    }
+
+    public void placeProp(String mapId, MapProp prop) {
+        requireOpen();
+        history.perform(new PlacePropCommand(mapId, prop));
+        listener.onProjectChanged();
+    }
+
+    public void removeProp(String mapId, MapProp prop) {
+        requireOpen();
+        history.perform(new RemovePropCommand(mapId, prop));
+        listener.onProjectChanged();
+    }
+
+    public void transformProp(String mapId, MapProp previous, float newX, float newZ, float newElevation,
+                              float newRotation) {
+        requireOpen();
+        history.perform(new TransformPropCommand(mapId, previous.instanceId, previous.modelId,
+            previous.x, previous.z, previous.elevation, previous.rotation, newX, newZ, newElevation, newRotation));
+        listener.onProjectChanged();
     }
 
     private Path modelsDirectory() {
