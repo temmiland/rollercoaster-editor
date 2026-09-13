@@ -133,9 +133,44 @@ public final class ProtocolSmokeTest {
             }
         }
 
+        try (ServerSocket serverSocket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            int port = serverSocket.getLocalPort();
+            ShowMap[] received = new ShowMap[1];
+            Thread server = new Thread(() -> {
+                try (Socket socket = serverSocket.accept();
+                     MessageChannel channel = new MessageChannel(socket)) {
+                    channel.receive(); // Hello
+                    channel.send(new HelloAck(true, null));
+                    received[0] = (ShowMap) channel.receive();
+                    channel.send(ShowMapResult.ok());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            server.start();
+
+            ShowMapResult result;
+            try (Socket clientSocket = new Socket(InetAddress.getLoopbackAddress(), port);
+                 MessageChannel client = new MessageChannel(clientSocket)) {
+                client.send(new Hello(MessageChannel.PROTOCOL_VERSION));
+                client.receive(); // HelloAck
+                client.send(new ShowMap("/tmp/valley.json", 3, 2, new String[] {"grass", "cliff"},
+                    new boolean[] {true, false}));
+                result = (ShowMapResult) client.receive();
+            }
+            server.join();
+
+            if (received[0] == null || !"/tmp/valley.json".equals(received[0].mapFilePath)
+                || received[0].width != 3 || received[0].depth != 2 || received[0].tileIds.length != 2
+                || !received[0].tileIds[1].equals("cliff") || received[0].tileWalkable[1]) {
+                throw new AssertionError("ShowMap lost data in transit");
+            }
+            if (!result.success) throw new AssertionError("ShowMapResult lost data in transit");
+        }
+
         System.out.println("PASS: Hello/HelloAck roundtrip over a loopback socket, version mismatch rejected with a "
             + "reason, scene-switch messages roundtrip after the handshake, a preview-to-editor PickResult, "
-            + "and a ComputeModelBounds/ModelBoundsResult roundtrip");
+            + "a ComputeModelBounds/ModelBoundsResult roundtrip, and a ShowMap/ShowMapResult roundtrip");
     }
 
     /** Mirrors the editor's half of the handshake: one connection, one Hello, one reply. */
