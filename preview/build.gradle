@@ -39,3 +39,10 @@ tasks.register('previewSmokeTest', JavaExec) {
     classpath = sourceSets.smokeTest.runtimeClasspath
     mainClass = 'land.temmi.rollercoaster.editor.preview.ClickPickerSmokeTest'
 }
+
+tasks.register('eventRuntimeSmokeTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks GameState/ConditionEvaluator/EventDispatcher against real engine event data; no GL context involved.'
+    classpath = sourceSets.smokeTest.runtimeClasspath
+    mainClass = 'land.temmi.rollercoaster.editor.preview.EventRuntimeSmokeTest'
+}
