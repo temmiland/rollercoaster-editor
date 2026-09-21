@@ -7,8 +7,10 @@ import javax.swing.JLabel;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
+import javax.swing.ButtonGroup;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTextArea;
@@ -16,6 +18,7 @@ import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
+import land.temmi.rollercoaster.editor.protocol.CameraMode;
 import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
@@ -33,6 +36,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /** Main editor window. Asset list and map view are empty until Phase 2/3 fill them in. */
@@ -56,7 +60,8 @@ public final class EditorFrame extends JFrame {
     public EditorFrame(Runnable onRestartPreviewRequested, ProjectController projectController,
                        RecentProjects recentProjects,
                        Function<String, CompletableFuture<ModelBoundsResult>> modelBoundsComputer,
-                       MapPanel.PreviewMapRequester previewMapRequester) {
+                       MapPanel.PreviewMapRequester previewMapRequester,
+                       Consumer<CameraMode> onCameraModeChanged) {
         super("Rollercoaster Editor");
         this.projectController = projectController;
         this.recentProjects = recentProjects;
@@ -75,7 +80,7 @@ public final class EditorFrame extends JFrame {
         });
 
         setLayout(new BorderLayout());
-        setJMenuBar(buildMenuBar(onRestartPreviewRequested));
+        setJMenuBar(buildMenuBar(onRestartPreviewRequested, onCameraModeChanged));
         add(buildContent(), BorderLayout.CENTER);
         add(buildStatusBar(), BorderLayout.SOUTH);
 
@@ -83,7 +88,7 @@ public final class EditorFrame extends JFrame {
         setLocationRelativeTo(null);
     }
 
-    private JMenuBar buildMenuBar(Runnable onRestartPreviewRequested) {
+    private JMenuBar buildMenuBar(Runnable onRestartPreviewRequested, Consumer<CameraMode> onCameraModeChanged) {
         int shortcutMask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
 
         JMenu fileMenu = new JMenu("Datei");
@@ -119,6 +124,16 @@ public final class EditorFrame extends JFrame {
         JMenuItem restart = new JMenuItem("Neu verbinden");
         restart.addActionListener(e -> onRestartPreviewRequested.run());
         previewMenu.add(restart);
+        previewMenu.addSeparator();
+        JRadioButtonMenuItem freeCamera = new JRadioButtonMenuItem("Freie Kamera", true);
+        freeCamera.addActionListener(e -> onCameraModeChanged.accept(CameraMode.FREE));
+        JRadioButtonMenuItem gameCamera = new JRadioButtonMenuItem("Spielkamera");
+        gameCamera.addActionListener(e -> onCameraModeChanged.accept(CameraMode.GAME));
+        ButtonGroup cameraModeGroup = new ButtonGroup();
+        cameraModeGroup.add(freeCamera);
+        cameraModeGroup.add(gameCamera);
+        previewMenu.add(freeCamera);
+        previewMenu.add(gameCamera);
 
         JMenuBar menuBar = new JMenuBar();
         menuBar.add(fileMenu);

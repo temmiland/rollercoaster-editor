@@ -8,6 +8,7 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.graphics.VertexAttributes.Usage;
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g3d.Material;
 import com.badlogic.gdx.graphics.g3d.Model;
 import com.badlogic.gdx.graphics.g3d.ModelBatch;
@@ -24,8 +25,10 @@ import land.temmi.rollercoaster.asset.ModelManifest;
 import land.temmi.rollercoaster.asset.SpriteAtlas;
 import land.temmi.rollercoaster.asset.SpriteDefinition;
 import land.temmi.rollercoaster.asset.SpriteManifest;
+import land.temmi.rollercoaster.editor.protocol.CameraMode;
 import land.temmi.rollercoaster.editor.protocol.ComputeModelBounds;
 import land.temmi.rollercoaster.editor.protocol.PickResult;
+import land.temmi.rollercoaster.editor.protocol.SetCameraMode;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
 import land.temmi.rollercoaster.editor.protocol.ShowMap;
 import land.temmi.rollercoaster.editor.protocol.ShowMapResult;
@@ -34,10 +37,14 @@ import land.temmi.rollercoaster.render.DayNightCycle;
 import land.temmi.rollercoaster.render.LightingEnvironment;
 import land.temmi.rollercoaster.render.BillboardQuad;
 import land.temmi.rollercoaster.render.BillboardRenderer;
+import land.temmi.rollercoaster.render.LowResTarget;
+import land.temmi.rollercoaster.render.PixelCamera;
 import land.temmi.rollercoaster.render.PointLightSource;
 import land.temmi.rollercoaster.render.WorldShaderProvider;
+import land.temmi.rollercoaster.world.MapEntity;
 import land.temmi.rollercoaster.world.MapLight;
 import land.temmi.rollercoaster.world.TerrainSurface;
+import land.temmi.rollercoaster.world.TileMap;
 import land.temmi.rollercoaster.world.TileSurface;
 import land.temmi.rollercoaster.world.Tileset;
 import land.temmi.rollercoaster.world.TextureTileset;
@@ -57,6 +64,8 @@ public final class PreviewApplication extends ApplicationAdapter {
     private static final float GENERIC_CAMERA_FAR = 200f;
     private static final float LEVEL_CAMERA_FAR = 150f;
     private static final float DOCUMENT_MAP_CAMERA_FAR = 200f;
+    /** Mirrors example-game's own constant: the game camera frames one terrain level at this pixel height. */
+    private static final float TERRAIN_LEVEL_PIXEL_HEIGHT = 48f;
 
     private enum SceneMode { GENERIC, SAMPLE_LEVEL, DOCUMENT_MAP }
 
@@ -68,6 +77,13 @@ public final class PreviewApplication extends ApplicationAdapter {
     private ModelBatch modelBatch;
     private LightingEnvironment lighting;
     private DayNightCycle dayNightCycle;
+
+    /** The same fixed-pitch camera and low-res pixel-art target the game itself renders through. */
+    private LowResTarget lowRes;
+    private PixelCamera pixelCamera;
+    private SpriteBatch blitBatch;
+    private CameraMode cameraMode = CameraMode.FREE;
+    private final Vector3 followTarget = new Vector3();
 
     private Model genericModel;
     private final Array<ModelInstance> genericInstances = new Array<>();
@@ -103,6 +119,12 @@ public final class PreviewApplication extends ApplicationAdapter {
         modelBatch = new ModelBatch(new WorldShaderProvider(lighting));
         billboardQuad = new BillboardQuad();
 
+        lowRes = new LowResTarget();
+        lowRes.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        pixelCamera = new PixelCamera();
+        pixelCamera.resize(lowRes.getWidth(), lowRes.getHeight());
+        blitBatch = new SpriteBatch();
+
         buildGenericModel();
         showGenericScene();
 
@@ -110,6 +132,10 @@ public final class PreviewApplication extends ApplicationAdapter {
     }
 
     private void onPick(Vector3 worldHit) {
+        // ClickPicker always raycasts through the free camera; in GAME mode that camera sits
+        // frozen wherever it was left (cameraController.update() doesn't run), so a hit against
+        // it would silently disagree with what's actually on screen.
+        if (cameraMode != CameraMode.FREE) return;
         connection.send(new PickResult(worldHit.x, worldHit.y, worldHit.z));
     }
 
@@ -124,6 +150,9 @@ public final class PreviewApplication extends ApplicationAdapter {
         } else if (message instanceof ShowMap) {
             ShowMap request = (ShowMap) message;
             Gdx.app.postRunnable(() -> connection.send(showDocumentMap(request)));
+        } else if (message instanceof SetCameraMode) {
+            CameraMode mode = ((SetCameraMode) message).mode;
+            Gdx.app.postRunnable(() -> cameraMode = mode);
         }
     }
 
@@ -150,6 +179,7 @@ public final class PreviewApplication extends ApplicationAdapter {
         camera.far = GENERIC_CAMERA_FAR;
         camera.update();
         cameraController.target.set(0f, 0f, 0f);
+        followTarget.set(0f, 0f, 0f);
     }
 
     private void showLevelScene() {
@@ -167,6 +197,8 @@ public final class PreviewApplication extends ApplicationAdapter {
         camera.far = LEVEL_CAMERA_FAR;
         camera.update();
         cameraController.target.set(12f, 1f, 12f);
+        followTarget.set(findFollowTarget(levelScene.getMap().entities,
+            new TerrainSurface(levelScene.getMap().tiles), 12f, 12f));
     }
 
     /** Builds a real WorldScene from an exported map file - the tool that closes Phase 3's "does
@@ -231,6 +263,8 @@ public final class PreviewApplication extends ApplicationAdapter {
             camera.far = DOCUMENT_MAP_CAMERA_FAR;
             camera.update();
             cameraController.target.set(cx, 1f, cz);
+            followTarget.set(findFollowTarget(nextScene.getMap().entities,
+                new TerrainSurface(nextScene.getMap().tiles), cx, cz));
             return ShowMapResult.ok();
         } catch (RuntimeException e) {
             for (BillboardRenderer sprite : nextSprites) sprite.dispose();
@@ -259,6 +293,24 @@ public final class PreviewApplication extends ApplicationAdapter {
         }
     }
 
+    /**
+     * The game camera frames a "player" entity's foot position; the preview has no live player
+     * movement (that's test mode's job), so it just frames wherever one is authored - by the same
+     * {@code type == "player"} convention example-game itself looks up. Falls back to the free
+     * camera's own look-at point when a map has no such entity yet.
+     */
+    private static Vector3 findFollowTarget(Array<MapEntity> entities, TerrainSurface surface,
+                                            float fallbackX, float fallbackZ) {
+        for (MapEntity entity : entities) {
+            if ("player".equals(entity.type)) {
+                float x = entity.x - 0.5f;
+                float z = entity.z - 0.5f;
+                return new Vector3(x, surface.heightAt(x, z), z);
+            }
+        }
+        return new Vector3(fallbackX, surface.heightAt(fallbackX, fallbackZ), fallbackZ);
+    }
+
     private static ModelCatalog loadModelCatalog(String modelManifestFilePath) {
         ModelCatalog catalog = new ModelCatalog();
         if (modelManifestFilePath == null) return catalog;
@@ -275,25 +327,55 @@ public final class PreviewApplication extends ApplicationAdapter {
     public void render() {
         float delta = Gdx.graphics.getDeltaTime();
         dayNightCycle.update(delta);
+
+        if (cameraMode == CameraMode.GAME) {
+            renderGameCamera();
+        } else {
+            renderFreeCamera();
+        }
+    }
+
+    private void renderFreeCamera() {
         cameraController.update();
 
         Gdx.gl.glClearColor(0.1f, 0.12f, 0.16f, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 
         modelBatch.begin(camera);
+        renderSceneInstances(camera);
+        modelBatch.end();
+    }
+
+    /** Same follow/pixel-snap/low-res pipeline as example-game's own render loop, minus live
+     * player movement - the preview has no player controller, so this frames a static position. */
+    private void renderGameCamera() {
+        pixelCamera.follow(followTarget, TileMap.LEVEL_HEIGHT, TERRAIN_LEVEL_PIXEL_HEIGHT);
+        pixelCamera.snapToPixelGrid(lowRes.getWidth(), lowRes.getHeight());
+
+        lowRes.begin();
+        Gdx.gl.glClearColor(0.1f, 0.12f, 0.16f, 1f);
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
+        modelBatch.begin(pixelCamera.camera);
+        renderSceneInstances(pixelCamera.camera);
+        modelBatch.end();
+        lowRes.end();
+
+        lowRes.blitToScreen(blitBatch);
+    }
+
+    private void renderSceneInstances(PerspectiveCamera activeCamera) {
         switch (sceneMode) {
-            case SAMPLE_LEVEL -> modelBatch.render(levelScene.getVisibleInstances(camera, visibleInstances));
+            case SAMPLE_LEVEL -> modelBatch.render(levelScene.getVisibleInstances(activeCamera, visibleInstances));
             case DOCUMENT_MAP -> {
-                modelBatch.render(documentScene.getVisibleInstances(camera, visibleInstances));
-                spriteRight.set(camera.direction).crs(camera.up).nor();
+                modelBatch.render(documentScene.getVisibleInstances(activeCamera, visibleInstances));
+                spriteRight.set(activeCamera.direction).crs(activeCamera.up).nor();
                 for (BillboardRenderer sprite : documentSprites) {
-                    sprite.setBasis(spriteRight, camera.up);
+                    sprite.setBasis(spriteRight, activeCamera.up);
                     modelBatch.render(sprite);
                 }
             }
             default -> modelBatch.render(genericInstances);
         }
-        modelBatch.end();
     }
 
     @Override
@@ -301,6 +383,8 @@ public final class PreviewApplication extends ApplicationAdapter {
         camera.viewportWidth = width;
         camera.viewportHeight = height;
         camera.update();
+        lowRes.resize(width, height);
+        pixelCamera.resize(lowRes.getWidth(), lowRes.getHeight());
     }
 
     @Override
@@ -315,6 +399,8 @@ public final class PreviewApplication extends ApplicationAdapter {
             disposeDocumentAssets();
         }
         billboardQuad.dispose();
+        lowRes.dispose();
+        blitBatch.dispose();
         try {
             connection.close();
         } catch (IOException ignored) {

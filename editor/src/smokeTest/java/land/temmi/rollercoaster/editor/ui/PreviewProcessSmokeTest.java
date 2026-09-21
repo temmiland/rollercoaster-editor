@@ -39,9 +39,14 @@ public final class PreviewProcessSmokeTest {
         String sampleGltfPath = args[0];
 
         CountDownLatch connected = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicBoolean disconnectedAfterCameraSwitch = new java.util.concurrent.atomic.AtomicBoolean(false);
+        java.util.concurrent.atomic.AtomicBoolean watchingForDisconnect = new java.util.concurrent.atomic.AtomicBoolean(false);
         PreviewProcess.StatusListener statusListener = (status, detail) -> {
             System.out.println(status + (detail != null ? ": " + detail : ""));
             if (status == PreviewProcess.Status.CONNECTED) connected.countDown();
+            if (watchingForDisconnect.get() && status != PreviewProcess.Status.CONNECTED) {
+                disconnectedAfterCameraSwitch.set(true);
+            }
         };
         PreviewProcess.PickListener pickListener = (x, y, z) -> { };
 
@@ -109,12 +114,27 @@ public final class PreviewProcessSmokeTest {
             ShowMapResult showMapResult = showMapFuture.get(20, TimeUnit.SECONDS);
             if (!showMapResult.success) throw new AssertionError("ShowMap failed: " + showMapResult.errorMessage);
             System.out.println("ShowMap succeeded for a real exported map, built through a real WorldSceneLoader");
+
+            // Exercises the game camera's LowResTarget/PixelCamera render path with a real GL
+            // context - if FBO setup or the follow/blit sequence were broken, the render loop
+            // would throw and the subprocess would drop the connection.
+            watchingForDisconnect.set(true);
+            process.setCameraMode(land.temmi.rollercoaster.editor.protocol.CameraMode.GAME);
+            Thread.sleep(1000);
+            if (disconnectedAfterCameraSwitch.get()) {
+                throw new AssertionError("Preview disconnected after switching to the game camera");
+            }
+            process.setCameraMode(land.temmi.rollercoaster.editor.protocol.CameraMode.FREE);
+            Thread.sleep(200);
+            watchingForDisconnect.set(false);
+            System.out.println("Game camera mode rendered without disconnecting the preview");
         } finally {
             process.stop();
         }
 
-        System.out.println("PASS: preview computed real bounds for a sample GLTF file, and rendered a real "
-            + "exported map through WorldSceneLoader/ChunkMesher, both over the live protocol");
+        System.out.println("PASS: preview computed real bounds for a sample GLTF file, rendered a real "
+            + "exported map through WorldSceneLoader/ChunkMesher, and rendered a frame through the game "
+            + "camera's LowResTarget/PixelCamera pipeline, all over the live protocol");
         System.exit(0);
     }
 }

@@ -170,9 +170,38 @@ public final class ProtocolSmokeTest {
             if (!result.success) throw new AssertionError("ShowMapResult lost data in transit");
         }
 
+        try (ServerSocket serverSocket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            int port = serverSocket.getLocalPort();
+            SetCameraMode[] received = new SetCameraMode[1];
+            Thread server = new Thread(() -> {
+                try (Socket socket = serverSocket.accept();
+                     MessageChannel channel = new MessageChannel(socket)) {
+                    channel.receive(); // Hello
+                    channel.send(new HelloAck(true, null));
+                    received[0] = (SetCameraMode) channel.receive();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            server.start();
+
+            try (Socket clientSocket = new Socket(InetAddress.getLoopbackAddress(), port);
+                 MessageChannel client = new MessageChannel(clientSocket)) {
+                client.send(new Hello(MessageChannel.PROTOCOL_VERSION));
+                client.receive(); // HelloAck
+                client.send(new SetCameraMode(CameraMode.GAME));
+            }
+            server.join();
+
+            if (received[0] == null || received[0].mode != CameraMode.GAME) {
+                throw new AssertionError("SetCameraMode lost data in transit");
+            }
+        }
+
         System.out.println("PASS: Hello/HelloAck roundtrip over a loopback socket, version mismatch rejected with a "
             + "reason, scene-switch messages roundtrip after the handshake, a preview-to-editor PickResult, "
-            + "a ComputeModelBounds/ModelBoundsResult roundtrip, and a ShowMap/ShowMapResult roundtrip");
+            + "a ComputeModelBounds/ModelBoundsResult roundtrip, a ShowMap/ShowMapResult roundtrip, "
+            + "and a SetCameraMode roundtrip");
     }
 
     /** Mirrors the editor's half of the handshake: one connection, one Hello, one reply. */

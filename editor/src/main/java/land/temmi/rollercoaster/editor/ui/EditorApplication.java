@@ -22,7 +22,8 @@ public final class EditorApplication {
                 path -> previewProcess[0].computeModelBounds(path),
                 (mapFilePath, width, depth, tilesetManifestFilePath, modelManifestFilePath, spriteManifestFilePath) ->
                     previewProcess[0].showMap(mapFilePath, width, depth, tilesetManifestFilePath,
-                        modelManifestFilePath, spriteManifestFilePath));
+                        modelManifestFilePath, spriteManifestFilePath),
+                mode -> previewProcess[0].setCameraMode(mode));
             previewProcess[0] = new PreviewProcess(previewClasspath, frame[0]::onPreviewStatusChanged, frame[0]::onPick);
 
             frame[0].setVisible(true);

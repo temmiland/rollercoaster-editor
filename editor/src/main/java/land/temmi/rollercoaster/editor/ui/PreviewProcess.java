@@ -1,11 +1,13 @@
 package land.temmi.rollercoaster.editor.ui;
 
+import land.temmi.rollercoaster.editor.protocol.CameraMode;
 import land.temmi.rollercoaster.editor.protocol.ComputeModelBounds;
 import land.temmi.rollercoaster.editor.protocol.Hello;
 import land.temmi.rollercoaster.editor.protocol.HelloAck;
 import land.temmi.rollercoaster.editor.protocol.MessageChannel;
 import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
 import land.temmi.rollercoaster.editor.protocol.PickResult;
+import land.temmi.rollercoaster.editor.protocol.SetCameraMode;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
 import land.temmi.rollercoaster.editor.protocol.ShowMap;
 import land.temmi.rollercoaster.editor.protocol.ShowMapResult;
@@ -44,6 +46,7 @@ public final class PreviewProcess {
     private volatile CompletableFuture<ModelBoundsResult> pendingBoundsRequest;
     private volatile CompletableFuture<ShowMapResult> pendingShowMapRequest;
     private volatile ShowMap latestShowMap;
+    private volatile CameraMode cameraMode = CameraMode.FREE;
 
     public PreviewProcess(String previewClasspath, StatusListener listener, PickListener pickListener) {
         this.previewClasspath = previewClasspath;
@@ -62,6 +65,13 @@ public final class PreviewProcess {
             if (future != null) future.completeExceptionally(new IOException("Project closed"));
         }
         sendLevelState();
+    }
+
+    /** Switches between the free inspection camera and the game's own fixed-pitch follow camera. */
+    public synchronized void setCameraMode(CameraMode cameraMode) {
+        if (this.cameraMode == cameraMode) return;
+        this.cameraMode = cameraMode;
+        sendCameraMode();
     }
 
     /**
@@ -118,6 +128,16 @@ public final class PreviewProcess {
         if (current == null) return;
         try {
             current.send(levelOpen ? new ShowSampleLevel() : new ShowGenericScene());
+        } catch (IOException e) {
+            listener.onPreviewStatusChanged(Status.DISCONNECTED, e.getMessage());
+        }
+    }
+
+    private void sendCameraMode() {
+        MessageChannel current = channel;
+        if (current == null) return;
+        try {
+            current.send(new SetCameraMode(cameraMode));
         } catch (IOException e) {
             listener.onPreviewStatusChanged(Status.DISCONNECTED, e.getMessage());
         }
@@ -213,6 +233,7 @@ public final class PreviewProcess {
             channel = established;
             sendLevelState();
             sendLatestMap();
+            sendCameraMode();
             listener.onPreviewStatusChanged(Status.CONNECTED, null);
 
             Object incoming;
