@@ -81,7 +81,7 @@ public final class PreviewProcessSmokeTest {
                 new String[] {"grass", "grass", "grass", "grass"}, new float[] {0f, 0f, 0f, 0f},
                 new String[] {"flat", "flat", "flat", "flat"}, new boolean[] {false, false, false, false},
                 java.util.List.of(new MapExport.Prop("house", 1f, 1f, 0f, 0f)),
-                java.util.List.of(new MapExport.Entity("npc-1", "npc", "npc", 0, 0)),
+                java.util.List.of(new MapExport.Entity("player-start", "player", "npc", 0, 0)),
                 java.util.List.of(new MapExport.Light("lamp-1", 1f, 1.5f, 1f, 1f, 0.9f, 0.7f, 1f, 4f, true)),
                 java.util.List.of(new MapExport.Transition("to-cave", 0, 0, "cave", 1, 1)),
                 java.util.List.of(),
@@ -128,13 +128,30 @@ public final class PreviewProcessSmokeTest {
             Thread.sleep(200);
             watchingForDisconnect.set(false);
             System.out.println("Game camera mode rendered without disconnecting the preview");
+
+            // Exercises the test-mode actor's GridActor/TerrainRules/DirectionalSpriteAnimation
+            // update loop with a real GL context - the "player" entity above makes this map's
+            // ShowMap spawn a live, controllable actor instead of a no-op.
+            watchingForDisconnect.set(true);
+            process.setTestMode(true);
+            process.setCameraMode(land.temmi.rollercoaster.editor.protocol.CameraMode.GAME);
+            Thread.sleep(1000);
+            if (disconnectedAfterCameraSwitch.get()) {
+                throw new AssertionError("Preview disconnected after enabling test mode");
+            }
+            process.setTestMode(false);
+            process.setCameraMode(land.temmi.rollercoaster.editor.protocol.CameraMode.FREE);
+            Thread.sleep(200);
+            watchingForDisconnect.set(false);
+            System.out.println("Test mode's live actor updated without disconnecting the preview");
         } finally {
             process.stop();
         }
 
         System.out.println("PASS: preview computed real bounds for a sample GLTF file, rendered a real "
-            + "exported map through WorldSceneLoader/ChunkMesher, and rendered a frame through the game "
-            + "camera's LowResTarget/PixelCamera pipeline, all over the live protocol");
+            + "exported map through WorldSceneLoader/ChunkMesher, rendered a frame through the game "
+            + "camera's LowResTarget/PixelCamera pipeline, and updated a live test-mode actor through "
+            + "GridActor/TerrainRules, all over the live protocol");
         System.exit(0);
     }
 }

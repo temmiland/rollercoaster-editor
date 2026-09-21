@@ -8,6 +8,7 @@ import land.temmi.rollercoaster.editor.protocol.MessageChannel;
 import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
 import land.temmi.rollercoaster.editor.protocol.PickResult;
 import land.temmi.rollercoaster.editor.protocol.SetCameraMode;
+import land.temmi.rollercoaster.editor.protocol.SetTestMode;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
 import land.temmi.rollercoaster.editor.protocol.ShowMap;
 import land.temmi.rollercoaster.editor.protocol.ShowMapResult;
@@ -47,6 +48,7 @@ public final class PreviewProcess {
     private volatile CompletableFuture<ShowMapResult> pendingShowMapRequest;
     private volatile ShowMap latestShowMap;
     private volatile CameraMode cameraMode = CameraMode.FREE;
+    private volatile boolean testMode = false;
 
     public PreviewProcess(String previewClasspath, StatusListener listener, PickListener pickListener) {
         this.previewClasspath = previewClasspath;
@@ -72,6 +74,14 @@ public final class PreviewProcess {
         if (this.cameraMode == cameraMode) return;
         this.cameraMode = cameraMode;
         sendCameraMode();
+    }
+
+    /** Switches the current document map's "player" entity between its static spawn point and
+     * live, keyboard-controlled, collision-checked movement. */
+    public synchronized void setTestMode(boolean testMode) {
+        if (this.testMode == testMode) return;
+        this.testMode = testMode;
+        sendTestMode();
     }
 
     /**
@@ -138,6 +148,16 @@ public final class PreviewProcess {
         if (current == null) return;
         try {
             current.send(new SetCameraMode(cameraMode));
+        } catch (IOException e) {
+            listener.onPreviewStatusChanged(Status.DISCONNECTED, e.getMessage());
+        }
+    }
+
+    private void sendTestMode() {
+        MessageChannel current = channel;
+        if (current == null) return;
+        try {
+            current.send(new SetTestMode(testMode));
         } catch (IOException e) {
             listener.onPreviewStatusChanged(Status.DISCONNECTED, e.getMessage());
         }
@@ -234,6 +254,7 @@ public final class PreviewProcess {
             sendLevelState();
             sendLatestMap();
             sendCameraMode();
+            sendTestMode();
             listener.onPreviewStatusChanged(Status.CONNECTED, null);
 
             Object incoming;

@@ -8,6 +8,7 @@ import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.ButtonGroup;
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JRadioButtonMenuItem;
@@ -61,7 +62,8 @@ public final class EditorFrame extends JFrame {
                        RecentProjects recentProjects,
                        Function<String, CompletableFuture<ModelBoundsResult>> modelBoundsComputer,
                        MapPanel.PreviewMapRequester previewMapRequester,
-                       Consumer<CameraMode> onCameraModeChanged) {
+                       Consumer<CameraMode> onCameraModeChanged,
+                       Consumer<Boolean> onTestModeChanged) {
         super("Rollercoaster Editor");
         this.projectController = projectController;
         this.recentProjects = recentProjects;
@@ -80,7 +82,7 @@ public final class EditorFrame extends JFrame {
         });
 
         setLayout(new BorderLayout());
-        setJMenuBar(buildMenuBar(onRestartPreviewRequested, onCameraModeChanged));
+        setJMenuBar(buildMenuBar(onRestartPreviewRequested, onCameraModeChanged, onTestModeChanged));
         add(buildContent(), BorderLayout.CENTER);
         add(buildStatusBar(), BorderLayout.SOUTH);
 
@@ -88,7 +90,8 @@ public final class EditorFrame extends JFrame {
         setLocationRelativeTo(null);
     }
 
-    private JMenuBar buildMenuBar(Runnable onRestartPreviewRequested, Consumer<CameraMode> onCameraModeChanged) {
+    private JMenuBar buildMenuBar(Runnable onRestartPreviewRequested, Consumer<CameraMode> onCameraModeChanged,
+                                  Consumer<Boolean> onTestModeChanged) {
         int shortcutMask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
 
         JMenu fileMenu = new JMenu("Datei");
@@ -134,6 +137,10 @@ public final class EditorFrame extends JFrame {
         cameraModeGroup.add(gameCamera);
         previewMenu.add(freeCamera);
         previewMenu.add(gameCamera);
+        previewMenu.addSeparator();
+        JCheckBoxMenuItem testMode = new JCheckBoxMenuItem("Testmodus (Spielersteuerung)");
+        testMode.addActionListener(e -> onTestModeChanged.accept(testMode.isSelected()));
+        previewMenu.add(testMode);
 
         JMenuBar menuBar = new JMenuBar();
         menuBar.add(fileMenu);

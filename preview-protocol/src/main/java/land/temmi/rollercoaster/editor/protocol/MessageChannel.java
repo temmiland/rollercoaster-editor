@@ -37,6 +37,7 @@ public final class MessageChannel implements Closeable {
         json.addClassTag("showMap", ShowMap.class);
         json.addClassTag("showMapResult", ShowMapResult.class);
         json.addClassTag("setCameraMode", SetCameraMode.class);
+        json.addClassTag("setTestMode", SetTestMode.class);
         in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
         out = new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8);
     }

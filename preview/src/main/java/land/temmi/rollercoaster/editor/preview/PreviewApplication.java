@@ -29,10 +29,17 @@ import land.temmi.rollercoaster.editor.protocol.CameraMode;
 import land.temmi.rollercoaster.editor.protocol.ComputeModelBounds;
 import land.temmi.rollercoaster.editor.protocol.PickResult;
 import land.temmi.rollercoaster.editor.protocol.SetCameraMode;
+import land.temmi.rollercoaster.editor.protocol.SetTestMode;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
 import land.temmi.rollercoaster.editor.protocol.ShowMap;
 import land.temmi.rollercoaster.editor.protocol.ShowMapResult;
 import land.temmi.rollercoaster.editor.protocol.ShowSampleLevel;
+import land.temmi.rollercoaster.actor.DirectionalSpriteAnimation;
+import land.temmi.rollercoaster.actor.GridActor;
+import land.temmi.rollercoaster.input.CombinedInput;
+import land.temmi.rollercoaster.input.InputSource;
+import land.temmi.rollercoaster.input.KeyboardInput;
+import land.temmi.rollercoaster.input.TouchInput;
 import land.temmi.rollercoaster.render.DayNightCycle;
 import land.temmi.rollercoaster.render.LightingEnvironment;
 import land.temmi.rollercoaster.render.BillboardQuad;
@@ -43,6 +50,7 @@ import land.temmi.rollercoaster.render.PointLightSource;
 import land.temmi.rollercoaster.render.WorldShaderProvider;
 import land.temmi.rollercoaster.world.MapEntity;
 import land.temmi.rollercoaster.world.MapLight;
+import land.temmi.rollercoaster.world.TerrainRules;
 import land.temmi.rollercoaster.world.TerrainSurface;
 import land.temmi.rollercoaster.world.TileMap;
 import land.temmi.rollercoaster.world.TileSurface;
@@ -66,6 +74,8 @@ public final class PreviewApplication extends ApplicationAdapter {
     private static final float DOCUMENT_MAP_CAMERA_FAR = 200f;
     /** Mirrors example-game's own constant: the game camera frames one terrain level at this pixel height. */
     private static final float TERRAIN_LEVEL_PIXEL_HEIGHT = 48f;
+    /** Mirrors example-game's own player movement speed, in tiles per second. */
+    private static final float TEST_ACTOR_SPEED = 5f;
 
     private enum SceneMode { GENERIC, SAMPLE_LEVEL, DOCUMENT_MAP }
 
@@ -84,6 +94,16 @@ public final class PreviewApplication extends ApplicationAdapter {
     private SpriteBatch blitBatch;
     private CameraMode cameraMode = CameraMode.FREE;
     private final Vector3 followTarget = new Vector3();
+
+    /** Live, keyboard-controlled movement for the current document map's "player" entity - the
+     * same GridActor/TerrainRules the real game uses. Null when the current scene has none. */
+    private InputSource testInput;
+    private boolean testMode = false;
+    private GridActor testActor;
+    private DirectionalSpriteAnimation testActorAnimation;
+    private BillboardRenderer testActorSprite;
+    private int testSpawnX;
+    private int testSpawnZ;
 
     private Model genericModel;
     private final Array<ModelInstance> genericInstances = new Array<>();
@@ -124,6 +144,7 @@ public final class PreviewApplication extends ApplicationAdapter {
         pixelCamera = new PixelCamera();
         pixelCamera.resize(lowRes.getWidth(), lowRes.getHeight());
         blitBatch = new SpriteBatch();
+        testInput = new CombinedInput(new KeyboardInput(), new TouchInput());
 
         buildGenericModel();
         showGenericScene();
@@ -153,6 +174,19 @@ public final class PreviewApplication extends ApplicationAdapter {
         } else if (message instanceof SetCameraMode) {
             CameraMode mode = ((SetCameraMode) message).mode;
             Gdx.app.postRunnable(() -> cameraMode = mode);
+        } else if (message instanceof SetTestMode) {
+            boolean enabled = ((SetTestMode) message).enabled;
+            Gdx.app.postRunnable(() -> setTestMode(enabled));
+        }
+    }
+
+    /** Restarts at the authored spawn point every time, so repeated test runs are reproducible
+     * instead of resuming from wherever a previous run left the actor. */
+    private void setTestMode(boolean enabled) {
+        testMode = enabled;
+        if (testMode && testActor != null) {
+            testActor.setTile(testSpawnX, testSpawnZ);
+            followTarget.set(testActor.getPosition());
         }
     }
 
@@ -209,6 +243,11 @@ public final class PreviewApplication extends ApplicationAdapter {
         WorldScene nextScene = null;
         SpriteAtlas nextSpriteAtlas = null;
         Array<BillboardRenderer> nextSprites = new Array<>();
+        GridActor nextTestActor = null;
+        DirectionalSpriteAnimation nextTestActorAnimation = null;
+        BillboardRenderer nextTestActorSprite = null;
+        int nextTestSpawnX = 0;
+        int nextTestSpawnZ = 0;
         try {
             if (request.tilesetManifestFilePath == null) {
                 throw new IllegalArgumentException("Map preview requires an exported tileset manifest");
@@ -236,6 +275,19 @@ public final class PreviewApplication extends ApplicationAdapter {
                     sprite.setBottomPadding(definition.footOffset);
                     sprite.setPosition(entity.x - 0.5f, surface.heightAt(entity.x - 0.5f, entity.z - 0.5f), entity.z - 0.5f);
                     nextSprites.add(sprite);
+                    // The test-mode actor reuses this same BillboardRenderer instance - its
+                    // position/region just get driven live instead of staying at the spawn point,
+                    // so it never renders twice.
+                    if ("player".equals(entity.type)) {
+                        nextTestActorAnimation = new DirectionalSpriteAnimation(nextSpriteAtlas, definition);
+                        nextTestActor = new GridActor(nextScene.getMap().tiles.getWidth(),
+                            nextScene.getMap().tiles.getDepth(), TEST_ACTOR_SPEED);
+                        nextTestActor.setTileAccess(new TerrainRules(nextScene.getMap().tiles));
+                        nextTestActor.setTile(entity.x, entity.z);
+                        nextTestActorSprite = sprite;
+                        nextTestSpawnX = entity.x;
+                        nextTestSpawnZ = entity.z;
+                    }
                 }
             } else {
                 for (land.temmi.rollercoaster.world.MapEntity entity : nextScene.getMap().entities) {
@@ -265,6 +317,13 @@ public final class PreviewApplication extends ApplicationAdapter {
             cameraController.target.set(cx, 1f, cz);
             followTarget.set(findFollowTarget(nextScene.getMap().entities,
                 new TerrainSurface(nextScene.getMap().tiles), cx, cz));
+
+            testActor = nextTestActor;
+            testActorAnimation = nextTestActorAnimation;
+            testActorSprite = nextTestActorSprite;
+            testSpawnX = nextTestSpawnX;
+            testSpawnZ = nextTestSpawnZ;
+            if (testMode && testActor != null) followTarget.set(testActor.getPosition());
             return ShowMapResult.ok();
         } catch (RuntimeException e) {
             for (BillboardRenderer sprite : nextSprites) sprite.dispose();
@@ -327,12 +386,25 @@ public final class PreviewApplication extends ApplicationAdapter {
     public void render() {
         float delta = Gdx.graphics.getDeltaTime();
         dayNightCycle.update(delta);
+        if (testMode && testActor != null && sceneMode == SceneMode.DOCUMENT_MAP) updateTestActor(delta);
 
         if (cameraMode == CameraMode.GAME) {
             renderGameCamera();
         } else {
             renderFreeCamera();
         }
+    }
+
+    /** Same per-frame movement/animation/camera-follow sequence as example-game's own render
+     * loop - the actor is collision-checked against the real TerrainRules, not just cosmetic. */
+    private void updateTestActor(float delta) {
+        testActor.update(delta, testInput.pollMove());
+        testActorAnimation.setFacing(testActor.getFacing());
+        testActorAnimation.setMoving(testActor.isMoving());
+        testActorAnimation.update(delta);
+        testActorSprite.setRegion(testActorAnimation.getFrame());
+        testActorSprite.setPosition(testActor.getPosition());
+        followTarget.set(testActor.getPosition());
     }
 
     private void renderFreeCamera() {

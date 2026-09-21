@@ -23,7 +23,8 @@ public final class EditorApplication {
                 (mapFilePath, width, depth, tilesetManifestFilePath, modelManifestFilePath, spriteManifestFilePath) ->
                     previewProcess[0].showMap(mapFilePath, width, depth, tilesetManifestFilePath,
                         modelManifestFilePath, spriteManifestFilePath),
-                mode -> previewProcess[0].setCameraMode(mode));
+                mode -> previewProcess[0].setCameraMode(mode),
+                enabled -> previewProcess[0].setTestMode(enabled));
             previewProcess[0] = new PreviewProcess(previewClasspath, frame[0]::onPreviewStatusChanged, frame[0]::onPick);
 
             frame[0].setVisible(true);
