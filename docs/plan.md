@@ -1,8 +1,9 @@
 # Rollercoaster Editor — Umsetzungsplan
 
-Status: Projektkern, Karten, Modelle, Sprite-Atlanten und tile-gebundene Entities sind umgesetzt.
-Der Editor ist ein eigenes Repository neben `rollercoaster`, `example-game` und `trackside`.
-Trackside-Inhalte sind zunächst außerhalb des Arbeitsumfangs.
+Status: Phase 1-4 sind umgesetzt - Projektkern, Karten, Modelle, Sprite-Atlanten,
+tile-gebundene Entities mit Schemas, Lichter, Übergänge, Dialoge und Events. Phase 5
+(Testmodus) steht noch aus. Der Editor ist ein eigenes Repository neben `rollercoaster`,
+`example-game` und `trackside`. Trackside-Inhalte sind zunächst außerhalb des Arbeitsumfangs.
 
 ## Ziel und erster vollständiger Arbeitsablauf
 
@@ -433,8 +434,19 @@ Steilkanten und gesperrte Flächen verhalten sich genauso wie im exportierten Sp
   `ShowMap` lässt die zuvor sichtbare Beleuchtung unangetastet. **Sonnenverlauf und Umgebungslicht
   bleiben unautorisierbar** - die Engine wählt sie weiterhin aus einem festen `LightingSituation`-
   Tagesverlauf, nicht aus Kartendaten; das wäre eine eigene, größere Änderung.
-- Eigenschaften aus registrierten Entity-/Interaktionsschemas anzeigen; Referenzen auf
-  Zielkarte, Zielpunkt, Dialogknoten und Licht-ID prüfen.
+- [x] Eigenschaften aus registrierten Entity-/Interaktionsschemas anzeigen; Referenzen auf
+  Zielkarte, Dialogknoten, Licht- und andere Entity-IDs prüfen: `MapEntity` (Engine) trägt jetzt
+  ein freies `properties`-Feld (Schlüssel/Wert, beides Strings) - reine Daten, keine Laufzeitlogik,
+  genau wie bei Events. Die Registrierung eines Typs ist optional: Ein `type`, der zu keinem
+  registrierten `EntityTypeAsset` passt, verhält sich exakt wie vorher (Freitext, keine
+  Eigenschaften) - erst ein registrierter Typ verwandelt das Textfeld in ein geprüftes Formular.
+  Eigenschaftstypen: Text, Zahl, Wahrheitswert sowie Referenzen auf Karte, Dialog, Licht (auf
+  derselben Karte) und andere Entities (auf derselben Karte); Pflichtfelder und Referenzen werden
+  beim Platzieren und Bearbeiten geprüft, mit derselben Ladereihenfolge-Rücksicht wie bei Events.
+  Der Editor bekommt dafür einen "Entity-Typen"-Reiter zum Anlegen der Schemas; der
+  Entity-Platzierungsdialog zeigt bei einem passenden Typ automatisch das passende Formular.
+  "Zielpunkt" ist kein eigener Eigenschaftstyp - ein Schema-Autor bildet ihn bei Bedarf über zwei
+  Zahl-Eigenschaften ab, wie es Kartenwechsel-Aktionen intern auch tun.
 - Spielregeln bleiben in der Engine beziehungsweise im Spiel. Fehlende Runtime-Unterstützung
   für Trigger/NPCs ist eine explizite Abhängigkeit, kein scheinbar funktionsfähiges Editorfeld.
 
