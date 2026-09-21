@@ -29,10 +29,11 @@ public final class DocumentSmokeTest {
         verifyDialogueCommandsAndRoundtrip();
         verifyEventCommandsAndRoundtrip();
         verifyEntityTypeCommandsAndRoundtrip();
+        verifyProjectValidationCatchesDanglingReferences();
         System.out.println("PASS: undo/redo, dirty tracking after a branching edit, an atomic project.json "
             + "roundtrip across a moved directory, texture/tileset commands with referential integrity, "
             + "model import/export, map terrain painting, prop placement, map lighting, map transitions, "
-            + "dialogue trees, map events, and entity type schemas");
+            + "dialogue trees, map events, entity type schemas, and a bulk pre-export validation sweep");
     }
 
     private static void verifyUndoRedoAndDirtyTracking() {
@@ -982,6 +983,42 @@ public final class DocumentSmokeTest {
             if (!expected.getMessage().contains("999")) {
                 throw new AssertionError("Version mismatch error should name the offending version: " + expected.getMessage());
             }
+        }
+    }
+
+    /** PlaceTransitionCommand/PlaceEventCommand reject a dangling reference at placement time, but
+     * ProjectFile.load() calls the same low-level MapAsset.addTransition/addEvent without that
+     * check (cross-map references can't be checked mid-load - see ProjectValidation's javadoc).
+     * This exercises that exact gap directly, the same way a hand-edited project.json would. */
+    private static void verifyProjectValidationCatchesDanglingReferences() {
+        ProjectDocument document = new ProjectDocument("Prüfwelt");
+        CommandHistory history = new CommandHistory(document);
+        document.addTexture(new TextureAsset("grass", "grass.png"));
+        TilesetAsset tileset = new TilesetAsset("overworld");
+        tileset.addTile(new TileEntry("grass", "grass", true));
+        document.addTileset(tileset);
+        history.perform(new CreateMapCommand("valley", 4, 3, "overworld"));
+        MapAsset valley = document.findMap("valley");
+
+        if (!ProjectValidation.findProblems(document).isEmpty()) {
+            throw new AssertionError("A freshly created project should have no problems");
+        }
+
+        valley.addTransition(new MapTransitionAsset("to-nowhere", 1, 1, "unknown-map", 0, 0));
+        List<String> afterDanglingTransition = ProjectValidation.findProblems(document);
+        if (afterDanglingTransition.size() != 1 || !afterDanglingTransition.get(0).contains("to-nowhere")
+            || !afterDanglingTransition.get(0).contains("unknown-map")) {
+            throw new AssertionError("Expected one problem naming the dangling transition, got " + afterDanglingTransition);
+        }
+
+        List<EventActionAsset> actions = List.of(EventActionAsset.setFlag("greeted", "true"));
+        valley.addEvent(new GameEventAsset("greet", EventTriggerAsset.interaction("unknown-entity"), null, actions));
+        List<String> afterDanglingEvent = ProjectValidation.findProblems(document);
+        if (afterDanglingEvent.size() != 2) {
+            throw new AssertionError("Expected the transition and the event problem together, got " + afterDanglingEvent);
+        }
+        if (afterDanglingEvent.stream().noneMatch(p -> p.contains("greet") && p.contains("unknown-entity"))) {
+            throw new AssertionError("Expected a problem naming the dangling event trigger, got " + afterDanglingEvent);
         }
     }
 }
