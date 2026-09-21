@@ -455,8 +455,17 @@ Ein einfacher Übergang funktioniert in Vorschau und Export, sobald seine Runtim
 
 ### Phase 5 — Testmodus und belastbarer Export
 
-- Testmodus mit derselben World-, Bewegungs-, Kollisions- und Renderlogik wie im Example Game.
-- Testlauf arbeitet auf einer Kopie; Bewegung und Gameplay verändern das Quelldokument nicht.
+- [x] Testmodus mit derselben World-, Bewegungs-, Kollisions- und Renderlogik wie im Example Game:
+  Ein neuer `SetTestMode`-Schalter (Menü "Vorschau ▸ Testmodus") lässt die "player"-Entity der
+  aktuell gezeigten Dokumentkarte per `GridActor`/`TerrainRules`/`DirectionalSpriteAnimation`
+  bewegen - denselben Klassen, die auch `example-game` verwendet, mit identischer Geschwindigkeit
+  und Kollisionsprüfung. Orthogonal zur Kameraauswahl: Testmodus funktioniert mit freier Kamera
+  genauso wie mit der Spielkamera, die dann live folgt statt einer statischen Position. Mit echtem
+  GL-Kontext verifiziert. Jede Aktivierung setzt die Figur auf den authored Startpunkt zurück, für
+  reproduzierbare Testläufe.
+- [x] Testlauf arbeitet auf einer Kopie; Bewegung und Gameplay verändern das Quelldokument nicht:
+  Die Vorschau liest ausschließlich bereits exportierte Dateien und schreibt nie in `project.json`
+  - das gilt unverändert auch für den Testmodus, der rein auf der geladenen `WorldScene` operiert.
 - Event- und Dialogabläufe einzeln auslösen, Flags zurücksetzen und Tageszeit sowie Lichtzustände
   für reproduzierbare Tests vorgeben.
 - Diagnosen mit anklickbarer Map-Position beziehungsweise Asset-ID.
