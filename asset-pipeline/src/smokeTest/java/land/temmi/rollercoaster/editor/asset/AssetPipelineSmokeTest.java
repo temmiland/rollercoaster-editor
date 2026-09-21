@@ -39,10 +39,12 @@ public final class AssetPipelineSmokeTest {
         verifyMapExportRoundtrip();
         verifyMapExportWithPropsRoundtrip();
         verifyRejectsUnpaintedMap();
+        verifyDialogueManifestExportRoundtrip();
         System.out.println("PASS: tile packing and tileset export read back correctly "
             + "by the real TilesetManifest parser, model manifest export read back by the real "
-            + "ModelManifest parser, sprite export read back by the real SpriteManifest parser, map export read back by the real MapLoader parser, "
-            + "with clear errors for bad input");
+            + "ModelManifest parser, sprite export read back by the real SpriteManifest parser, map export "
+            + "(including events) read back by the real MapLoader parser, dialogue manifest export read back "
+            + "by the real DialogueManifest parser, with clear errors for bad input");
     }
 
     private static void verifyMapExportRoundtrip() throws IOException {
@@ -55,7 +57,7 @@ public final class AssetPipelineSmokeTest {
 
         Path directory = Files.createTempDirectory("trackside-editor-map");
         MapExport.write("valley", width, depth, "overworld", tiles, heights, shapes, collision,
-            List.of(), List.of(), List.of(), List.of(), directory);
+            List.of(), List.of(), List.of(), List.of(), List.of(), directory);
 
         Path mapFile = directory.resolve("valley.json");
         if (!Files.exists(mapFile)) throw new AssertionError("Map JSON was not written");
@@ -119,8 +121,14 @@ public final class AssetPipelineSmokeTest {
             new MapExport.Light("lamp-1", 8f, 1.5f, 10f, 1f, 0.9f, 0.7f, 1.2f, 5f, true),
             new MapExport.Light("spot-1", 3f, 3f, 3f, 1f, 1f, 1f, 1f, 6f, true, true, 0f, -1f, 0f, 20f, 35f));
         List<MapExport.Transition> transitions = List.of(new MapExport.Transition("to-cave", 0, 0, "cave", 2, 3));
+        List<MapExport.Event> events = List.of(new MapExport.Event("npc-1-greet",
+            new MapExport.EventTrigger("interaction", "player-start", 0, 0, null),
+            List.of(new MapExport.Condition("flag", "met-npc-1", "not_equals", "true")),
+            List.of(new MapExport.Action("start_dialogue", "npc-1-intro", null, 0, 0, null),
+                new MapExport.Action("set_flag", "met-npc-1", "true", 0, 0, null))));
         MapExport.write("withProps", 1, 1, "overworld", tiles, heights, shapes, collision, props,
-            List.of(new MapExport.Entity("player-start", "player", "player", 0, 0)), lights, transitions, directory);
+            List.of(new MapExport.Entity("player-start", "player", "player", 0, 0)), lights, transitions, events,
+            directory);
 
         Tileset tileset = new Tileset().add(new TileSurface("grass"));
         LoadedMap loaded = new MapLoader().load(
@@ -152,6 +160,58 @@ public final class AssetPipelineSmokeTest {
             || !"cave".equals(transition.targetMap) || transition.targetX != 2 || transition.targetZ != 3) {
             throw new AssertionError("Transition did not round-trip");
         }
+        if (loaded.events.size != 1) throw new AssertionError("Expected 1 event, got " + loaded.events.size);
+        land.temmi.rollercoaster.event.GameEvent event = loaded.events.first();
+        if (!"npc-1-greet".equals(event.id) || event.trigger.type != land.temmi.rollercoaster.event.EventTrigger.Type.INTERACTION
+            || !"player-start".equals(event.trigger.entityId)) {
+            throw new AssertionError("Event trigger did not round-trip");
+        }
+        if (event.conditions.size != 1 || event.conditions.first().comparison
+            != land.temmi.rollercoaster.event.Condition.Comparison.NOT_EQUALS) {
+            throw new AssertionError("Event condition did not round-trip");
+        }
+        if (event.actions.size != 2
+            || event.actions.get(0).type != land.temmi.rollercoaster.event.Action.Type.START_DIALOGUE
+            || !"npc-1-intro".equals(event.actions.get(0).targetId)
+            || event.actions.get(1).type != land.temmi.rollercoaster.event.Action.Type.SET_FLAG) {
+            throw new AssertionError("Event actions did not round-trip");
+        }
+    }
+
+    private static void verifyDialogueManifestExportRoundtrip() throws IOException {
+        List<DialogueManifestExport.Response> responses = List.of(
+            new DialogueManifestExport.Response("dialogue.greet.yes", "explain",
+                List.of(new DialogueManifestExport.Condition("flag", "met-npc-1", "not_equals", "true"))),
+            new DialogueManifestExport.Response("dialogue.greet.no", null, List.of()));
+        DialogueManifestExport.Node greet = new DialogueManifestExport.Node("greet", "npc-1", "dialogue.greet",
+            "npc1_face", responses);
+        DialogueManifestExport.Node explain = new DialogueManifestExport.Node("explain", "npc-1",
+            "dialogue.explain", null, List.of());
+        DialogueManifestExport.Entry intro = new DialogueManifestExport.Entry("npc-1-intro", "greet",
+            List.of(greet, explain));
+
+        Path directory = Files.createTempDirectory("trackside-editor-dialogues");
+        DialogueManifestExport.write(List.of(intro), directory);
+        Path manifestFile = directory.resolve(DialogueManifestExport.FILE_NAME);
+        if (!Files.exists(manifestFile)) throw new AssertionError("Dialogue manifest was not written");
+
+        land.temmi.rollercoaster.dialogue.DialogueManifest manifest =
+            land.temmi.rollercoaster.dialogue.DialogueManifest.load(new FileHandle(manifestFile.toFile()));
+        land.temmi.rollercoaster.dialogue.Dialogue loaded = manifest.dialogue("npc-1-intro");
+        if (!"greet".equals(loaded.startNodeId) || loaded.nodes.size != 2) {
+            throw new AssertionError("Dialogue did not round-trip");
+        }
+        land.temmi.rollercoaster.dialogue.DialogueNode loadedGreet = loaded.node("greet");
+        if (loadedGreet.responses.size != 2 || !"npc1_face".equals(loadedGreet.portrait)) {
+            throw new AssertionError("Dialogue node did not round-trip");
+        }
+        land.temmi.rollercoaster.dialogue.DialogueResponse yes = loadedGreet.responses.first();
+        if (!"explain".equals(yes.targetNodeId) || yes.conditions.size != 1) {
+            throw new AssertionError("Dialogue response did not round-trip");
+        }
+        if (loadedGreet.responses.get(1).targetNodeId != null) {
+            throw new AssertionError("A response with no target should end the dialogue");
+        }
     }
 
     private static void verifyRejectsUnpaintedMap() throws IOException {
@@ -162,7 +222,7 @@ public final class AssetPipelineSmokeTest {
         Path directory = Files.createTempDirectory("trackside-editor-map-empty");
         try {
             MapExport.write("empty", 2, 2, "overworld", tiles, heights, shapes, collision,
-                List.of(), List.of(), List.of(), List.of(), directory);
+                List.of(), List.of(), List.of(), List.of(), List.of(), directory);
             throw new AssertionError("Exporting a map with unpainted cells should fail");
         } catch (IllegalArgumentException expected) {
             // Expected.

@@ -1,5 +1,6 @@
 package land.temmi.rollercoaster.editor.ui;
 
+import land.temmi.rollercoaster.editor.asset.DialogueManifestExport;
 import land.temmi.rollercoaster.editor.asset.MapExport;
 import land.temmi.rollercoaster.editor.asset.ModelManifestExport;
 import land.temmi.rollercoaster.editor.asset.SpriteAtlasExport;
@@ -11,8 +12,15 @@ import land.temmi.rollercoaster.editor.asset.TileSource;
 import land.temmi.rollercoaster.editor.asset.TilesetExport;
 import land.temmi.rollercoaster.editor.document.AddTileCommand;
 import land.temmi.rollercoaster.editor.document.CommandHistory;
+import land.temmi.rollercoaster.editor.document.ConditionAsset;
 import land.temmi.rollercoaster.editor.document.CreateMapCommand;
 import land.temmi.rollercoaster.editor.document.CreateTilesetCommand;
+import land.temmi.rollercoaster.editor.document.DialogueAsset;
+import land.temmi.rollercoaster.editor.document.DialogueNodeAsset;
+import land.temmi.rollercoaster.editor.document.DialogueResponseAsset;
+import land.temmi.rollercoaster.editor.document.EventActionAsset;
+import land.temmi.rollercoaster.editor.document.EventTriggerAsset;
+import land.temmi.rollercoaster.editor.document.GameEventAsset;
 import land.temmi.rollercoaster.editor.document.ImportModelCommand;
 import land.temmi.rollercoaster.editor.document.ImportTextureCommand;
 import land.temmi.rollercoaster.editor.document.MapAsset;
@@ -21,6 +29,12 @@ import land.temmi.rollercoaster.editor.document.MapLightAsset;
 import land.temmi.rollercoaster.editor.document.MapProp;
 import land.temmi.rollercoaster.editor.document.MapTransitionAsset;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
+import land.temmi.rollercoaster.editor.document.PlaceEventCommand;
+import land.temmi.rollercoaster.editor.document.RegisterDialogueCommand;
+import land.temmi.rollercoaster.editor.document.RemoveDialogueCommand;
+import land.temmi.rollercoaster.editor.document.RemoveEventCommand;
+import land.temmi.rollercoaster.editor.document.UpdateDialogueCommand;
+import land.temmi.rollercoaster.editor.document.UpdateEventCommand;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
 import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
 import land.temmi.rollercoaster.editor.document.PaintTilesCommand;
@@ -553,9 +567,109 @@ public final class ProjectController {
             transitions.add(new MapExport.Transition(transition.instanceId, transition.x, transition.z,
                 transition.targetMapId, transition.targetX, transition.targetZ));
         }
+        List<MapExport.Event> events = new ArrayList<>();
+        for (GameEventAsset event : map.getEvents()) {
+            events.add(new MapExport.Event(event.instanceId, toExportTrigger(event.trigger),
+                toExportConditions(event.getConditions()), toExportActions(event.getActions())));
+        }
         MapExport.write(map.id, map.width, map.depth, map.tilesetId, tiles, heights, shapes, collision,
-            props, entities, lights, transitions, mapsDirectory());
+            props, entities, lights, transitions, events, mapsDirectory());
         return mapsDirectory().resolve(map.id + ".json");
+    }
+
+    private static MapExport.EventTrigger toExportTrigger(EventTriggerAsset trigger) {
+        return new MapExport.EventTrigger(trigger.type.name().toLowerCase(Locale.ROOT), trigger.entityId,
+            trigger.x, trigger.z, trigger.timeOfDay);
+    }
+
+    private static List<MapExport.Action> toExportActions(List<EventActionAsset> actions) {
+        List<MapExport.Action> exported = new ArrayList<>();
+        for (EventActionAsset action : actions) {
+            exported.add(new MapExport.Action(action.type.name().toLowerCase(Locale.ROOT), action.targetId,
+                action.value, action.x, action.z, action.targetMap));
+        }
+        return exported;
+    }
+
+    private static List<MapExport.Condition> toExportConditions(List<ConditionAsset> conditions) {
+        List<MapExport.Condition> exported = new ArrayList<>();
+        for (ConditionAsset condition : conditions) {
+            exported.add(new MapExport.Condition(condition.type.name().toLowerCase(Locale.ROOT), condition.key,
+                condition.comparison.name().toLowerCase(Locale.ROOT), condition.value));
+        }
+        return exported;
+    }
+
+    /** Writes dialogues.json for every registered dialogue tree. */
+    public Path exportDialogues() throws IOException {
+        requireOpen();
+        List<DialogueAsset> dialogues = history.getDocument().getDialogues();
+        if (dialogues.isEmpty()) throw new IOException("No dialogues to export");
+        List<DialogueManifestExport.Entry> entries = new ArrayList<>();
+        for (DialogueAsset dialogue : dialogues) {
+            List<DialogueManifestExport.Node> nodes = new ArrayList<>();
+            for (DialogueNodeAsset node : dialogue.getNodes()) {
+                List<DialogueManifestExport.Response> responses = new ArrayList<>();
+                for (DialogueResponseAsset response : node.getResponses()) {
+                    responses.add(new DialogueManifestExport.Response(response.textId, response.targetNodeId,
+                        toDialogueConditions(response.getConditions())));
+                }
+                nodes.add(new DialogueManifestExport.Node(node.id, node.speakerId, node.textId, node.portrait, responses));
+            }
+            entries.add(new DialogueManifestExport.Entry(dialogue.id, dialogue.startNodeId, nodes));
+        }
+        DialogueManifestExport.write(entries, catalogsDirectory());
+        return catalogsDirectory().resolve(DialogueManifestExport.FILE_NAME);
+    }
+
+    private static List<DialogueManifestExport.Condition> toDialogueConditions(List<ConditionAsset> conditions) {
+        List<DialogueManifestExport.Condition> exported = new ArrayList<>();
+        for (ConditionAsset condition : conditions) {
+            exported.add(new DialogueManifestExport.Condition(condition.type.name().toLowerCase(Locale.ROOT),
+                condition.key, condition.comparison.name().toLowerCase(Locale.ROOT), condition.value));
+        }
+        return exported;
+    }
+
+    public List<DialogueAsset> getDialogues() {
+        requireOpen();
+        return history.getDocument().getDialogues();
+    }
+
+    public void registerDialogue(DialogueAsset dialogue) {
+        requireOpen();
+        history.perform(new RegisterDialogueCommand(dialogue));
+        listener.onProjectChanged();
+    }
+
+    public void removeDialogue(DialogueAsset dialogue) {
+        requireOpen();
+        history.perform(new RemoveDialogueCommand(dialogue));
+        listener.onProjectChanged();
+    }
+
+    public void updateDialogue(DialogueAsset previous, DialogueAsset replacement) {
+        requireOpen();
+        history.perform(new UpdateDialogueCommand(previous, replacement));
+        listener.onProjectChanged();
+    }
+
+    public void placeEvent(String mapId, GameEventAsset event) {
+        requireOpen();
+        history.perform(new PlaceEventCommand(mapId, event));
+        listener.onProjectChanged();
+    }
+
+    public void removeEvent(String mapId, GameEventAsset event) {
+        requireOpen();
+        history.perform(new RemoveEventCommand(mapId, event));
+        listener.onProjectChanged();
+    }
+
+    public void updateEvent(String mapId, GameEventAsset previous, GameEventAsset replacement) {
+        requireOpen();
+        history.perform(new UpdateEventCommand(mapId, previous, replacement));
+        listener.onProjectChanged();
     }
 
     public void placeLight(String mapId, MapLightAsset light) {

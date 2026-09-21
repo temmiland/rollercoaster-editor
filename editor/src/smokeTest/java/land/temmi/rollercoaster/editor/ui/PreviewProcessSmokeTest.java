@@ -79,6 +79,7 @@ public final class PreviewProcessSmokeTest {
                 java.util.List.of(new MapExport.Entity("npc-1", "npc", "npc", 0, 0)),
                 java.util.List.of(new MapExport.Light("lamp-1", 1f, 1.5f, 1f, 1f, 0.9f, 0.7f, 1f, 4f, true)),
                 java.util.List.of(new MapExport.Transition("to-cave", 0, 0, "cave", 1, 1)),
+                java.util.List.of(),
                 mapDirectory);
             BufferedImage tile = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
             Graphics graphics = tile.getGraphics();

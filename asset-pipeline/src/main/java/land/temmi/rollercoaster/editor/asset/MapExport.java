@@ -117,6 +117,72 @@ public final class MapExport {
         }
     }
 
+    /** A condition gating an event or dialogue response. Type/comparison are the engine's lowercase enum names. */
+    public static final class Condition {
+        public final String type;
+        public final String key;
+        public final String comparison;
+        public final String value;
+
+        public Condition(String type, String key, String comparison, String value) {
+            this.type = type;
+            this.key = key;
+            this.comparison = comparison;
+            this.value = value;
+        }
+    }
+
+    /** A single effect an event can cause. Which fields matter depends on {@code type}. */
+    public static final class Action {
+        public final String type;
+        public final String targetId;
+        public final String value;
+        public final int x;
+        public final int z;
+        public final String targetMap;
+
+        public Action(String type, String targetId, String value, int x, int z, String targetMap) {
+            this.type = type;
+            this.targetId = targetId;
+            this.value = value;
+            this.x = x;
+            this.z = z;
+            this.targetMap = targetMap;
+        }
+    }
+
+    /** What starts an event. Which fields matter depends on {@code type}. */
+    public static final class EventTrigger {
+        public final String type;
+        public final String entityId;
+        public final int x;
+        public final int z;
+        public final String timeOfDay;
+
+        public EventTrigger(String type, String entityId, int x, int z, String timeOfDay) {
+            this.type = type;
+            this.entityId = entityId;
+            this.x = x;
+            this.z = z;
+            this.timeOfDay = timeOfDay;
+        }
+    }
+
+    /** A placed event: something that starts it, optional conditions, and the actions it causes. */
+    public static final class Event {
+        public final String id;
+        public final EventTrigger trigger;
+        public final List<Condition> conditions;
+        public final List<Action> actions;
+
+        public Event(String id, EventTrigger trigger, List<Condition> conditions, List<Action> actions) {
+            this.id = id;
+            this.trigger = trigger;
+            this.conditions = conditions;
+            this.actions = actions;
+        }
+    }
+
     /**
      * @param tiles per-cell tile type id, row-major (z outer, x inner); every cell must be filled
      * @param heights per-cell surface height at the tile centre, same layout as {@code tiles}
@@ -126,7 +192,7 @@ public final class MapExport {
     public static void write(String id, int width, int depth, String tilesetId,
                              String[] tiles, float[] heights, String[] shapes, boolean[] collision,
                              List<Prop> props, List<Entity> entities, List<Light> lights,
-                             List<Transition> transitions, Path mapsDirectory)
+                             List<Transition> transitions, List<Event> events, Path mapsDirectory)
         throws IOException {
         int cells = width * depth;
         if (tiles.length != cells || heights.length != cells || shapes.length != cells || collision.length != cells) {
@@ -143,7 +209,7 @@ public final class MapExport {
         Path temp = mapsDirectory.resolve(id + ".json.tmp");
         Files.writeString(temp,
             toJson(id, width, depth, tilesetId, tiles, heights, shapes, collision, props, entities, lights,
-                transitions),
+                transitions, events),
             StandardCharsets.UTF_8);
         Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
@@ -151,7 +217,7 @@ public final class MapExport {
     private static String toJson(String id, int width, int depth, String tilesetId,
                                  String[] tiles, float[] heights, String[] shapes, boolean[] collision,
                                  List<Prop> props, List<Entity> entities, List<Light> lights,
-                                 List<Transition> transitions)
+                                 List<Transition> transitions, List<Event> events)
         throws IOException {
         StringWriter buffer = new StringWriter();
         JsonWriter writer = new JsonWriter(buffer);
@@ -231,8 +297,58 @@ public final class MapExport {
             writer.pop();
         }
         writer.pop();
+        writer.array("events");
+        for (Event event : events) {
+            writer.object();
+            writer.set("id", event.id);
+            writeTrigger(writer, event.trigger);
+            writeConditions(writer, event.conditions);
+            writer.array("actions");
+            for (Action action : event.actions) writeAction(writer, action);
+            writer.pop();
+            writer.pop();
+        }
+        writer.pop();
         writer.pop();
         return buffer.toString();
+    }
+
+    private static void writeTrigger(JsonWriter writer, EventTrigger trigger) throws IOException {
+        writer.object("trigger");
+        writer.set("type", trigger.type);
+        if (trigger.entityId != null) writer.set("entityId", trigger.entityId);
+        if ("enter_area".equals(trigger.type)) {
+            writer.set("x", trigger.x);
+            writer.set("y", trigger.z);
+        }
+        if (trigger.timeOfDay != null) writer.set("timeOfDay", trigger.timeOfDay);
+        writer.pop();
+    }
+
+    private static void writeAction(JsonWriter writer, Action action) throws IOException {
+        writer.object();
+        writer.set("type", action.type);
+        if (action.targetId != null) writer.set("targetId", action.targetId);
+        if (action.value != null) writer.set("value", action.value);
+        if ("move_npc".equals(action.type) || "change_map".equals(action.type)) {
+            writer.set("x", action.x);
+            writer.set("y", action.z);
+        }
+        if (action.targetMap != null) writer.set("targetMap", action.targetMap);
+        writer.pop();
+    }
+
+    private static void writeConditions(JsonWriter writer, List<Condition> conditions) throws IOException {
+        writer.array("conditions");
+        for (Condition condition : conditions) {
+            writer.object();
+            writer.set("type", condition.type);
+            writer.set("key", condition.key);
+            writer.set("comparison", condition.comparison);
+            writer.set("value", condition.value);
+            writer.pop();
+        }
+        writer.pop();
     }
 
     private interface CellWriter {
