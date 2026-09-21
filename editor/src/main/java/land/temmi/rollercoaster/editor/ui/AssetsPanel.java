@@ -1,5 +1,9 @@
 package land.temmi.rollercoaster.editor.ui;
 
+import land.temmi.rollercoaster.editor.document.ConditionAsset;
+import land.temmi.rollercoaster.editor.document.DialogueAsset;
+import land.temmi.rollercoaster.editor.document.DialogueNodeAsset;
+import land.temmi.rollercoaster.editor.document.DialogueResponseAsset;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.SpriteAnimationAsset;
 import land.temmi.rollercoaster.editor.document.SpriteAsset;
@@ -13,6 +17,7 @@ import javax.swing.BorderFactory;
 import javax.swing.JCheckBox;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.ImageIcon;
 import javax.swing.JLabel;
@@ -60,6 +65,10 @@ final class AssetsPanel extends JPanel {
     private final JList<ModelAsset> modelList = new JList<>(modelListModel);
     private final DefaultListModel<SpriteAsset> spriteListModel = new DefaultListModel<>();
     private final JList<SpriteAsset> spriteList = new JList<>(spriteListModel);
+    private final DefaultListModel<DialogueAsset> dialogueListModel = new DefaultListModel<>();
+    private final JList<DialogueAsset> dialogueList = new JList<>(dialogueListModel);
+    private final DefaultListModel<DialogueNodeAsset> dialogueNodeListModel = new DefaultListModel<>();
+    private final JList<DialogueNodeAsset> dialogueNodeList = new JList<>(dialogueNodeListModel);
     private final Map<String, ImageIcon> textureThumbnails = new HashMap<>();
 
     AssetsPanel(ProjectController projectController,
@@ -79,12 +88,18 @@ final class AssetsPanel extends JPanel {
         spriteList.setCellRenderer(labelRenderer(sprite -> sprite.id + "  (" + sprite.fileName + ", "
             + sprite.columns + "x" + sprite.rows + ", H=" + sprite.worldHeight + ")"));
         tilesetList.addListSelectionListener(e -> refreshTiles());
+        dialogueList.setCellRenderer(labelRenderer(d -> d.id + "  (Start: " + d.startNodeId
+            + ", " + d.getNodes().size() + " Knoten)"));
+        dialogueNodeList.setCellRenderer(labelRenderer(n -> n.id + "  [" + n.speakerId + "] " + n.textId
+            + (n.getResponses().isEmpty() ? "" : "  (" + n.getResponses().size() + " Antwort(en))")));
+        dialogueList.addListSelectionListener(e -> refreshDialogueNodes());
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Texturen", buildTexturesTab());
         tabs.addTab("Tilesets", buildTilesetsTab());
         tabs.addTab("Modelle", buildModelsTab());
         tabs.addTab("Sprites", buildSpritesTab());
+        tabs.addTab("Dialoge", buildDialoguesTab());
         add(tabs, BorderLayout.CENTER);
     }
 
@@ -177,6 +192,47 @@ final class AssetsPanel extends JPanel {
         return panel;
     }
 
+    private JPanel buildDialoguesTab() {
+        JPanel panel = new JPanel(new BorderLayout());
+
+        JPanel dialoguesPanel = new JPanel(new BorderLayout());
+        dialoguesPanel.add(new JScrollPane(dialogueList), BorderLayout.CENTER);
+        JButton newDialogue = new JButton("Neu…");
+        newDialogue.addActionListener(e -> onCreateDialogue());
+        JButton removeDialogue = new JButton("Löschen");
+        removeDialogue.addActionListener(e -> onRemoveDialogue());
+        JButton exportDialogues = new JButton("Exportieren");
+        exportDialogues.addActionListener(e -> onExportDialogues());
+        JPanel dialogueButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        dialogueButtons.add(newDialogue);
+        dialogueButtons.add(removeDialogue);
+        dialogueButtons.add(exportDialogues);
+        dialoguesPanel.add(dialogueButtons, BorderLayout.SOUTH);
+
+        JPanel nodesPanel = new JPanel(new BorderLayout());
+        nodesPanel.setBorder(BorderFactory.createTitledBorder("Knoten"));
+        nodesPanel.add(new JScrollPane(dialogueNodeList), BorderLayout.CENTER);
+        JButton addNode = new JButton("Hinzufügen…");
+        addNode.addActionListener(e -> onAddDialogueNode());
+        JButton editNode = new JButton("Bearbeiten…");
+        editNode.addActionListener(e -> onEditDialogueNode());
+        JButton removeNode = new JButton("Entfernen");
+        removeNode.addActionListener(e -> onRemoveDialogueNode());
+        JButton setStartNode = new JButton("Als Start setzen");
+        setStartNode.addActionListener(e -> onSetDialogueStartNode());
+        JPanel nodeButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        nodeButtons.add(addNode);
+        nodeButtons.add(editNode);
+        nodeButtons.add(removeNode);
+        nodeButtons.add(setStartNode);
+        nodesPanel.add(nodeButtons, BorderLayout.SOUTH);
+
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, dialoguesPanel, nodesPanel);
+        split.setResizeWeight(0.4);
+        panel.add(split, BorderLayout.CENTER);
+        return panel;
+    }
+
     void refresh() {
         boolean open = projectController.isOpen();
         textureList.setEnabled(open);
@@ -184,10 +240,13 @@ final class AssetsPanel extends JPanel {
         tileList.setEnabled(open);
         modelList.setEnabled(open);
         spriteList.setEnabled(open);
+        dialogueList.setEnabled(open);
+        dialogueNodeList.setEnabled(open);
 
         TilesetAsset selectedTileset = tilesetList.getSelectedValue();
         ModelAsset selectedModel = modelList.getSelectedValue();
         SpriteAsset selectedSprite = spriteList.getSelectedValue();
+        DialogueAsset selectedDialogue = dialogueList.getSelectedValue();
 
         textureListModel.clear();
         if (open) projectController.getTextures().stream().sorted(Comparator.comparing(t -> t.id))
@@ -204,6 +263,10 @@ final class AssetsPanel extends JPanel {
         spriteListModel.clear();
         if (open) projectController.getSprites().stream().sorted(Comparator.comparing(sprite -> sprite.id))
             .forEach(spriteListModel::addElement);
+
+        dialogueListModel.clear();
+        if (open) projectController.getDialogues().stream().sorted(Comparator.comparing(d -> d.id))
+            .forEach(dialogueListModel::addElement);
 
         if (selectedTileset != null) {
             for (int i = 0; i < tilesetListModel.size(); i++) {
@@ -229,7 +292,16 @@ final class AssetsPanel extends JPanel {
                 }
             }
         }
+        if (selectedDialogue != null) {
+            for (int i = 0; i < dialogueListModel.size(); i++) {
+                if (dialogueListModel.get(i).id.equals(selectedDialogue.id)) {
+                    dialogueList.setSelectedIndex(i);
+                    break;
+                }
+            }
+        }
         refreshTiles();
+        refreshDialogueNodes();
     }
 
     private void refreshTiles() {
@@ -237,6 +309,12 @@ final class AssetsPanel extends JPanel {
         TilesetAsset selected = tilesetList.getSelectedValue();
         if (selected != null) selected.getTiles().stream().sorted(Comparator.comparing(t -> t.id))
             .forEach(tileListModel::addElement);
+    }
+
+    private void refreshDialogueNodes() {
+        dialogueNodeListModel.clear();
+        DialogueAsset selected = dialogueList.getSelectedValue();
+        if (selected != null) selected.getNodes().forEach(dialogueNodeListModel::addElement);
     }
 
     private void onImportTexture() {
@@ -594,6 +672,291 @@ final class AssetsPanel extends JPanel {
             JOptionPane.showMessageDialog(this, "Sprites exportiert.");
         } catch (IOException | IllegalArgumentException e) {
             showError("Sprites konnten nicht exportiert werden", e);
+        }
+    }
+
+    private void onCreateDialogue() {
+        if (!projectController.isOpen()) return;
+        String id = JOptionPane.showInputDialog(this, "Dialog-ID:", "Neuer Dialog", JOptionPane.PLAIN_MESSAGE);
+        if (id == null || id.trim().isEmpty()) return;
+        DialogueNodeAsset firstNode = askDialogueNodeSettings("Ersten Knoten anlegen", null, List.of());
+        if (firstNode == null) return;
+        try {
+            DialogueAsset dialogue = new DialogueAsset(id.trim(), firstNode.id, List.of(firstNode));
+            projectController.registerDialogue(dialogue);
+            refresh();
+            selectDialogue(dialogue.id);
+        } catch (IllegalArgumentException e) {
+            showError("Dialog konnte nicht angelegt werden", e);
+        }
+    }
+
+    private void onRemoveDialogue() {
+        DialogueAsset selected = dialogueList.getSelectedValue();
+        if (selected == null) return;
+        try {
+            projectController.removeDialogue(selected);
+            refresh();
+        } catch (IllegalArgumentException e) {
+            showError("Dialog kann nicht entfernt werden", e);
+        }
+    }
+
+    private void onExportDialogues() {
+        try {
+            projectController.exportDialogues();
+            JOptionPane.showMessageDialog(this, "Dialoge exportiert.");
+        } catch (IOException e) {
+            showError("Dialoge konnten nicht exportiert werden", e);
+        }
+    }
+
+    private void onAddDialogueNode() {
+        DialogueAsset dialogue = dialogueList.getSelectedValue();
+        if (dialogue == null) return;
+        List<String> existingIds = dialogue.getNodes().stream().map(n -> n.id).toList();
+        DialogueNodeAsset node = askDialogueNodeSettings("Knoten hinzufügen", null, existingIds);
+        if (node == null) return;
+        List<DialogueNodeAsset> nodes = new ArrayList<>(dialogue.getNodes());
+        nodes.add(node);
+        try {
+            DialogueAsset replacement = new DialogueAsset(dialogue.id, dialogue.startNodeId, nodes);
+            projectController.updateDialogue(dialogue, replacement);
+            refresh();
+            selectDialogue(dialogue.id);
+        } catch (IllegalArgumentException e) {
+            showError("Knoten konnte nicht hinzugefügt werden", e);
+        }
+    }
+
+    private void onEditDialogueNode() {
+        DialogueAsset dialogue = dialogueList.getSelectedValue();
+        DialogueNodeAsset node = dialogueNodeList.getSelectedValue();
+        if (dialogue == null || node == null) return;
+        List<String> otherIds = dialogue.getNodes().stream().map(n -> n.id)
+            .filter(id -> !id.equals(node.id)).toList();
+        DialogueNodeAsset edited = askDialogueNodeSettings("Knoten bearbeiten", node, otherIds);
+        if (edited == null) return;
+        List<DialogueNodeAsset> nodes = new ArrayList<>();
+        for (DialogueNodeAsset existing : dialogue.getNodes()) {
+            nodes.add(existing.id.equals(node.id) ? edited : existing);
+        }
+        try {
+            DialogueAsset replacement = new DialogueAsset(dialogue.id, dialogue.startNodeId, nodes);
+            projectController.updateDialogue(dialogue, replacement);
+            refresh();
+            selectDialogue(dialogue.id);
+        } catch (IllegalArgumentException e) {
+            showError("Knoten konnte nicht bearbeitet werden", e);
+        }
+    }
+
+    private void onRemoveDialogueNode() {
+        DialogueAsset dialogue = dialogueList.getSelectedValue();
+        DialogueNodeAsset node = dialogueNodeList.getSelectedValue();
+        if (dialogue == null || node == null) return;
+        List<DialogueNodeAsset> nodes = new ArrayList<>(dialogue.getNodes());
+        nodes.removeIf(n -> n.id.equals(node.id));
+        try {
+            DialogueAsset replacement = new DialogueAsset(dialogue.id, dialogue.startNodeId, nodes);
+            projectController.updateDialogue(dialogue, replacement);
+            refresh();
+            selectDialogue(dialogue.id);
+        } catch (IllegalArgumentException e) {
+            showError("Knoten kann nicht entfernt werden", e);
+        }
+    }
+
+    private void onSetDialogueStartNode() {
+        DialogueAsset dialogue = dialogueList.getSelectedValue();
+        DialogueNodeAsset node = dialogueNodeList.getSelectedValue();
+        if (dialogue == null || node == null) return;
+        try {
+            DialogueAsset replacement = new DialogueAsset(dialogue.id, node.id, dialogue.getNodes());
+            projectController.updateDialogue(dialogue, replacement);
+            refresh();
+            selectDialogue(dialogue.id);
+        } catch (IllegalArgumentException e) {
+            showError("Startknoten konnte nicht gesetzt werden", e);
+        }
+    }
+
+    private void selectDialogue(String id) {
+        for (int i = 0; i < dialogueListModel.size(); i++) {
+            if (dialogueListModel.get(i).id.equals(id)) {
+                dialogueList.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
+    /**
+     * A response may target this node itself (a loop) as well as any of its siblings, so the ID
+     * field - fixed for an edit, freshly typed for a new node - is folded into the target list too.
+     */
+    private DialogueNodeAsset askDialogueNodeSettings(String title, DialogueNodeAsset existing, List<String> otherNodeIds) {
+        JTextField idField = new JTextField(existing != null ? existing.id : "", 16);
+        idField.setEditable(existing == null);
+        JTextField speakerField = new JTextField(existing != null ? existing.speakerId : "", 16);
+        JTextField textIdField = new JTextField(existing != null ? existing.textId : "", 20);
+        JTextField portraitField = new JTextField(
+            existing != null && existing.portrait != null ? existing.portrait : "", 16);
+
+        JPanel fieldsForm = new JPanel(new GridLayout(0, 2, 6, 6));
+        fieldsForm.add(new JLabel("Knoten-ID:"));
+        fieldsForm.add(idField);
+        fieldsForm.add(new JLabel("Sprecher-ID:"));
+        fieldsForm.add(speakerField);
+        fieldsForm.add(new JLabel("Text-ID:"));
+        fieldsForm.add(textIdField);
+        fieldsForm.add(new JLabel("Porträt (optional):"));
+        fieldsForm.add(portraitField);
+
+        DefaultListModel<DialogueResponseAsset> responsesModel = new DefaultListModel<>();
+        if (existing != null) existing.getResponses().forEach(responsesModel::addElement);
+        JList<DialogueResponseAsset> responsesList = new JList<>(responsesModel);
+        responsesList.setCellRenderer(labelRenderer(
+            r -> r.textId + (r.targetNodeId == null ? "  (Ende)" : "  -> " + r.targetNodeId)));
+        JButton addResponse = new JButton("Hinzufügen…");
+        addResponse.addActionListener(e -> {
+            DialogueResponseAsset response = askDialogueResponseSettings("Antwort hinzufügen", null,
+                availableTargets(idField, otherNodeIds));
+            if (response != null) responsesModel.addElement(response);
+        });
+        JButton editResponse = new JButton("Bearbeiten…");
+        editResponse.addActionListener(e -> {
+            int index = responsesList.getSelectedIndex();
+            if (index < 0) return;
+            DialogueResponseAsset response = askDialogueResponseSettings("Antwort bearbeiten",
+                responsesModel.get(index), availableTargets(idField, otherNodeIds));
+            if (response != null) responsesModel.set(index, response);
+        });
+        JButton removeResponse = new JButton("Löschen");
+        removeResponse.addActionListener(e -> {
+            int index = responsesList.getSelectedIndex();
+            if (index >= 0) responsesModel.remove(index);
+        });
+        JPanel responseButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        responseButtons.add(addResponse);
+        responseButtons.add(editResponse);
+        responseButtons.add(removeResponse);
+        JPanel responsesPanel = new JPanel(new BorderLayout());
+        responsesPanel.setBorder(BorderFactory.createTitledBorder("Antworten (leer = Text endet automatisch)"));
+        responsesPanel.add(new JScrollPane(responsesList), BorderLayout.CENTER);
+        responsesPanel.add(responseButtons, BorderLayout.SOUTH);
+        responsesPanel.setPreferredSize(new java.awt.Dimension(360, 120));
+
+        JPanel form = new JPanel();
+        form.setLayout(new javax.swing.BoxLayout(form, javax.swing.BoxLayout.Y_AXIS));
+        form.add(fieldsForm);
+        form.add(responsesPanel);
+
+        while (true) {
+            if (JOptionPane.showConfirmDialog(this, form, title, JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return null;
+            String id = idField.getText().trim();
+            String speaker = speakerField.getText().trim();
+            String textId = textIdField.getText().trim();
+            String portrait = portraitField.getText().trim();
+            List<DialogueResponseAsset> responses = java.util.Collections.list(responsesModel.elements());
+            try {
+                return new DialogueNodeAsset(id, speaker, textId, portrait.isEmpty() ? null : portrait, responses);
+            } catch (IllegalArgumentException e) {
+                showError("Knoten ist ungültig", e);
+            }
+        }
+    }
+
+    private static List<String> availableTargets(JTextField idField, List<String> otherNodeIds) {
+        List<String> targets = new ArrayList<>(otherNodeIds);
+        String currentId = idField.getText().trim();
+        if (!currentId.isEmpty() && !targets.contains(currentId)) targets.add(currentId);
+        return targets;
+    }
+
+    private DialogueResponseAsset askDialogueResponseSettings(String title, DialogueResponseAsset existing,
+                                                               List<String> availableNodeIds) {
+        JTextField textIdField = new JTextField(existing != null ? existing.textId : "", 20);
+        String[] targets = new String[availableNodeIds.size() + 1];
+        targets[0] = "(Ende)";
+        for (int i = 0; i < availableNodeIds.size(); i++) targets[i + 1] = availableNodeIds.get(i);
+        JComboBox<String> targetCombo = new JComboBox<>(targets);
+        if (existing != null && existing.targetNodeId != null) targetCombo.setSelectedItem(existing.targetNodeId);
+
+        DefaultListModel<ConditionAsset> conditionsModel = new DefaultListModel<>();
+        if (existing != null) existing.getConditions().forEach(conditionsModel::addElement);
+        JList<ConditionAsset> conditionsList = new JList<>(conditionsModel);
+        conditionsList.setCellRenderer(labelRenderer(
+            c -> c.type + " " + c.key + " " + c.comparison + " " + c.value));
+        JButton addCondition = new JButton("Hinzufügen…");
+        addCondition.addActionListener(e -> {
+            ConditionAsset condition = askConditionSettings("Bedingung hinzufügen", null);
+            if (condition != null) conditionsModel.addElement(condition);
+        });
+        JButton removeCondition = new JButton("Löschen");
+        removeCondition.addActionListener(e -> {
+            int index = conditionsList.getSelectedIndex();
+            if (index >= 0) conditionsModel.remove(index);
+        });
+        JPanel conditionButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        conditionButtons.add(addCondition);
+        conditionButtons.add(removeCondition);
+        JPanel conditionsPanel = new JPanel(new BorderLayout());
+        conditionsPanel.setBorder(BorderFactory.createTitledBorder("Bedingungen"));
+        conditionsPanel.add(new JScrollPane(conditionsList), BorderLayout.CENTER);
+        conditionsPanel.add(conditionButtons, BorderLayout.SOUTH);
+        conditionsPanel.setPreferredSize(new java.awt.Dimension(320, 90));
+
+        JPanel fieldsForm = new JPanel(new GridLayout(0, 2, 6, 6));
+        fieldsForm.add(new JLabel("Text-ID:"));
+        fieldsForm.add(textIdField);
+        fieldsForm.add(new JLabel("Ziel-Knoten:"));
+        fieldsForm.add(targetCombo);
+
+        JPanel form = new JPanel();
+        form.setLayout(new javax.swing.BoxLayout(form, javax.swing.BoxLayout.Y_AXIS));
+        form.add(fieldsForm);
+        form.add(conditionsPanel);
+
+        while (true) {
+            if (JOptionPane.showConfirmDialog(this, form, title, JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return null;
+            String textId = textIdField.getText().trim();
+            String target = (String) targetCombo.getSelectedItem();
+            List<ConditionAsset> conditions = java.util.Collections.list(conditionsModel.elements());
+            try {
+                return new DialogueResponseAsset(textId, "(Ende)".equals(target) ? null : target, conditions);
+            } catch (IllegalArgumentException e) {
+                showError("Antwort ist ungültig", e);
+            }
+        }
+    }
+
+    private ConditionAsset askConditionSettings(String title, ConditionAsset existing) {
+        JComboBox<ConditionAsset.Type> type = new JComboBox<>(ConditionAsset.Type.values());
+        if (existing != null) type.setSelectedItem(existing.type);
+        JTextField key = new JTextField(existing != null ? existing.key : "", 16);
+        JComboBox<ConditionAsset.Comparison> comparison = new JComboBox<>(ConditionAsset.Comparison.values());
+        if (existing != null) comparison.setSelectedItem(existing.comparison);
+        JTextField value = new JTextField(existing != null ? existing.value : "", 12);
+        JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
+        form.add(new JLabel("Typ:"));
+        form.add(type);
+        form.add(new JLabel("Schlüssel:"));
+        form.add(key);
+        form.add(new JLabel("Vergleich:"));
+        form.add(comparison);
+        form.add(new JLabel("Wert:"));
+        form.add(value);
+        while (true) {
+            if (JOptionPane.showConfirmDialog(this, form, title, JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return null;
+            try {
+                return new ConditionAsset((ConditionAsset.Type) type.getSelectedItem(), key.getText().trim(),
+                    (ConditionAsset.Comparison) comparison.getSelectedItem(), value.getText().trim());
+            } catch (IllegalArgumentException e) {
+                showError("Bedingung ist ungültig", e);
+            }
         }
     }
 
