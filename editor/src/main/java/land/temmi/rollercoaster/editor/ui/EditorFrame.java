@@ -63,12 +63,31 @@ public final class EditorFrame extends JFrame {
                        Function<String, CompletableFuture<ModelBoundsResult>> modelBoundsComputer,
                        MapPanel.PreviewMapRequester previewMapRequester,
                        Consumer<CameraMode> onCameraModeChanged,
-                       Consumer<Boolean> onTestModeChanged) {
+                       Consumer<Boolean> onTestModeChanged,
+                       Consumer<String> onTriggerEvent,
+                       Runnable onResetFlags,
+                       Consumer<Float> onSetTimeOfDay) {
         super("Rollercoaster Editor");
         this.projectController = projectController;
         this.recentProjects = recentProjects;
         this.assetsPanel = new AssetsPanel(projectController, modelBoundsComputer);
-        this.mapPanel = new MapPanel(projectController, previewMapRequester);
+        this.mapPanel = new MapPanel(projectController, previewMapRequester,
+            new MapPanel.TestModeController() {
+                @Override
+                public void triggerEvent(String eventInstanceId) {
+                    onTriggerEvent.accept(eventInstanceId);
+                }
+
+                @Override
+                public void resetFlags() {
+                    onResetFlags.run();
+                }
+
+                @Override
+                public void setTimeOfDay(float hours) {
+                    onSetTimeOfDay.accept(hours);
+                }
+            });
 
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
@@ -357,6 +376,11 @@ public final class EditorFrame extends JFrame {
     public void onPick(float worldX, float worldY, float worldZ) {
         SwingUtilities.invokeLater(() -> diagnostics.append(LocalTime.now().format(TIMESTAMP)
             + String.format(Locale.ROOT, "  Pick: (%.2f, %.2f, %.2f)%n", worldX, worldY, worldZ)));
+    }
+
+    public void onEventLog(String message) {
+        SwingUtilities.invokeLater(() -> diagnostics.append(LocalTime.now().format(TIMESTAMP)
+            + "  " + message + "\n"));
     }
 
     public void onPreviewStatusChanged(PreviewProcess.Status status, String detail) {

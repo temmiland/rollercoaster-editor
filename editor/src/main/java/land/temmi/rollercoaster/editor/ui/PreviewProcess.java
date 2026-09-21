@@ -2,17 +2,21 @@ package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.protocol.CameraMode;
 import land.temmi.rollercoaster.editor.protocol.ComputeModelBounds;
+import land.temmi.rollercoaster.editor.protocol.EventLogEntry;
 import land.temmi.rollercoaster.editor.protocol.Hello;
 import land.temmi.rollercoaster.editor.protocol.HelloAck;
 import land.temmi.rollercoaster.editor.protocol.MessageChannel;
 import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
 import land.temmi.rollercoaster.editor.protocol.PickResult;
+import land.temmi.rollercoaster.editor.protocol.ResetFlags;
 import land.temmi.rollercoaster.editor.protocol.SetCameraMode;
 import land.temmi.rollercoaster.editor.protocol.SetTestMode;
+import land.temmi.rollercoaster.editor.protocol.SetTimeOfDay;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
 import land.temmi.rollercoaster.editor.protocol.ShowMap;
 import land.temmi.rollercoaster.editor.protocol.ShowMapResult;
 import land.temmi.rollercoaster.editor.protocol.ShowSampleLevel;
+import land.temmi.rollercoaster.editor.protocol.TriggerEvent;
 
 import java.io.File;
 import java.io.IOException;
@@ -36,9 +40,14 @@ public final class PreviewProcess {
         void onPick(float worldX, float worldY, float worldZ);
     }
 
+    public interface EventLogListener {
+        void onEventLog(String message);
+    }
+
     private final String previewClasspath;
     private final StatusListener listener;
     private final PickListener pickListener;
+    private final EventLogListener eventLogListener;
 
     private Process process;
     private ServerSocket serverSocket;
@@ -50,10 +59,12 @@ public final class PreviewProcess {
     private volatile CameraMode cameraMode = CameraMode.FREE;
     private volatile boolean testMode = false;
 
-    public PreviewProcess(String previewClasspath, StatusListener listener, PickListener pickListener) {
+    public PreviewProcess(String previewClasspath, StatusListener listener, PickListener pickListener,
+                          EventLogListener eventLogListener) {
         this.previewClasspath = previewClasspath;
         this.listener = listener;
         this.pickListener = pickListener;
+        this.eventLogListener = eventLogListener;
     }
 
     /** Tells the preview whether to show the open project or its generic default scene. */
@@ -84,6 +95,40 @@ public final class PreviewProcess {
         sendTestMode();
     }
 
+    /** Runs one placed event's conditions and actions in the preview right now, regardless of its
+     * authored trigger - a manual test hook. No-op when the preview isn't connected. */
+    public void triggerEvent(String eventInstanceId) {
+        MessageChannel current = channel;
+        if (current == null) return;
+        try {
+            current.send(new TriggerEvent(eventInstanceId));
+        } catch (IOException e) {
+            listener.onPreviewStatusChanged(Status.DISCONNECTED, e.getMessage());
+        }
+    }
+
+    /** Clears the preview's test GameState flags and variables, for a reproducible clean slate. */
+    public void resetFlags() {
+        MessageChannel current = channel;
+        if (current == null) return;
+        try {
+            current.send(new ResetFlags());
+        } catch (IOException e) {
+            listener.onPreviewStatusChanged(Status.DISCONNECTED, e.getMessage());
+        }
+    }
+
+    /** Pins the preview's day/night clock to a specific hour, for a reproducible lighting situation. */
+    public void setTimeOfDay(float hours) {
+        MessageChannel current = channel;
+        if (current == null) return;
+        try {
+            current.send(new SetTimeOfDay(hours));
+        } catch (IOException e) {
+            listener.onPreviewStatusChanged(Status.DISCONNECTED, e.getMessage());
+        }
+    }
+
     /**
      * Asks the preview to load a GLTF/GLB file and report its bounds - the editor's Swing process
      * has no GL context, so it cannot build the Model/Mesh needed to compute this itself. Only one
@@ -109,10 +154,10 @@ public final class PreviewProcess {
     /** Asks the preview to render an already-exported map file, replacing whatever it currently shows. */
     public CompletableFuture<ShowMapResult> showMap(String mapFilePath, int width, int depth,
                                                     String tilesetManifestFilePath, String modelManifestFilePath,
-                                                    String spriteManifestFilePath) {
+                                                    String spriteManifestFilePath, String dialogueManifestFilePath) {
         CompletableFuture<ShowMapResult> future = new CompletableFuture<>();
         ShowMap request = new ShowMap(mapFilePath, width, depth, tilesetManifestFilePath,
-            modelManifestFilePath, spriteManifestFilePath);
+            modelManifestFilePath, spriteManifestFilePath, dialogueManifestFilePath);
         latestShowMap = request;
         MessageChannel current = channel;
         if (current == null) {
@@ -270,6 +315,8 @@ public final class PreviewProcess {
                     CompletableFuture<ShowMapResult> future = pendingShowMapRequest;
                     pendingShowMapRequest = null;
                     if (future != null) future.complete((ShowMapResult) incoming);
+                } else if (incoming instanceof EventLogEntry) {
+                    eventLogListener.onEventLog(((EventLogEntry) incoming).message);
                 }
             }
             listener.onPreviewStatusChanged(Status.DISCONNECTED, "Preview closed the connection");

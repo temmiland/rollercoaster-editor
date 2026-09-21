@@ -20,12 +20,17 @@ public final class EditorApplication {
 
             frame[0] = new EditorFrame(() -> previewProcess[0].restart(), projectController[0], recentProjects,
                 path -> previewProcess[0].computeModelBounds(path),
-                (mapFilePath, width, depth, tilesetManifestFilePath, modelManifestFilePath, spriteManifestFilePath) ->
+                (mapFilePath, width, depth, tilesetManifestFilePath, modelManifestFilePath, spriteManifestFilePath,
+                 dialogueManifestFilePath) ->
                     previewProcess[0].showMap(mapFilePath, width, depth, tilesetManifestFilePath,
-                        modelManifestFilePath, spriteManifestFilePath),
+                        modelManifestFilePath, spriteManifestFilePath, dialogueManifestFilePath),
                 mode -> previewProcess[0].setCameraMode(mode),
-                enabled -> previewProcess[0].setTestMode(enabled));
-            previewProcess[0] = new PreviewProcess(previewClasspath, frame[0]::onPreviewStatusChanged, frame[0]::onPick);
+                enabled -> previewProcess[0].setTestMode(enabled),
+                eventInstanceId -> previewProcess[0].triggerEvent(eventInstanceId),
+                () -> previewProcess[0].resetFlags(),
+                hours -> previewProcess[0].setTimeOfDay(hours));
+            previewProcess[0] = new PreviewProcess(previewClasspath, frame[0]::onPreviewStatusChanged, frame[0]::onPick,
+                frame[0]::onEventLog);
 
             frame[0].setVisible(true);
             frame[0].refreshProjectUi();

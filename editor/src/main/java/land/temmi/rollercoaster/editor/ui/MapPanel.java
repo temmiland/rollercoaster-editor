@@ -64,11 +64,21 @@ final class MapPanel extends JPanel {
     interface PreviewMapRequester {
         CompletableFuture<ShowMapResult> showMap(String mapFilePath, int width, int depth,
                                                  String tilesetManifestFilePath, String modelManifestFilePath,
-                                                 String spriteManifestFilePath);
+                                                 String spriteManifestFilePath, String dialogueManifestFilePath);
+    }
+
+    /** Manual test-mode hooks: fire-and-forget, like PreviewProcess's own camera/test-mode setters. */
+    interface TestModeController {
+        void triggerEvent(String eventInstanceId);
+
+        void resetFlags();
+
+        void setTimeOfDay(float hours);
     }
 
     private final ProjectController projectController;
     private final PreviewMapRequester previewMapRequester;
+    private final TestModeController testModeController;
     private final DefaultListModel<MapAsset> mapListModel = new DefaultListModel<>();
     private final JList<MapAsset> mapList = new JList<>(mapListModel);
     private final DefaultListModel<TileEntry> paletteListModel = new DefaultListModel<>();
@@ -113,10 +123,12 @@ final class MapPanel extends JPanel {
     private String queuedPreviewMapId;
     private boolean queuedPreviewReportsErrors;
 
-    MapPanel(ProjectController projectController, PreviewMapRequester previewMapRequester) {
+    MapPanel(ProjectController projectController, PreviewMapRequester previewMapRequester,
+            TestModeController testModeController) {
         super(new BorderLayout());
         this.projectController = projectController;
         this.previewMapRequester = previewMapRequester;
+        this.testModeController = testModeController;
         setBorder(BorderFactory.createTitledBorder("Karte"));
 
         canvas = buildCanvas();
@@ -399,11 +411,15 @@ final class MapPanel extends JPanel {
         removeEvent.addActionListener(e -> onRemoveEvent());
         JButton editEvent = new JButton("Bearbeiten…");
         editEvent.addActionListener(e -> onEditEvent());
+        JButton triggerEvent = new JButton("Auslösen");
+        triggerEvent.addActionListener(e -> onTriggerEvent());
         JPanel eventButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
         eventButtons.add(addEvent);
         eventButtons.add(editEvent);
         eventButtons.add(removeEvent);
+        eventButtons.add(triggerEvent);
         eventsPanel.add(eventButtons, BorderLayout.SOUTH);
+        eventsPanel.add(buildTestModePanel(), BorderLayout.NORTH);
 
         JSplitPane transitionsAndEvents = new JSplitPane(JSplitPane.VERTICAL_SPLIT, transitionsPanel, eventsPanel);
         transitionsAndEvents.setResizeWeight(0.5);
@@ -692,6 +708,29 @@ final class MapPanel extends JPanel {
         } catch (IllegalArgumentException e) {
             showError("Ereignis konnte nicht bearbeitet werden", e);
         }
+    }
+
+    /** Manual test hook: runs the selected event's conditions/actions in the preview right now,
+     * regardless of its authored trigger - independent of whether the preview is even connected. */
+    private void onTriggerEvent() {
+        GameEventAsset event = placedEventsList.getSelectedValue();
+        if (event == null) return;
+        testModeController.triggerEvent(event.instanceId);
+    }
+
+    private JPanel buildTestModePanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JButton resetFlags = new JButton("Flags zurücksetzen");
+        resetFlags.addActionListener(e -> testModeController.resetFlags());
+        panel.add(resetFlags);
+
+        panel.add(new JLabel("Tageszeit:"));
+        JSpinner timeOfDay = new JSpinner(new SpinnerNumberModel(12.0, 0.0, 23.5, 0.5));
+        panel.add(timeOfDay);
+        JButton applyTime = new JButton("Übernehmen");
+        applyTime.addActionListener(e -> testModeController.setTimeOfDay(((Number) timeOfDay.getValue()).floatValue()));
+        panel.add(applyTime);
+        return panel;
     }
 
     private void onEditProp() {
@@ -1348,6 +1387,7 @@ final class MapPanel extends JPanel {
         Path mapFile;
         Path modelManifestFile = null;
         Path spriteManifestFile = null;
+        Path dialogueManifestFile = null;
         Path tilesetManifestFile;
         try {
             mapFile = projectController.exportMap(selected.id);
@@ -1356,6 +1396,7 @@ final class MapPanel extends JPanel {
             if (selected.getEntities().stream().anyMatch(entity -> entity.spriteId != null)) {
                 spriteManifestFile = projectController.exportSprites();
             }
+            if (!projectController.getDialogues().isEmpty()) dialogueManifestFile = projectController.exportDialogues();
         } catch (IOException e) {
             if (reportErrors) showError("Karten-Assets konnten nicht exportiert werden", e);
             startQueuedPreview();
@@ -1365,7 +1406,8 @@ final class MapPanel extends JPanel {
         previewMapRequester.showMap(mapFile.toAbsolutePath().toString(), selected.width, selected.depth,
             tilesetManifestFile.toAbsolutePath().toString(),
             modelManifestFile == null ? null : modelManifestFile.toAbsolutePath().toString(),
-            spriteManifestFile == null ? null : spriteManifestFile.toAbsolutePath().toString())
+            spriteManifestFile == null ? null : spriteManifestFile.toAbsolutePath().toString(),
+            dialogueManifestFile == null ? null : dialogueManifestFile.toAbsolutePath().toString())
             .whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
                 previewRequestInFlight = false;
                 if (reportErrors && error != null) {
