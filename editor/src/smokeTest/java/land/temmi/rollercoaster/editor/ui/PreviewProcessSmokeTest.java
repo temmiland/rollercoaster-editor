@@ -1,5 +1,6 @@
 package land.temmi.rollercoaster.editor.ui;
 
+import land.temmi.rollercoaster.editor.asset.DialogueManifestExport;
 import land.temmi.rollercoaster.editor.asset.MapExport;
 import land.temmi.rollercoaster.editor.asset.ModelManifestExport;
 import land.temmi.rollercoaster.editor.asset.TilePacker;
@@ -18,6 +19,7 @@ import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.image.BufferedImage;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.List;
@@ -49,8 +51,10 @@ public final class PreviewProcessSmokeTest {
             }
         };
         PreviewProcess.PickListener pickListener = (x, y, z) -> { };
+        List<String> eventLog = new CopyOnWriteArrayList<>();
+        PreviewProcess.EventLogListener eventLogListener = eventLog::add;
 
-        PreviewProcess process = new PreviewProcess(previewClasspath, statusListener, pickListener);
+        PreviewProcess process = new PreviewProcess(previewClasspath, statusListener, pickListener, eventLogListener);
         process.start();
         try {
             if (!connected.await(20, TimeUnit.SECONDS)) throw new AssertionError("Preview never connected");
@@ -77,14 +81,26 @@ public final class PreviewProcessSmokeTest {
                 "gltf:models/" + sourceGltf.getFileName(), 0f, 0f, 0f, 1f, result.maxY - result.minY,
                 result.minX, result.minY, result.minZ, result.maxX, result.maxY, result.maxZ,
                 0, 0, 0, 0, false, false, 0f)), mapDirectory);
+            MapExport.Event greetEvent = new MapExport.Event("greet-event",
+                new MapExport.EventTrigger("map_start", null, 0, 0, null),
+                java.util.List.of(),
+                java.util.List.of(
+                    new MapExport.Action("set_flag", "greeted", "true", 0, 0, null),
+                    new MapExport.Action("toggle_light", "lamp-1", "false", 0, 0, null),
+                    new MapExport.Action("move_npc", "npc-1", null, 1, 1, null),
+                    new MapExport.Action("start_dialogue", "hello", null, 0, 0, null)));
             MapExport.write("valley", 2, 2, "overworld",
                 new String[] {"grass", "grass", "grass", "grass"}, new float[] {0f, 0f, 0f, 0f},
                 new String[] {"flat", "flat", "flat", "flat"}, new boolean[] {false, false, false, false},
                 java.util.List.of(new MapExport.Prop("house", 1f, 1f, 0f, 0f)),
-                java.util.List.of(new MapExport.Entity("player-start", "player", "npc", 0, 0)),
+                java.util.List.of(new MapExport.Entity("player-start", "player", "npc", 0, 0),
+                    new MapExport.Entity("npc-1", "npc", "npc", 1, 0)),
                 java.util.List.of(new MapExport.Light("lamp-1", 1f, 1.5f, 1f, 1f, 0.9f, 0.7f, 1f, 4f, true)),
                 java.util.List.of(new MapExport.Transition("to-cave", 0, 0, "cave", 1, 1)),
-                java.util.List.of(),
+                java.util.List.of(greetEvent),
+                mapDirectory);
+            DialogueManifestExport.write(java.util.List.of(new DialogueManifestExport.Entry("hello", "n1",
+                java.util.List.of(new DialogueManifestExport.Node("n1", "npc", "hello-text", null, java.util.List.of())))),
                 mapDirectory);
             BufferedImage tile = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
             Graphics graphics = tile.getGraphics();
@@ -110,7 +126,8 @@ public final class PreviewProcessSmokeTest {
             CompletableFuture<ShowMapResult> showMapFuture = process.showMap(mapFilePath, 2, 2,
                 mapDirectory.resolve("overworld.json").toAbsolutePath().toString(),
                 mapDirectory.resolve("models.json").toAbsolutePath().toString(),
-                mapDirectory.resolve("sprites.json").toAbsolutePath().toString());
+                mapDirectory.resolve("sprites.json").toAbsolutePath().toString(),
+                mapDirectory.resolve("dialogues.json").toAbsolutePath().toString());
             ShowMapResult showMapResult = showMapFuture.get(20, TimeUnit.SECONDS);
             if (!showMapResult.success) throw new AssertionError("ShowMap failed: " + showMapResult.errorMessage);
             System.out.println("ShowMap succeeded for a real exported map, built through a real WorldSceneLoader");
@@ -144,14 +161,55 @@ public final class PreviewProcessSmokeTest {
             Thread.sleep(200);
             watchingForDisconnect.set(false);
             System.out.println("Test mode's live actor updated without disconnecting the preview");
+
+            // Exercises the full event runtime with a real GL context: SET_FLAG, TOGGLE_LIGHT
+            // (mutates a live PointLightSource in the shared LightingEnvironment), MOVE_NPC
+            // (repositions a live BillboardRenderer) and START_DIALOGUE (DialoguePlayback walks a
+            // real Dialogue loaded from a real DialogueManifest). If any of that threw, the
+            // subprocess would drop the connection instead of reporting back over EventLogEntry.
+            watchingForDisconnect.set(true);
+            process.triggerEvent("greet-event");
+            Thread.sleep(500);
+            if (disconnectedAfterCameraSwitch.get()) {
+                throw new AssertionError("Preview disconnected after triggering an event");
+            }
+            requireLogContaining(eventLog, "greeted");
+            requireLogContaining(eventLog, "lamp-1");
+            requireLogContaining(eventLog, "npc-1");
+            requireLogContaining(eventLog, "hello");
+            System.out.println("TriggerEvent ran SET_FLAG/TOGGLE_LIGHT/MOVE_NPC/START_DIALOGUE, reported over EventLogEntry: "
+                + eventLog);
+
+            eventLog.clear();
+            process.resetFlags();
+            Thread.sleep(300);
+            requireLogContaining(eventLog, "zurückgesetzt");
+
+            eventLog.clear();
+            process.setTimeOfDay(9.5f);
+            Thread.sleep(300);
+            if (disconnectedAfterCameraSwitch.get()) {
+                throw new AssertionError("Preview disconnected after setting the time of day");
+            }
+            requireLogContaining(eventLog, "9.5");
+            watchingForDisconnect.set(false);
+            System.out.println("ResetFlags and SetTimeOfDay applied without disconnecting the preview");
         } finally {
             process.stop();
         }
 
         System.out.println("PASS: preview computed real bounds for a sample GLTF file, rendered a real "
             + "exported map through WorldSceneLoader/ChunkMesher, rendered a frame through the game "
-            + "camera's LowResTarget/PixelCamera pipeline, and updated a live test-mode actor through "
-            + "GridActor/TerrainRules, all over the live protocol");
+            + "camera's LowResTarget/PixelCamera pipeline, updated a live test-mode actor through "
+            + "GridActor/TerrainRules, ran a triggered event's actions through a live EventDispatcher, "
+            + "and applied ResetFlags/SetTimeOfDay, all over the live protocol");
         System.exit(0);
+    }
+
+    private static void requireLogContaining(List<String> log, String fragment) {
+        for (String line : log) {
+            if (line.contains(fragment)) return;
+        }
+        throw new AssertionError("Expected an EventLogEntry containing '" + fragment + "', got " + log);
     }
 }
