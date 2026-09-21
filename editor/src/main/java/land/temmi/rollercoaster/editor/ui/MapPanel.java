@@ -1170,6 +1170,50 @@ final class MapPanel extends JPanel {
         };
     }
 
+    /** Jumps to a map or one of its placements by id - the map side of a clickable diagnostic
+     * line (AssetsPanel.trySelect covers project-level catalogs instead). Placements are only
+     * searched on the currently selected map, since instance ids aren't unique across maps and a
+     * diagnostic line carries no map id of its own to disambiguate with. */
+    boolean trySelectPlacement(String id) {
+        for (int i = 0; i < mapListModel.size(); i++) {
+            if (mapListModel.get(i).id.equals(id)) {
+                mapList.setSelectedIndex(i);
+                return true;
+            }
+        }
+        for (int i = 0; i < placedEventsListModel.size(); i++) {
+            if (placedEventsListModel.get(i).instanceId.equals(id)) {
+                selectEvent(id);
+                return true;
+            }
+        }
+        for (int i = 0; i < placedPropsListModel.size(); i++) {
+            if (placedPropsListModel.get(i).instanceId.equals(id)) {
+                selectProp(id);
+                return true;
+            }
+        }
+        for (int i = 0; i < placedEntitiesListModel.size(); i++) {
+            if (placedEntitiesListModel.get(i).instanceId.equals(id)) {
+                selectEntity(id);
+                return true;
+            }
+        }
+        for (int i = 0; i < placedLightsListModel.size(); i++) {
+            if (placedLightsListModel.get(i).instanceId.equals(id)) {
+                selectLight(id);
+                return true;
+            }
+        }
+        for (int i = 0; i < placedTransitionsListModel.size(); i++) {
+            if (placedTransitionsListModel.get(i).instanceId.equals(id)) {
+                selectTransition(id);
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void selectEvent(String instanceId) {
         for (int i = 0; i < placedEventsListModel.size(); i++) {
             if (placedEventsListModel.get(i).instanceId.equals(instanceId)) {

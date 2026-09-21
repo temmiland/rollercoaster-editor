@@ -41,6 +41,13 @@ tasks.register('editorSmokeTest', JavaExec) {
     mainClass = 'land.temmi.rollercoaster.editor.ui.ProjectControllerSmokeTest'
 }
 
+tasks.register('diagnosticNavigationSmokeTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks the clickable-diagnostic-line id parsing and panel-side jump dispatchers, without a GUI event loop.'
+    classpath = sourceSets.smokeTest.runtimeClasspath
+    mainClass = 'land.temmi.rollercoaster.editor.ui.DiagnosticNavigationSmokeTest'
+}
+
 def sampleGltfPath = project(':preview').file('src/main/resources/models/house.gltf').absolutePath
 
 tasks.register('previewProcessSmokeTest', JavaExec) {

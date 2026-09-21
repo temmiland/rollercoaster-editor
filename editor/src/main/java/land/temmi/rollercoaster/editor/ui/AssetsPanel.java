@@ -76,6 +76,7 @@ final class AssetsPanel extends JPanel {
     private final DefaultListModel<EntityPropertyDefinition> entityPropertyListModel = new DefaultListModel<>();
     private final JList<EntityPropertyDefinition> entityPropertyList = new JList<>(entityPropertyListModel);
     private final Map<String, ImageIcon> textureThumbnails = new HashMap<>();
+    private final JTabbedPane tabs = new JTabbedPane();
 
     AssetsPanel(ProjectController projectController,
                Function<String, CompletableFuture<ModelBoundsResult>> modelBoundsComputer) {
@@ -104,7 +105,6 @@ final class AssetsPanel extends JPanel {
             + (p.required ? ", erforderlich" : "") + ")"));
         entityTypeList.addListSelectionListener(e -> refreshEntityProperties());
 
-        JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Texturen", buildTexturesTab());
         tabs.addTab("Tilesets", buildTilesetsTab());
         tabs.addTab("Modelle", buildModelsTab());
@@ -277,6 +277,54 @@ final class AssetsPanel extends JPanel {
         split.setResizeWeight(0.4);
         panel.add(split, BorderLayout.CENTER);
         return panel;
+    }
+
+    /** Jumps to a project-level asset by id, switching tabs if needed - the Assets side of a
+     * clickable diagnostic line (MapPanel.trySelectPlacement covers per-map placements instead). */
+    boolean trySelect(String id) {
+        for (int i = 0; i < textureListModel.size(); i++) {
+            if (textureListModel.get(i).id.equals(id)) {
+                tabs.setSelectedIndex(0);
+                textureList.setSelectedIndex(i);
+                return true;
+            }
+        }
+        for (int i = 0; i < tilesetListModel.size(); i++) {
+            if (tilesetListModel.get(i).id.equals(id)) {
+                tabs.setSelectedIndex(1);
+                tilesetList.setSelectedIndex(i);
+                return true;
+            }
+        }
+        for (int i = 0; i < modelListModel.size(); i++) {
+            if (modelListModel.get(i).id.equals(id)) {
+                tabs.setSelectedIndex(2);
+                modelList.setSelectedIndex(i);
+                return true;
+            }
+        }
+        for (int i = 0; i < spriteListModel.size(); i++) {
+            if (spriteListModel.get(i).id.equals(id)) {
+                tabs.setSelectedIndex(3);
+                spriteList.setSelectedIndex(i);
+                return true;
+            }
+        }
+        for (int i = 0; i < dialogueListModel.size(); i++) {
+            if (dialogueListModel.get(i).id.equals(id)) {
+                tabs.setSelectedIndex(4);
+                dialogueList.setSelectedIndex(i);
+                return true;
+            }
+        }
+        for (int i = 0; i < entityTypeListModel.size(); i++) {
+            if (entityTypeListModel.get(i).id.equals(id)) {
+                tabs.setSelectedIndex(5);
+                entityTypeList.setSelectedIndex(i);
+                return true;
+            }
+        }
+        return false;
     }
 
     void refresh() {

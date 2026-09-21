@@ -19,14 +19,18 @@ import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
+import javax.swing.text.BadLocationException;
 import land.temmi.rollercoaster.editor.protocol.CameraMode;
 import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
+import java.awt.Point;
 import java.awt.Toolkit;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.IOException;
@@ -39,10 +43,13 @@ import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Main editor window. Asset list and map view are empty until Phase 2/3 fill them in. */
 public final class EditorFrame extends JFrame {
     private static final DateTimeFormatter TIMESTAMP = DateTimeFormatter.ofPattern("HH:mm:ss");
+    private static final Pattern DIAGNOSTIC_ID_PATTERN = Pattern.compile("'([^']+)'");
 
     private final ProjectController projectController;
     private final RecentProjects recentProjects;
@@ -211,8 +218,36 @@ public final class EditorFrame extends JFrame {
         panel.setBorder(BorderFactory.createTitledBorder("Diagnosen"));
         diagnostics.setEditable(false);
         diagnostics.setLineWrap(true);
+        diagnostics.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                onDiagnosticLineClicked(e.getPoint());
+            }
+        });
         panel.add(new JScrollPane(diagnostics), BorderLayout.CENTER);
         return panel;
+    }
+
+    /** Every diagnostic line that names a specific asset writes its id in single quotes, the same
+     * convention every validation/error message in this codebase already uses - so this needs no
+     * per-source-type parsing, just the first quoted token on the clicked line. Tries the map side
+     * (a map itself, or a placement on whichever map is currently selected) before the project-
+     * level asset catalogs, and does nothing when the line names neither. */
+    private void onDiagnosticLineClicked(Point point) {
+        int offset = diagnostics.viewToModel2D(point);
+        if (offset < 0) return;
+        try {
+            int line = diagnostics.getLineOfOffset(offset);
+            int start = diagnostics.getLineStartOffset(line);
+            int end = diagnostics.getLineEndOffset(line);
+            String lineText = diagnostics.getText(start, end - start);
+            Matcher matcher = DIAGNOSTIC_ID_PATTERN.matcher(lineText);
+            if (!matcher.find()) return;
+            String id = matcher.group(1);
+            if (!mapPanel.trySelectPlacement(id)) assetsPanel.trySelect(id);
+        } catch (BadLocationException ignored) {
+            // The click landed past the current text (e.g. a trailing blank line) - nothing to resolve.
+        }
     }
 
     private JPanel buildStatusBar() {
