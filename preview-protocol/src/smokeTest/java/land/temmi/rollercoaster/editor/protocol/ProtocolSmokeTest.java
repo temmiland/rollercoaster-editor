@@ -155,7 +155,7 @@ public final class ProtocolSmokeTest {
                 client.send(new Hello(MessageChannel.PROTOCOL_VERSION));
                 client.receive(); // HelloAck
                 client.send(new ShowMap("/tmp/valley.json", 3, 2, "/tmp/catalogs/overworld.json",
-                    "/tmp/catalogs/models.json", "/tmp/catalogs/sprites.json"));
+                    "/tmp/catalogs/models.json", "/tmp/catalogs/sprites.json", "/tmp/catalogs/dialogues.json"));
                 result = (ShowMapResult) client.receive();
             }
             server.join();
@@ -164,7 +164,8 @@ public final class ProtocolSmokeTest {
                 || received[0].width != 3 || received[0].depth != 2
                 || !"/tmp/catalogs/overworld.json".equals(received[0].tilesetManifestFilePath)
                 || !"/tmp/catalogs/models.json".equals(received[0].modelManifestFilePath)
-                || !"/tmp/catalogs/sprites.json".equals(received[0].spriteManifestFilePath)) {
+                || !"/tmp/catalogs/sprites.json".equals(received[0].spriteManifestFilePath)
+                || !"/tmp/catalogs/dialogues.json".equals(received[0].dialogueManifestFilePath)) {
                 throw new AssertionError("ShowMap lost data in transit");
             }
             if (!result.success) throw new AssertionError("ShowMapResult lost data in transit");

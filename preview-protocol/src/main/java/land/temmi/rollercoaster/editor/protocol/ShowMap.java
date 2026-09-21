@@ -6,6 +6,7 @@ package land.temmi.rollercoaster.editor.protocol;
  * and regions authored in the editor, rather than approximating tiles with generated colors.
  * {@code modelManifestFilePath} is optional for prop-free maps. When present, its relative model
  * sources are resolved from the manifest's directory, just as they will be in an exported package.
+ * {@code dialogueManifestFilePath} is optional too - only needed to test-run START_DIALOGUE actions.
  */
 public final class ShowMap {
     public String mapFilePath;
@@ -14,17 +15,19 @@ public final class ShowMap {
     public String tilesetManifestFilePath;
     public String modelManifestFilePath;
     public String spriteManifestFilePath;
+    public String dialogueManifestFilePath;
 
     public ShowMap() {
     }
 
     public ShowMap(String mapFilePath, int width, int depth, String tilesetManifestFilePath,
-                   String modelManifestFilePath, String spriteManifestFilePath) {
+                   String modelManifestFilePath, String spriteManifestFilePath, String dialogueManifestFilePath) {
         this.mapFilePath = mapFilePath;
         this.width = width;
         this.depth = depth;
         this.tilesetManifestFilePath = tilesetManifestFilePath;
         this.modelManifestFilePath = modelManifestFilePath;
         this.spriteManifestFilePath = spriteManifestFilePath;
+        this.dialogueManifestFilePath = dialogueManifestFilePath;
     }
 }
