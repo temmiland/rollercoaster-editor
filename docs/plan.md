@@ -491,10 +491,11 @@ Ein einfacher Übergang funktioniert in Vorschau und Export, sobald seine Runtim
   Tab-Wechsel) aufzulösen - keine nachrichtenspezifische Sonderbehandlung nötig. Platzierungen
   werden bewusst nur auf der aktuell gewählten Karte gesucht, da Instanz-IDs kartenübergreifend
   nicht eindeutig sind und eine Diagnosezeile selbst keine Karten-ID mitführt.
-- Anklickbare Map-Position (etwa bei einem `Pick`-Diagnoseeintrag, um die getroffene Stelle auf
-  der 2D-Kartenansicht zu markieren) ist noch offen - das erfordert eine Umrechnung von der
-  Weltposition der Vorschau in Canvas-Pixelkoordinaten, die von der Asset-ID-Auflösung unabhängig
-  ist.
+- [x] Anklickbare Map-Position: Ein Klick auf einen `Pick`-Diagnoseeintrag markiert die getroffene
+  Stelle auf der 2D-Kartenansicht der aktuell gewählten Karte. Die Umrechnung ist die Umkehrung
+  der bereits im Code etablierten Welt-Mittelpunkt-Konvention (gespeicherte Rastermitte liegt bei
+  `Kachelindex - 0,5`); das Ergebnis wird auf die Kartengrenzen geklemmt, statt außerhalb des
+  Canvas zu zeichnen. Mit einem echten Screenshot gegen die exakt erwartete Zelle verifiziert.
 - [x] Fehlende Assets, doppelte IDs, ungültige Regionen, unbekannte Versionen und unauflösbare
   Verweise werden vor dem Export erkannt: Doppelte IDs, Regionsgrenzen und Formatversionen waren
   bereits an der richtigen Stelle abgedeckt - beim Registrieren im Dokument, beim Packen von
