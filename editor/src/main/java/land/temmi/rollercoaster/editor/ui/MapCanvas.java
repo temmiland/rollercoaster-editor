@@ -1,5 +1,7 @@
 package land.temmi.rollercoaster.editor.ui;
 
+import land.temmi.rollercoaster.editor.document.EventTriggerAsset;
+import land.temmi.rollercoaster.editor.document.GameEventAsset;
 import land.temmi.rollercoaster.editor.document.MapAsset;
 import land.temmi.rollercoaster.editor.document.MapEntityAsset;
 import land.temmi.rollercoaster.editor.document.MapLightAsset;
@@ -79,6 +81,7 @@ final class MapCanvas extends JPanel {
     private static final Color LIGHT_COLOR = new Color(255, 235, 120);
     private static final Color SELECTED_LIGHT_OUTLINE = new Color(255, 220, 40);
     private static final Color TRANSITION_COLOR = new Color(160, 100, 230);
+    private static final Color EVENT_COLOR = new Color(255, 140, 0);
 
     private final StrokeListener strokeListener;
     private final HoverListener hoverListener;
@@ -103,6 +106,7 @@ final class MapCanvas extends JPanel {
     private String selectedEntityInstanceId;
     private String selectedLightInstanceId;
     private String selectedTransitionInstanceId;
+    private String selectedEventInstanceId;
     private boolean showTerrain = true;
     private boolean showGrid = true;
     private boolean showWalkability;
@@ -201,6 +205,11 @@ final class MapCanvas extends JPanel {
 
     void setSelectedTransitionInstanceId(String instanceId) {
         selectedTransitionInstanceId = instanceId;
+        repaint();
+    }
+
+    void setSelectedEventInstanceId(String instanceId) {
+        selectedEventInstanceId = instanceId;
         repaint();
     }
 
@@ -482,6 +491,11 @@ final class MapCanvas extends JPanel {
         for (MapTransitionAsset transition : map.getTransitions()) {
             drawTransition(g, transition, transition.instanceId.equals(selectedTransitionInstanceId));
         }
+        for (GameEventAsset event : map.getEvents()) {
+            if (event.trigger.type == EventTriggerAsset.Type.ENTER_AREA) {
+                drawEvent(g, event, event.instanceId.equals(selectedEventInstanceId));
+            }
+        }
         drawRectangle(g);
     }
 
@@ -622,6 +636,26 @@ final class MapCanvas extends JPanel {
         g.fillPolygon(triangle);
         g.setColor(selected ? SELECTED_LIGHT_OUTLINE : PROP_OUTLINE);
         g.drawPolygon(triangle);
+    }
+
+    /**
+     * A hexagon, unlike the circular prop, square entity, diamond light and triangle transition
+     * shapes. Only an ENTER_AREA trigger has a map position to draw at - the other trigger types
+     * (map start, interaction, time change) apply to the whole map or an entity, not a tile.
+     */
+    private static void drawEvent(Graphics g, GameEventAsset event, boolean selected) {
+        int cx = Math.round((event.trigger.x + 0.5f) * CELL_SIZE);
+        int cz = Math.round((event.trigger.z + 0.5f) * CELL_SIZE);
+        int r = CELL_SIZE / 3;
+        Polygon hexagon = new Polygon();
+        for (int i = 0; i < 6; i++) {
+            double angle = Math.PI / 3 * i - Math.PI / 6;
+            hexagon.addPoint(cx + (int) Math.round(r * Math.cos(angle)), cz + (int) Math.round(r * Math.sin(angle)));
+        }
+        g.setColor(EVENT_COLOR);
+        g.fillPolygon(hexagon);
+        g.setColor(selected ? SELECTED_LIGHT_OUTLINE : PROP_OUTLINE);
+        g.drawPolygon(hexagon);
     }
 
     private static void drawRampIndicator(Graphics g, int px, int py, TileShape shape) {

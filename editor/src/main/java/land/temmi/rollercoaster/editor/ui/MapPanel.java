@@ -1,5 +1,9 @@
 package land.temmi.rollercoaster.editor.ui;
 
+import land.temmi.rollercoaster.editor.document.ConditionAsset;
+import land.temmi.rollercoaster.editor.document.EventActionAsset;
+import land.temmi.rollercoaster.editor.document.EventTriggerAsset;
+import land.temmi.rollercoaster.editor.document.GameEventAsset;
 import land.temmi.rollercoaster.editor.document.MapAsset;
 import land.temmi.rollercoaster.editor.document.MapEntityAsset;
 import land.temmi.rollercoaster.editor.document.MapLightAsset;
@@ -74,6 +78,8 @@ final class MapPanel extends JPanel {
     private final JList<MapLightAsset> placedLightsList = new JList<>(placedLightsListModel);
     private final DefaultListModel<MapTransitionAsset> placedTransitionsListModel = new DefaultListModel<>();
     private final JList<MapTransitionAsset> placedTransitionsList = new JList<>(placedTransitionsListModel);
+    private final DefaultListModel<GameEventAsset> placedEventsListModel = new DefaultListModel<>();
+    private final JList<GameEventAsset> placedEventsList = new JList<>(placedEventsListModel);
     private final MapCanvas canvas;
     private final JToggleButton tileTool = new JToggleButton("Kacheln malen", true);
     private final JToggleButton eraseTileTool = new JToggleButton("Kacheln löschen");
@@ -135,6 +141,10 @@ final class MapPanel extends JPanel {
         placedTransitionsList.addListSelectionListener(e -> canvas.setSelectedTransitionInstanceId(
             placedTransitionsList.getSelectedValue() == null ? null
                 : placedTransitionsList.getSelectedValue().instanceId));
+        placedEventsList.setCellRenderer(labelRenderer(event -> describeTrigger(event.trigger)
+            + "  (" + event.getActions().size() + " Aktion(en))"));
+        placedEventsList.addListSelectionListener(e -> canvas.setSelectedEventInstanceId(
+            placedEventsList.getSelectedValue() == null ? null : placedEventsList.getSelectedValue().instanceId));
 
         ButtonGroup tools = new ButtonGroup();
         tools.add(tileTool);
@@ -375,14 +385,31 @@ final class MapPanel extends JPanel {
         transitionButtons.add(removeTransition);
         transitionsPanel.add(transitionButtons, BorderLayout.SOUTH);
 
-        JSplitPane lightsAndTransitions = new JSplitPane(JSplitPane.VERTICAL_SPLIT, lightsPanel, transitionsPanel);
-        lightsAndTransitions.setResizeWeight(0.5);
+        JPanel eventsPanel = new JPanel(new BorderLayout());
+        eventsPanel.setBorder(BorderFactory.createTitledBorder("Ereignisse"));
+        eventsPanel.add(new JScrollPane(placedEventsList), BorderLayout.CENTER);
+        JButton addEvent = new JButton("Hinzufügen…");
+        addEvent.addActionListener(e -> onAddEvent());
+        JButton removeEvent = new JButton("Löschen");
+        removeEvent.addActionListener(e -> onRemoveEvent());
+        JButton editEvent = new JButton("Bearbeiten…");
+        editEvent.addActionListener(e -> onEditEvent());
+        JPanel eventButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        eventButtons.add(addEvent);
+        eventButtons.add(editEvent);
+        eventButtons.add(removeEvent);
+        eventsPanel.add(eventButtons, BorderLayout.SOUTH);
+
+        JSplitPane transitionsAndEvents = new JSplitPane(JSplitPane.VERTICAL_SPLIT, transitionsPanel, eventsPanel);
+        transitionsAndEvents.setResizeWeight(0.5);
+        JSplitPane lightsAndTransitions = new JSplitPane(JSplitPane.VERTICAL_SPLIT, lightsPanel, transitionsAndEvents);
+        lightsAndTransitions.setResizeWeight(0.34);
         JSplitPane entityAndLights = new JSplitPane(JSplitPane.VERTICAL_SPLIT, entitiesPanel, lightsAndTransitions);
-        entityAndLights.setResizeWeight(0.34);
+        entityAndLights.setResizeWeight(0.25);
         JSplitPane placements = new JSplitPane(JSplitPane.VERTICAL_SPLIT, propsPanel, entityAndLights);
-        placements.setResizeWeight(0.25);
+        placements.setResizeWeight(0.2);
         JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mapListPanel, placements);
-        split.setResizeWeight(0.4);
+        split.setResizeWeight(0.35);
         panel.add(split, BorderLayout.CENTER);
         return panel;
     }
@@ -490,15 +517,18 @@ final class MapPanel extends JPanel {
         MapEntityAsset selectedEntity = placedEntitiesList.getSelectedValue();
         MapLightAsset selectedLight = placedLightsList.getSelectedValue();
         MapTransitionAsset selectedTransition = placedTransitionsList.getSelectedValue();
+        GameEventAsset selectedEvent = placedEventsList.getSelectedValue();
         placedPropsListModel.clear();
         placedEntitiesListModel.clear();
         placedLightsListModel.clear();
         placedTransitionsListModel.clear();
+        placedEventsListModel.clear();
         if (selected != null) {
             selected.getProps().forEach(placedPropsListModel::addElement);
             selected.getEntities().forEach(placedEntitiesListModel::addElement);
             selected.getLights().forEach(placedLightsListModel::addElement);
             selected.getTransitions().forEach(placedTransitionsListModel::addElement);
+            selected.getEvents().forEach(placedEventsListModel::addElement);
             if (selectedProp != null) {
                 for (int i = 0; i < placedPropsListModel.size(); i++) {
                     if (placedPropsListModel.get(i).instanceId.equals(selectedProp.instanceId)) {
@@ -527,6 +557,14 @@ final class MapPanel extends JPanel {
                 for (int i = 0; i < placedTransitionsListModel.size(); i++) {
                     if (placedTransitionsListModel.get(i).instanceId.equals(selectedTransition.instanceId)) {
                         placedTransitionsList.setSelectedIndex(i);
+                        break;
+                    }
+                }
+            }
+            if (selectedEvent != null) {
+                for (int i = 0; i < placedEventsListModel.size(); i++) {
+                    if (placedEventsListModel.get(i).instanceId.equals(selectedEvent.instanceId)) {
+                        placedEventsList.setSelectedIndex(i);
                         break;
                     }
                 }
@@ -609,6 +647,43 @@ final class MapPanel extends JPanel {
             selectTransition(transition.instanceId);
         } catch (IllegalArgumentException e) {
             showError("Übergang konnte nicht bearbeitet werden", e);
+        }
+    }
+
+    private void onAddEvent() {
+        MapAsset map = mapList.getSelectedValue();
+        if (map == null) return;
+        GameEventAsset event = askEventSettings("Ereignis anlegen", null);
+        if (event == null) return;
+        try {
+            projectController.placeEvent(map.id, event);
+            refresh();
+            selectEvent(event.instanceId);
+        } catch (IllegalArgumentException e) {
+            showError("Ereignis konnte nicht angelegt werden", e);
+        }
+    }
+
+    private void onRemoveEvent() {
+        MapAsset selected = mapList.getSelectedValue();
+        GameEventAsset event = placedEventsList.getSelectedValue();
+        if (selected == null || event == null) return;
+        projectController.removeEvent(selected.id, event);
+        refresh();
+    }
+
+    private void onEditEvent() {
+        MapAsset map = mapList.getSelectedValue();
+        GameEventAsset event = placedEventsList.getSelectedValue();
+        if (map == null || event == null) return;
+        GameEventAsset settings = askEventSettings("Ereignis bearbeiten", event);
+        if (settings == null) return;
+        try {
+            projectController.updateEvent(map.id, event, settings);
+            refresh();
+            selectEvent(event.instanceId);
+        } catch (IllegalArgumentException e) {
+            showError("Ereignis konnte nicht bearbeitet werden", e);
         }
     }
 
@@ -785,6 +860,225 @@ final class MapPanel extends JPanel {
         }
         return new TransitionSettings((Integer) xSpinner.getValue(), (Integer) zSpinner.getValue(),
             selectedTargetId, (Integer) targetXSpinner.getValue(), (Integer) targetZSpinner.getValue());
+    }
+
+    /**
+     * A trigger/action/condition can be edited into any state the engine will reject (e.g. an
+     * INTERACTION trigger with no entity ID), so this loops on {@link IllegalArgumentException}
+     * instead of pre-validating field-by-field in Swing - one source of truth for what's valid.
+     */
+    private GameEventAsset askEventSettings(String title, GameEventAsset existing) {
+        JComboBox<EventTriggerAsset.Type> triggerType = new JComboBox<>(EventTriggerAsset.Type.values());
+        if (existing != null) triggerType.setSelectedItem(existing.trigger.type);
+        JTextField entityIdField = new JTextField(
+            existing != null && existing.trigger.entityId != null ? existing.trigger.entityId : "", 14);
+        JSpinner triggerX = new JSpinner(new SpinnerNumberModel(
+            existing != null ? existing.trigger.x : 0, -1_000, 1_000, 1));
+        JSpinner triggerZ = new JSpinner(new SpinnerNumberModel(
+            existing != null ? existing.trigger.z : 0, -1_000, 1_000, 1));
+        JTextField timeOfDayField = new JTextField(
+            existing != null && existing.trigger.timeOfDay != null ? existing.trigger.timeOfDay : "", 14);
+
+        JPanel triggerForm = new JPanel(new GridLayout(0, 2, 6, 6));
+        triggerForm.add(new JLabel("Auslöser:"));
+        triggerForm.add(triggerType);
+        triggerForm.add(new JLabel("Entity-ID (Interaktion):"));
+        triggerForm.add(entityIdField);
+        triggerForm.add(new JLabel("X (Fläche betreten):"));
+        triggerForm.add(triggerX);
+        triggerForm.add(new JLabel("Z (Fläche betreten):"));
+        triggerForm.add(triggerZ);
+        triggerForm.add(new JLabel("Tageszeit (Zeitwechsel):"));
+        triggerForm.add(timeOfDayField);
+
+        DefaultListModel<ConditionAsset> conditionsModel = new DefaultListModel<>();
+        if (existing != null) existing.getConditions().forEach(conditionsModel::addElement);
+        JList<ConditionAsset> conditionsList = new JList<>(conditionsModel);
+        conditionsList.setCellRenderer(labelRenderer(
+            c -> c.type + " " + c.key + " " + c.comparison + " " + c.value));
+        JButton addCondition = new JButton("Hinzufügen…");
+        addCondition.addActionListener(e -> {
+            ConditionAsset condition = askConditionSettings("Bedingung hinzufügen", null);
+            if (condition != null) conditionsModel.addElement(condition);
+        });
+        JButton editCondition = new JButton("Bearbeiten…");
+        editCondition.addActionListener(e -> {
+            int index = conditionsList.getSelectedIndex();
+            if (index < 0) return;
+            ConditionAsset condition = askConditionSettings("Bedingung bearbeiten", conditionsModel.get(index));
+            if (condition != null) conditionsModel.set(index, condition);
+        });
+        JButton removeCondition = new JButton("Löschen");
+        removeCondition.addActionListener(e -> {
+            int index = conditionsList.getSelectedIndex();
+            if (index >= 0) conditionsModel.remove(index);
+        });
+        JPanel conditionButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        conditionButtons.add(addCondition);
+        conditionButtons.add(editCondition);
+        conditionButtons.add(removeCondition);
+        JPanel conditionsPanel = new JPanel(new BorderLayout());
+        conditionsPanel.setBorder(BorderFactory.createTitledBorder("Bedingungen"));
+        conditionsPanel.add(new JScrollPane(conditionsList), BorderLayout.CENTER);
+        conditionsPanel.add(conditionButtons, BorderLayout.SOUTH);
+        conditionsPanel.setPreferredSize(new Dimension(320, 110));
+
+        DefaultListModel<EventActionAsset> actionsModel = new DefaultListModel<>();
+        if (existing != null) existing.getActions().forEach(actionsModel::addElement);
+        JList<EventActionAsset> actionsList = new JList<>(actionsModel);
+        actionsList.setCellRenderer(labelRenderer(MapPanel::describeAction));
+        JButton addAction = new JButton("Hinzufügen…");
+        addAction.addActionListener(e -> {
+            EventActionAsset action = askActionSettings("Aktion hinzufügen", null);
+            if (action != null) actionsModel.addElement(action);
+        });
+        JButton editAction = new JButton("Bearbeiten…");
+        editAction.addActionListener(e -> {
+            int index = actionsList.getSelectedIndex();
+            if (index < 0) return;
+            EventActionAsset action = askActionSettings("Aktion bearbeiten", actionsModel.get(index));
+            if (action != null) actionsModel.set(index, action);
+        });
+        JButton removeAction = new JButton("Löschen");
+        removeAction.addActionListener(e -> {
+            int index = actionsList.getSelectedIndex();
+            if (index >= 0) actionsModel.remove(index);
+        });
+        JPanel actionButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        actionButtons.add(addAction);
+        actionButtons.add(editAction);
+        actionButtons.add(removeAction);
+        JPanel actionsPanel = new JPanel(new BorderLayout());
+        actionsPanel.setBorder(BorderFactory.createTitledBorder("Aktionen (mindestens eine)"));
+        actionsPanel.add(new JScrollPane(actionsList), BorderLayout.CENTER);
+        actionsPanel.add(actionButtons, BorderLayout.SOUTH);
+        actionsPanel.setPreferredSize(new Dimension(320, 110));
+
+        JPanel form = new JPanel();
+        form.setLayout(new javax.swing.BoxLayout(form, javax.swing.BoxLayout.Y_AXIS));
+        form.add(triggerForm);
+        form.add(conditionsPanel);
+        form.add(actionsPanel);
+
+        while (true) {
+            if (JOptionPane.showConfirmDialog(this, form, title, JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return null;
+            EventTriggerAsset.Type selectedType = (EventTriggerAsset.Type) triggerType.getSelectedItem();
+            String entityId = entityIdField.getText().trim();
+            String timeOfDay = timeOfDayField.getText().trim();
+            List<ConditionAsset> conditions = java.util.Collections.list(conditionsModel.elements());
+            List<EventActionAsset> actions = java.util.Collections.list(actionsModel.elements());
+            try {
+                EventTriggerAsset trigger = new EventTriggerAsset(selectedType,
+                    selectedType == EventTriggerAsset.Type.INTERACTION && !entityId.isEmpty() ? entityId : null,
+                    (Integer) triggerX.getValue(), (Integer) triggerZ.getValue(),
+                    selectedType == EventTriggerAsset.Type.TIME_CHANGE && !timeOfDay.isEmpty() ? timeOfDay : null);
+                return new GameEventAsset(existing != null ? existing.instanceId : UUID.randomUUID().toString(),
+                    trigger, conditions, actions);
+            } catch (IllegalArgumentException e) {
+                showError("Ereignis ist ungültig", e);
+            }
+        }
+    }
+
+    private ConditionAsset askConditionSettings(String title, ConditionAsset existing) {
+        JComboBox<ConditionAsset.Type> type = new JComboBox<>(ConditionAsset.Type.values());
+        if (existing != null) type.setSelectedItem(existing.type);
+        JTextField key = new JTextField(existing != null ? existing.key : "", 16);
+        JComboBox<ConditionAsset.Comparison> comparison = new JComboBox<>(ConditionAsset.Comparison.values());
+        if (existing != null) comparison.setSelectedItem(existing.comparison);
+        JTextField value = new JTextField(existing != null ? existing.value : "", 12);
+        JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
+        form.add(new JLabel("Typ:"));
+        form.add(type);
+        form.add(new JLabel("Schlüssel:"));
+        form.add(key);
+        form.add(new JLabel("Vergleich:"));
+        form.add(comparison);
+        form.add(new JLabel("Wert:"));
+        form.add(value);
+        while (true) {
+            if (JOptionPane.showConfirmDialog(this, form, title, JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return null;
+            try {
+                return new ConditionAsset((ConditionAsset.Type) type.getSelectedItem(), key.getText().trim(),
+                    (ConditionAsset.Comparison) comparison.getSelectedItem(), value.getText().trim());
+            } catch (IllegalArgumentException e) {
+                showError("Bedingung ist ungültig", e);
+            }
+        }
+    }
+
+    private EventActionAsset askActionSettings(String title, EventActionAsset existing) {
+        JComboBox<EventActionAsset.Type> type = new JComboBox<>(EventActionAsset.Type.values());
+        if (existing != null) type.setSelectedItem(existing.type);
+        JTextField targetId = new JTextField(
+            existing != null && existing.targetId != null ? existing.targetId : "", 16);
+        JTextField value = new JTextField(existing != null && existing.value != null ? existing.value : "", 12);
+        JSpinner x = new JSpinner(new SpinnerNumberModel(existing != null ? existing.x : 0, -1_000, 1_000, 1));
+        JSpinner z = new JSpinner(new SpinnerNumberModel(existing != null ? existing.z : 0, -1_000, 1_000, 1));
+        List<MapAsset> maps = projectController.getMaps();
+        String[] mapIds = maps.stream().map(m -> m.id).toArray(String[]::new);
+        JComboBox<String> targetMap = new JComboBox<>(mapIds);
+        if (existing != null && existing.targetMap != null) targetMap.setSelectedItem(existing.targetMap);
+        JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
+        form.add(new JLabel("Typ:"));
+        form.add(type);
+        form.add(new JLabel("Ziel-ID (Entity/Dialog/Licht/Flag):"));
+        form.add(targetId);
+        form.add(new JLabel("Wert (Flag-Wert/an-aus):"));
+        form.add(value);
+        form.add(new JLabel("X (NPC bewegen/Kartenwechsel):"));
+        form.add(x);
+        form.add(new JLabel("Z (NPC bewegen/Kartenwechsel):"));
+        form.add(z);
+        form.add(new JLabel("Zielkarte (Kartenwechsel):"));
+        form.add(targetMap);
+        while (true) {
+            if (JOptionPane.showConfirmDialog(this, form, title, JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return null;
+            EventActionAsset.Type selectedType = (EventActionAsset.Type) type.getSelectedItem();
+            String targetIdText = targetId.getText().trim();
+            String valueText = value.getText().trim();
+            String selectedTargetMap = selectedType == EventActionAsset.Type.CHANGE_MAP
+                ? (String) targetMap.getSelectedItem() : null;
+            try {
+                return new EventActionAsset(selectedType, targetIdText.isEmpty() ? null : targetIdText,
+                    valueText.isEmpty() ? null : valueText, (Integer) x.getValue(), (Integer) z.getValue(),
+                    selectedTargetMap);
+            } catch (IllegalArgumentException e) {
+                showError("Aktion ist ungültig", e);
+            }
+        }
+    }
+
+    private static String describeTrigger(EventTriggerAsset trigger) {
+        return switch (trigger.type) {
+            case MAP_START -> "Kartenstart";
+            case INTERACTION -> "Interaktion: " + trigger.entityId;
+            case ENTER_AREA -> "Fläche betreten (" + trigger.x + ", " + trigger.z + ")";
+            case TIME_CHANGE -> "Zeitwechsel: " + trigger.timeOfDay;
+        };
+    }
+
+    private static String describeAction(EventActionAsset action) {
+        return switch (action.type) {
+            case START_DIALOGUE -> "Dialog starten: " + action.targetId;
+            case MOVE_NPC -> "NPC bewegen: " + action.targetId + " -> (" + action.x + ", " + action.z + ")";
+            case OPEN_DOOR -> "Tür: " + action.targetId + " = " + action.value;
+            case CHANGE_MAP -> "Kartenwechsel: " + action.targetMap + " (" + action.x + ", " + action.z + ")";
+            case SET_FLAG -> "Flag setzen: " + action.targetId + " = " + action.value;
+            case TOGGLE_LIGHT -> "Licht schalten: " + action.targetId + " = " + action.value;
+        };
+    }
+
+    private void selectEvent(String instanceId) {
+        for (int i = 0; i < placedEventsListModel.size(); i++) {
+            if (placedEventsListModel.get(i).instanceId.equals(instanceId)) {
+                placedEventsList.setSelectedIndex(i);
+                return;
+            }
+        }
     }
 
     private void selectProp(String instanceId) {
