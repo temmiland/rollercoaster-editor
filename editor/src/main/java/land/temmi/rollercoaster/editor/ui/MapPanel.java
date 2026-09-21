@@ -1,6 +1,8 @@
 package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.document.ConditionAsset;
+import land.temmi.rollercoaster.editor.document.EntityPropertyDefinition;
+import land.temmi.rollercoaster.editor.document.EntityTypeAsset;
 import land.temmi.rollercoaster.editor.document.EventActionAsset;
 import land.temmi.rollercoaster.editor.document.EventTriggerAsset;
 import land.temmi.rollercoaster.editor.document.GameEventAsset;
@@ -38,6 +40,8 @@ import javax.swing.ListCellRenderer;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.imageio.ImageIO;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
@@ -48,6 +52,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -258,10 +263,10 @@ final class MapPanel extends JPanel {
     }
 
     private void onPlaceEntity(String mapId, int x, int z) {
-        EntitySettings settings = askEntitySettings("Entity platzieren", "npc", null, x, z);
+        EntitySettings settings = askEntitySettings("Entity platzieren", "npc", null, x, z, Map.of());
         if (settings == null) return;
         MapEntityAsset entity = new MapEntityAsset(UUID.randomUUID().toString(), settings.type, settings.spriteId,
-            settings.x, settings.z);
+            settings.x, settings.z, settings.properties);
         try {
             projectController.placeEntity(mapId, entity);
             refresh();
@@ -592,10 +597,12 @@ final class MapPanel extends JPanel {
         MapAsset map = mapList.getSelectedValue();
         MapEntityAsset entity = placedEntitiesList.getSelectedValue();
         if (map == null || entity == null) return;
-        EntitySettings settings = askEntitySettings("Entity bearbeiten", entity.type, entity.spriteId, entity.x, entity.z);
+        EntitySettings settings = askEntitySettings("Entity bearbeiten", entity.type, entity.spriteId, entity.x, entity.z,
+            entity.getProperties());
         if (settings == null) return;
         try {
-            projectController.updateEntity(map.id, entity, settings.type, settings.spriteId, settings.x, settings.z);
+            projectController.updateEntity(map.id, entity, settings.type, settings.spriteId, settings.x, settings.z,
+                settings.properties);
             refresh();
             selectEntity(entity.instanceId);
         } catch (IllegalArgumentException e) {
@@ -749,20 +756,67 @@ final class MapPanel extends JPanel {
         return ((Number) spinner.getValue()).floatValue();
     }
 
-    private EntitySettings askEntitySettings(String title, String type, String spriteId, int x, int z) {
+    /**
+     * If the typed type matches a registered {@link EntityTypeAsset}, a property form for its
+     * schema appears below and resizes the dialog live as the type field changes - an
+     * unregistered type just keeps behaving as free text with no properties, as before schemas
+     * existed at all.
+     */
+    private EntitySettings askEntitySettings(String title, String type, String spriteId, int x, int z,
+                                             Map<String, String> existingProperties) {
         JTextField typeField = new JTextField(type, 18);
         JTextField spriteField = new JTextField(spriteId == null ? "" : spriteId, 18);
         JSpinner xSpinner = new JSpinner(new SpinnerNumberModel(x, -1_000, 1_000, 1));
         JSpinner zSpinner = new JSpinner(new SpinnerNumberModel(z, -1_000, 1_000, 1));
-        JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
-        form.add(new JLabel("Typ:"));
-        form.add(typeField);
-        form.add(new JLabel("Sprite-ID (optional):"));
-        form.add(spriteField);
-        form.add(new JLabel("X:"));
-        form.add(xSpinner);
-        form.add(new JLabel("Z:"));
-        form.add(zSpinner);
+
+        JPanel fixedForm = new JPanel(new GridLayout(0, 2, 6, 6));
+        fixedForm.add(new JLabel("Typ:"));
+        fixedForm.add(typeField);
+        fixedForm.add(new JLabel("Sprite-ID (optional):"));
+        fixedForm.add(spriteField);
+        fixedForm.add(new JLabel("X:"));
+        fixedForm.add(xSpinner);
+        fixedForm.add(new JLabel("Z:"));
+        fixedForm.add(zSpinner);
+
+        JPanel propertiesPanel = new JPanel(new GridLayout(0, 2, 6, 6));
+        propertiesPanel.setBorder(BorderFactory.createTitledBorder("Eigenschaften"));
+        Map<String, JTextField> propertyFields = new LinkedHashMap<>();
+
+        JPanel form = new JPanel(new BorderLayout(0, 8));
+        form.add(fixedForm, BorderLayout.NORTH);
+        form.add(propertiesPanel, BorderLayout.CENTER);
+
+        Runnable rebuildProperties = () -> {
+            propertiesPanel.removeAll();
+            propertyFields.clear();
+            EntityTypeAsset schema = projectController.getEntityTypes().stream()
+                .filter(candidate -> candidate.id.equals(typeField.getText().trim()))
+                .findFirst().orElse(null);
+            if (schema != null) {
+                for (EntityPropertyDefinition property : schema.getProperties()) {
+                    JTextField field = new JTextField(existingProperties.getOrDefault(property.key, ""), 16);
+                    propertyFields.put(property.key, field);
+                    propertiesPanel.add(new JLabel(property.key + " (" + property.type.name().toLowerCase(Locale.ROOT)
+                        + (property.required ? ", erforderlich" : "") + "):"));
+                    propertiesPanel.add(field);
+                }
+            }
+            java.awt.Window window = SwingUtilities.getWindowAncestor(form);
+            if (window != null) window.pack();
+        };
+        typeField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) { rebuildProperties.run(); }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) { rebuildProperties.run(); }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) { rebuildProperties.run(); }
+        });
+        rebuildProperties.run();
+
         if (JOptionPane.showConfirmDialog(this, form, title, JOptionPane.OK_CANCEL_OPTION,
             JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return null;
         String selectedType = typeField.getText().trim();
@@ -771,8 +825,13 @@ final class MapPanel extends JPanel {
             JOptionPane.showMessageDialog(this, "Ein Entity-Typ ist erforderlich.");
             return null;
         }
+        Map<String, String> properties = new LinkedHashMap<>();
+        for (Map.Entry<String, JTextField> field : propertyFields.entrySet()) {
+            String value = field.getValue().getText().trim();
+            if (!value.isEmpty()) properties.put(field.getKey(), value);
+        }
         return new EntitySettings(selectedType, selectedSprite.isEmpty() ? null : selectedSprite,
-            (Integer) xSpinner.getValue(), (Integer) zSpinner.getValue());
+            (Integer) xSpinner.getValue(), (Integer) zSpinner.getValue(), properties);
     }
 
     private LightSettings askLightSettings(String title, MapLightAsset light) {
@@ -1120,7 +1179,7 @@ final class MapPanel extends JPanel {
     private record PropTransform(float x, float z, float elevation, float rotation) {
     }
 
-    private record EntitySettings(String type, String spriteId, int x, int z) {
+    private record EntitySettings(String type, String spriteId, int x, int z, Map<String, String> properties) {
     }
 
     private record LightSettings(float x, float y, float z, float colorR, float colorG, float colorB,

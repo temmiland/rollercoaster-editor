@@ -4,6 +4,8 @@ import land.temmi.rollercoaster.editor.document.ConditionAsset;
 import land.temmi.rollercoaster.editor.document.DialogueAsset;
 import land.temmi.rollercoaster.editor.document.DialogueNodeAsset;
 import land.temmi.rollercoaster.editor.document.DialogueResponseAsset;
+import land.temmi.rollercoaster.editor.document.EntityPropertyDefinition;
+import land.temmi.rollercoaster.editor.document.EntityTypeAsset;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.SpriteAnimationAsset;
 import land.temmi.rollercoaster.editor.document.SpriteAsset;
@@ -69,6 +71,10 @@ final class AssetsPanel extends JPanel {
     private final JList<DialogueAsset> dialogueList = new JList<>(dialogueListModel);
     private final DefaultListModel<DialogueNodeAsset> dialogueNodeListModel = new DefaultListModel<>();
     private final JList<DialogueNodeAsset> dialogueNodeList = new JList<>(dialogueNodeListModel);
+    private final DefaultListModel<EntityTypeAsset> entityTypeListModel = new DefaultListModel<>();
+    private final JList<EntityTypeAsset> entityTypeList = new JList<>(entityTypeListModel);
+    private final DefaultListModel<EntityPropertyDefinition> entityPropertyListModel = new DefaultListModel<>();
+    private final JList<EntityPropertyDefinition> entityPropertyList = new JList<>(entityPropertyListModel);
     private final Map<String, ImageIcon> textureThumbnails = new HashMap<>();
 
     AssetsPanel(ProjectController projectController,
@@ -93,6 +99,10 @@ final class AssetsPanel extends JPanel {
         dialogueNodeList.setCellRenderer(labelRenderer(n -> n.id + "  [" + n.speakerId + "] " + n.textId
             + (n.getResponses().isEmpty() ? "" : "  (" + n.getResponses().size() + " Antwort(en))")));
         dialogueList.addListSelectionListener(e -> refreshDialogueNodes());
+        entityTypeList.setCellRenderer(labelRenderer(t -> t.id + "  (" + t.getProperties().size() + " Eigenschaft(en))"));
+        entityPropertyList.setCellRenderer(labelRenderer(p -> p.key + "  (" + p.type.name().toLowerCase(Locale.ROOT)
+            + (p.required ? ", erforderlich" : "") + ")"));
+        entityTypeList.addListSelectionListener(e -> refreshEntityProperties());
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Texturen", buildTexturesTab());
@@ -100,6 +110,7 @@ final class AssetsPanel extends JPanel {
         tabs.addTab("Modelle", buildModelsTab());
         tabs.addTab("Sprites", buildSpritesTab());
         tabs.addTab("Dialoge", buildDialoguesTab());
+        tabs.addTab("Entity-Typen", buildEntityTypesTab());
         add(tabs, BorderLayout.CENTER);
     }
 
@@ -233,6 +244,41 @@ final class AssetsPanel extends JPanel {
         return panel;
     }
 
+    private JPanel buildEntityTypesTab() {
+        JPanel panel = new JPanel(new BorderLayout());
+
+        JPanel typesPanel = new JPanel(new BorderLayout());
+        typesPanel.add(new JScrollPane(entityTypeList), BorderLayout.CENTER);
+        JButton newType = new JButton("Neu…");
+        newType.addActionListener(e -> onCreateEntityType());
+        JButton removeType = new JButton("Löschen");
+        removeType.addActionListener(e -> onRemoveEntityType());
+        JPanel typeButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        typeButtons.add(newType);
+        typeButtons.add(removeType);
+        typesPanel.add(typeButtons, BorderLayout.SOUTH);
+
+        JPanel propertiesPanel = new JPanel(new BorderLayout());
+        propertiesPanel.setBorder(BorderFactory.createTitledBorder("Eigenschaften"));
+        propertiesPanel.add(new JScrollPane(entityPropertyList), BorderLayout.CENTER);
+        JButton addProperty = new JButton("Hinzufügen…");
+        addProperty.addActionListener(e -> onAddEntityProperty());
+        JButton editProperty = new JButton("Bearbeiten…");
+        editProperty.addActionListener(e -> onEditEntityProperty());
+        JButton removeProperty = new JButton("Entfernen");
+        removeProperty.addActionListener(e -> onRemoveEntityProperty());
+        JPanel propertyButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        propertyButtons.add(addProperty);
+        propertyButtons.add(editProperty);
+        propertyButtons.add(removeProperty);
+        propertiesPanel.add(propertyButtons, BorderLayout.SOUTH);
+
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, typesPanel, propertiesPanel);
+        split.setResizeWeight(0.4);
+        panel.add(split, BorderLayout.CENTER);
+        return panel;
+    }
+
     void refresh() {
         boolean open = projectController.isOpen();
         textureList.setEnabled(open);
@@ -242,11 +288,14 @@ final class AssetsPanel extends JPanel {
         spriteList.setEnabled(open);
         dialogueList.setEnabled(open);
         dialogueNodeList.setEnabled(open);
+        entityTypeList.setEnabled(open);
+        entityPropertyList.setEnabled(open);
 
         TilesetAsset selectedTileset = tilesetList.getSelectedValue();
         ModelAsset selectedModel = modelList.getSelectedValue();
         SpriteAsset selectedSprite = spriteList.getSelectedValue();
         DialogueAsset selectedDialogue = dialogueList.getSelectedValue();
+        EntityTypeAsset selectedEntityType = entityTypeList.getSelectedValue();
 
         textureListModel.clear();
         if (open) projectController.getTextures().stream().sorted(Comparator.comparing(t -> t.id))
@@ -267,6 +316,10 @@ final class AssetsPanel extends JPanel {
         dialogueListModel.clear();
         if (open) projectController.getDialogues().stream().sorted(Comparator.comparing(d -> d.id))
             .forEach(dialogueListModel::addElement);
+
+        entityTypeListModel.clear();
+        if (open) projectController.getEntityTypes().stream().sorted(Comparator.comparing(t -> t.id))
+            .forEach(entityTypeListModel::addElement);
 
         if (selectedTileset != null) {
             for (int i = 0; i < tilesetListModel.size(); i++) {
@@ -300,8 +353,17 @@ final class AssetsPanel extends JPanel {
                 }
             }
         }
+        if (selectedEntityType != null) {
+            for (int i = 0; i < entityTypeListModel.size(); i++) {
+                if (entityTypeListModel.get(i).id.equals(selectedEntityType.id)) {
+                    entityTypeList.setSelectedIndex(i);
+                    break;
+                }
+            }
+        }
         refreshTiles();
         refreshDialogueNodes();
+        refreshEntityProperties();
     }
 
     private void refreshTiles() {
@@ -315,6 +377,12 @@ final class AssetsPanel extends JPanel {
         dialogueNodeListModel.clear();
         DialogueAsset selected = dialogueList.getSelectedValue();
         if (selected != null) selected.getNodes().forEach(dialogueNodeListModel::addElement);
+    }
+
+    private void refreshEntityProperties() {
+        entityPropertyListModel.clear();
+        EntityTypeAsset selected = entityTypeList.getSelectedValue();
+        if (selected != null) selected.getProperties().forEach(entityPropertyListModel::addElement);
     }
 
     private void onImportTexture() {
@@ -956,6 +1024,118 @@ final class AssetsPanel extends JPanel {
                     (ConditionAsset.Comparison) comparison.getSelectedItem(), value.getText().trim());
             } catch (IllegalArgumentException e) {
                 showError("Bedingung ist ungültig", e);
+            }
+        }
+    }
+
+    private void onCreateEntityType() {
+        if (!projectController.isOpen()) return;
+        String id = JOptionPane.showInputDialog(this, "Entity-Typ-ID:", "Neuer Entity-Typ", JOptionPane.PLAIN_MESSAGE);
+        if (id == null || id.trim().isEmpty()) return;
+        try {
+            EntityTypeAsset entityType = new EntityTypeAsset(id.trim(), List.of());
+            projectController.registerEntityType(entityType);
+            refresh();
+            selectEntityType(entityType.id);
+        } catch (IllegalArgumentException e) {
+            showError("Entity-Typ konnte nicht angelegt werden", e);
+        }
+    }
+
+    private void onRemoveEntityType() {
+        EntityTypeAsset selected = entityTypeList.getSelectedValue();
+        if (selected == null) return;
+        try {
+            projectController.removeEntityType(selected);
+            refresh();
+        } catch (IllegalArgumentException e) {
+            showError("Entity-Typ kann nicht entfernt werden", e);
+        }
+    }
+
+    private void onAddEntityProperty() {
+        EntityTypeAsset entityType = entityTypeList.getSelectedValue();
+        if (entityType == null) return;
+        EntityPropertyDefinition property = askEntityPropertySettings("Eigenschaft hinzufügen", null);
+        if (property == null) return;
+        List<EntityPropertyDefinition> properties = new ArrayList<>(entityType.getProperties());
+        properties.add(property);
+        try {
+            EntityTypeAsset replacement = new EntityTypeAsset(entityType.id, properties);
+            projectController.updateEntityType(entityType, replacement);
+            refresh();
+            selectEntityType(entityType.id);
+        } catch (IllegalArgumentException e) {
+            showError("Eigenschaft konnte nicht hinzugefügt werden", e);
+        }
+    }
+
+    private void onEditEntityProperty() {
+        EntityTypeAsset entityType = entityTypeList.getSelectedValue();
+        EntityPropertyDefinition property = entityPropertyList.getSelectedValue();
+        if (entityType == null || property == null) return;
+        EntityPropertyDefinition edited = askEntityPropertySettings("Eigenschaft bearbeiten", property);
+        if (edited == null) return;
+        List<EntityPropertyDefinition> properties = new ArrayList<>();
+        for (EntityPropertyDefinition existing : entityType.getProperties()) {
+            properties.add(existing.key.equals(property.key) ? edited : existing);
+        }
+        try {
+            EntityTypeAsset replacement = new EntityTypeAsset(entityType.id, properties);
+            projectController.updateEntityType(entityType, replacement);
+            refresh();
+            selectEntityType(entityType.id);
+        } catch (IllegalArgumentException e) {
+            showError("Eigenschaft konnte nicht bearbeitet werden", e);
+        }
+    }
+
+    private void onRemoveEntityProperty() {
+        EntityTypeAsset entityType = entityTypeList.getSelectedValue();
+        EntityPropertyDefinition property = entityPropertyList.getSelectedValue();
+        if (entityType == null || property == null) return;
+        List<EntityPropertyDefinition> properties = new ArrayList<>(entityType.getProperties());
+        properties.removeIf(existing -> existing.key.equals(property.key));
+        try {
+            EntityTypeAsset replacement = new EntityTypeAsset(entityType.id, properties);
+            projectController.updateEntityType(entityType, replacement);
+            refresh();
+            selectEntityType(entityType.id);
+        } catch (IllegalArgumentException e) {
+            showError("Eigenschaft kann nicht entfernt werden", e);
+        }
+    }
+
+    private void selectEntityType(String id) {
+        for (int i = 0; i < entityTypeListModel.size(); i++) {
+            if (entityTypeListModel.get(i).id.equals(id)) {
+                entityTypeList.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
+    private EntityPropertyDefinition askEntityPropertySettings(String title, EntityPropertyDefinition existing) {
+        JTextField key = new JTextField(existing != null ? existing.key : "", 16);
+        key.setEditable(existing == null);
+        JComboBox<EntityPropertyDefinition.Type> type = new JComboBox<>(EntityPropertyDefinition.Type.values());
+        if (existing != null) type.setSelectedItem(existing.type);
+        JCheckBox required = new JCheckBox("Erforderlich", existing != null && existing.required);
+        JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
+        form.add(new JLabel("Schlüssel:"));
+        form.add(key);
+        form.add(new JLabel("Typ:"));
+        form.add(type);
+        form.add(new JLabel());
+        form.add(required);
+        while (true) {
+            if (JOptionPane.showConfirmDialog(this, form, title, JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return null;
+            try {
+                return new EntityPropertyDefinition(key.getText().trim(),
+                    (EntityPropertyDefinition.Type) type.getSelectedItem(), required.isSelected());
+            } catch (IllegalArgumentException e) {
+                showError("Eigenschaft ist ungültig", e);
             }
         }
     }

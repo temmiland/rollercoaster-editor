@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.Map;
 
 /** Writes a map matching MapLoader's schema exactly - one file per map, named "<id>.json". */
 public final class MapExport {
@@ -41,13 +42,19 @@ public final class MapExport {
         public final String sprite;
         public final int x;
         public final int z;
+        public final Map<String, String> properties;
 
         public Entity(String id, String type, String sprite, int x, int z) {
+            this(id, type, sprite, x, z, Map.of());
+        }
+
+        public Entity(String id, String type, String sprite, int x, int z, Map<String, String> properties) {
             this.id = id;
             this.type = type;
             this.sprite = sprite;
             this.x = x;
             this.z = z;
+            this.properties = properties == null ? Map.of() : properties;
         }
     }
 
@@ -254,6 +261,13 @@ public final class MapExport {
             if (entity.sprite != null) writer.set("sprite", entity.sprite);
             writer.set("x", entity.x);
             writer.set("y", entity.z);
+            if (!entity.properties.isEmpty()) {
+                writer.object("properties");
+                for (Map.Entry<String, String> property : entity.properties.entrySet()) {
+                    writer.set(property.getKey(), property.getValue());
+                }
+                writer.pop();
+            }
             writer.pop();
         }
         writer.pop();

@@ -18,6 +18,7 @@ import land.temmi.rollercoaster.editor.document.CreateTilesetCommand;
 import land.temmi.rollercoaster.editor.document.DialogueAsset;
 import land.temmi.rollercoaster.editor.document.DialogueNodeAsset;
 import land.temmi.rollercoaster.editor.document.DialogueResponseAsset;
+import land.temmi.rollercoaster.editor.document.EntityTypeAsset;
 import land.temmi.rollercoaster.editor.document.EventActionAsset;
 import land.temmi.rollercoaster.editor.document.EventTriggerAsset;
 import land.temmi.rollercoaster.editor.document.GameEventAsset;
@@ -31,9 +32,12 @@ import land.temmi.rollercoaster.editor.document.MapTransitionAsset;
 import land.temmi.rollercoaster.editor.document.ModelAsset;
 import land.temmi.rollercoaster.editor.document.PlaceEventCommand;
 import land.temmi.rollercoaster.editor.document.RegisterDialogueCommand;
+import land.temmi.rollercoaster.editor.document.RegisterEntityTypeCommand;
 import land.temmi.rollercoaster.editor.document.RemoveDialogueCommand;
+import land.temmi.rollercoaster.editor.document.RemoveEntityTypeCommand;
 import land.temmi.rollercoaster.editor.document.RemoveEventCommand;
 import land.temmi.rollercoaster.editor.document.UpdateDialogueCommand;
+import land.temmi.rollercoaster.editor.document.UpdateEntityTypeCommand;
 import land.temmi.rollercoaster.editor.document.UpdateEventCommand;
 import land.temmi.rollercoaster.editor.document.PaintCollisionCommand;
 import land.temmi.rollercoaster.editor.document.PaintTerrainCommand;
@@ -554,7 +558,8 @@ public final class ProjectController {
         }
         List<MapExport.Entity> entities = new ArrayList<>();
         for (MapEntityAsset entity : map.getEntities()) {
-            entities.add(new MapExport.Entity(entity.instanceId, entity.type, entity.spriteId, entity.x, entity.z));
+            entities.add(new MapExport.Entity(entity.instanceId, entity.type, entity.spriteId, entity.x, entity.z,
+                entity.getProperties()));
         }
         List<MapExport.Light> lights = new ArrayList<>();
         for (MapLightAsset light : map.getLights()) {
@@ -654,6 +659,29 @@ public final class ProjectController {
         listener.onProjectChanged();
     }
 
+    public List<EntityTypeAsset> getEntityTypes() {
+        requireOpen();
+        return history.getDocument().getEntityTypes();
+    }
+
+    public void registerEntityType(EntityTypeAsset entityType) {
+        requireOpen();
+        history.perform(new RegisterEntityTypeCommand(entityType));
+        listener.onProjectChanged();
+    }
+
+    public void removeEntityType(EntityTypeAsset entityType) {
+        requireOpen();
+        history.perform(new RemoveEntityTypeCommand(entityType));
+        listener.onProjectChanged();
+    }
+
+    public void updateEntityType(EntityTypeAsset previous, EntityTypeAsset replacement) {
+        requireOpen();
+        history.perform(new UpdateEntityTypeCommand(previous, replacement));
+        listener.onProjectChanged();
+    }
+
     public void placeEvent(String mapId, GameEventAsset event) {
         requireOpen();
         history.perform(new PlaceEventCommand(mapId, event));
@@ -726,10 +754,11 @@ public final class ProjectController {
         listener.onProjectChanged();
     }
 
-    public void updateEntity(String mapId, MapEntityAsset previous, String type, String spriteId, int x, int z) {
+    public void updateEntity(String mapId, MapEntityAsset previous, String type, String spriteId, int x, int z,
+                             java.util.Map<String, String> properties) {
         requireOpen();
         history.perform(new UpdateEntityCommand(mapId, previous,
-            new MapEntityAsset(previous.instanceId, type, spriteId, x, z)));
+            new MapEntityAsset(previous.instanceId, type, spriteId, x, z, properties)));
         listener.onProjectChanged();
     }
 

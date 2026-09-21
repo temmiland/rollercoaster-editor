@@ -127,8 +127,9 @@ public final class AssetPipelineSmokeTest {
             List.of(new MapExport.Action("start_dialogue", "npc-1-intro", null, 0, 0, null),
                 new MapExport.Action("set_flag", "met-npc-1", "true", 0, 0, null))));
         MapExport.write("withProps", 1, 1, "overworld", tiles, heights, shapes, collision, props,
-            List.of(new MapExport.Entity("player-start", "player", "player", 0, 0)), lights, transitions, events,
-            directory);
+            List.of(new MapExport.Entity("player-start", "player", "player", 0, 0),
+                new MapExport.Entity("npc-1", "npc", null, 0, 0, Map.of("greeting", "Hallo!"))),
+            lights, transitions, events, directory);
 
         Tileset tileset = new Tileset().add(new TileSurface("grass"));
         LoadedMap loaded = new MapLoader().load(
@@ -139,9 +140,16 @@ public final class AssetPipelineSmokeTest {
             || prop.elevation != 0.25f || prop.rotation != 90f) {
             throw new AssertionError("Prop did not round-trip: " + prop.model + " " + prop.x + "," + prop.z);
         }
-        if (loaded.entities.size != 1 || !"player-start".equals(loaded.entities.first().id)
+        if (loaded.entities.size != 2 || !"player-start".equals(loaded.entities.first().id)
             || !"player".equals(loaded.entities.first().sprite)) {
             throw new AssertionError("Entity did not round-trip through the runtime map loader");
+        }
+        land.temmi.rollercoaster.world.MapEntity npc = loaded.entities.get(1);
+        if (!"npc-1".equals(npc.id) || !"Hallo!".equals(npc.properties.get("greeting"))) {
+            throw new AssertionError("Entity properties did not round-trip through the runtime map loader");
+        }
+        if (!loaded.entities.first().properties.isEmpty()) {
+            throw new AssertionError("An entity with no properties should round-trip with an empty map");
         }
         if (loaded.lights.size != 2) throw new AssertionError("Expected 2 lights, got " + loaded.lights.size);
         land.temmi.rollercoaster.world.MapLight point = loaded.lights.get(0);
