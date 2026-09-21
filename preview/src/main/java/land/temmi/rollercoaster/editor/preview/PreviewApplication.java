@@ -27,15 +27,26 @@ import land.temmi.rollercoaster.asset.SpriteDefinition;
 import land.temmi.rollercoaster.asset.SpriteManifest;
 import land.temmi.rollercoaster.editor.protocol.CameraMode;
 import land.temmi.rollercoaster.editor.protocol.ComputeModelBounds;
+import land.temmi.rollercoaster.editor.protocol.EventLogEntry;
 import land.temmi.rollercoaster.editor.protocol.PickResult;
+import land.temmi.rollercoaster.editor.protocol.ResetFlags;
 import land.temmi.rollercoaster.editor.protocol.SetCameraMode;
 import land.temmi.rollercoaster.editor.protocol.SetTestMode;
+import land.temmi.rollercoaster.editor.protocol.SetTimeOfDay;
 import land.temmi.rollercoaster.editor.protocol.ShowGenericScene;
 import land.temmi.rollercoaster.editor.protocol.ShowMap;
 import land.temmi.rollercoaster.editor.protocol.ShowMapResult;
 import land.temmi.rollercoaster.editor.protocol.ShowSampleLevel;
+import land.temmi.rollercoaster.editor.protocol.TriggerEvent;
 import land.temmi.rollercoaster.actor.DirectionalSpriteAnimation;
 import land.temmi.rollercoaster.actor.GridActor;
+import land.temmi.rollercoaster.dialogue.Dialogue;
+import land.temmi.rollercoaster.dialogue.DialogueManifest;
+import land.temmi.rollercoaster.dialogue.DialogueNode;
+import land.temmi.rollercoaster.event.EventActionHandler;
+import land.temmi.rollercoaster.event.EventDispatcher;
+import land.temmi.rollercoaster.event.GameEvent;
+import land.temmi.rollercoaster.event.GameState;
 import land.temmi.rollercoaster.input.CombinedInput;
 import land.temmi.rollercoaster.input.InputSource;
 import land.temmi.rollercoaster.input.KeyboardInput;
@@ -60,6 +71,9 @@ import land.temmi.rollercoaster.world.WorldScene;
 import land.temmi.rollercoaster.world.WorldSceneLoader;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * The preview window. Renders through the same ModelBatch/WorldShaderProvider/LightingEnvironment
@@ -118,7 +132,16 @@ public final class PreviewApplication extends ApplicationAdapter {
     private SpriteAtlas documentSpriteAtlas;
     private BillboardQuad billboardQuad;
     private final Array<BillboardRenderer> documentSprites = new Array<>();
+    private final Map<String, BillboardRenderer> documentSpritesByEntityId = new HashMap<>();
     private final Vector3 spriteRight = new Vector3();
+
+    /** Test-mode event/dialogue execution: GameState is the flags/variables/time an EventDispatcher
+     * checks conditions against; lightsById lets a TOGGLE_LIGHT action reach the live light it means,
+     * since PointLightSource itself carries no id. */
+    private final GameState gameState = new GameState();
+    private final EventActionHandler eventActionHandler = new PreviewEventHandler();
+    private final Map<String, PointLightSource> lightsById = new HashMap<>();
+    private DialogueManifest dialogueManifest;
 
     private SceneMode sceneMode = SceneMode.GENERIC;
 
@@ -177,6 +200,49 @@ public final class PreviewApplication extends ApplicationAdapter {
         } else if (message instanceof SetTestMode) {
             boolean enabled = ((SetTestMode) message).enabled;
             Gdx.app.postRunnable(() -> setTestMode(enabled));
+        } else if (message instanceof TriggerEvent) {
+            String eventInstanceId = ((TriggerEvent) message).eventInstanceId;
+            Gdx.app.postRunnable(() -> triggerEvent(eventInstanceId));
+        } else if (message instanceof ResetFlags) {
+            Gdx.app.postRunnable(() -> {
+                gameState.clearFlags();
+                gameState.clearVariables();
+                connection.send(new EventLogEntry("Flags zurückgesetzt"));
+            });
+        } else if (message instanceof SetTimeOfDay) {
+            float hours = ((SetTimeOfDay) message).hours;
+            Gdx.app.postRunnable(() -> {
+                dayNightCycle.setTimeOfDay(hours).enterMap();
+                gameState.setTimeOfDay(hours);
+                connection.send(new EventLogEntry(String.format(java.util.Locale.ROOT,
+                    "Tageszeit auf %.1f Uhr gesetzt", hours)));
+            });
+        }
+    }
+
+    /** Manual test hook: runs one placed event's conditions and actions right now, regardless of
+     * its authored trigger. Looks the event up on the currently shown document map only - the
+     * preview has no notion of "the map the editor has selected" beyond what it was last told to show. */
+    private void triggerEvent(String eventInstanceId) {
+        if (documentScene == null) {
+            connection.send(new EventLogEntry("Kein Ereignis ausgelöst: keine Dokumentkarte aktiv"));
+            return;
+        }
+        GameEvent event = null;
+        for (GameEvent candidate : documentScene.getMap().events) {
+            if (candidate.id.equals(eventInstanceId)) {
+                event = candidate;
+                break;
+            }
+        }
+        if (event == null) {
+            connection.send(new EventLogEntry("Event '" + eventInstanceId
+                + "' nicht auf der aktuell gezeigten Karte gefunden"));
+            return;
+        }
+        boolean fired = EventDispatcher.fire(event, gameState, eventActionHandler);
+        if (!fired) {
+            connection.send(new EventLogEntry("Event '" + eventInstanceId + "': Bedingungen nicht erfüllt"));
         }
     }
 
@@ -243,11 +309,13 @@ public final class PreviewApplication extends ApplicationAdapter {
         WorldScene nextScene = null;
         SpriteAtlas nextSpriteAtlas = null;
         Array<BillboardRenderer> nextSprites = new Array<>();
+        Map<String, BillboardRenderer> nextSpritesByEntityId = new HashMap<>();
         GridActor nextTestActor = null;
         DirectionalSpriteAnimation nextTestActorAnimation = null;
         BillboardRenderer nextTestActorSprite = null;
         int nextTestSpawnX = 0;
         int nextTestSpawnZ = 0;
+        DialogueManifest nextDialogueManifest = null;
         try {
             if (request.tilesetManifestFilePath == null) {
                 throw new IllegalArgumentException("Map preview requires an exported tileset manifest");
@@ -260,6 +328,9 @@ public final class PreviewApplication extends ApplicationAdapter {
                 throw new IllegalArgumentException("Map has " + nextScene.getMap().lights.size
                     + " lights, more than the engine's shared point/spot budget of "
                     + LightingEnvironment.MAX_POINT_LIGHTS);
+            }
+            if (request.dialogueManifestFilePath != null) {
+                nextDialogueManifest = DialogueManifest.load(new FileHandle(request.dialogueManifestFilePath));
             }
             if (request.spriteManifestFilePath != null) {
                 FileHandle manifestFile = new FileHandle(request.spriteManifestFilePath);
@@ -275,6 +346,7 @@ public final class PreviewApplication extends ApplicationAdapter {
                     sprite.setBottomPadding(definition.footOffset);
                     sprite.setPosition(entity.x - 0.5f, surface.heightAt(entity.x - 0.5f, entity.z - 0.5f), entity.z - 0.5f);
                     nextSprites.add(sprite);
+                    nextSpritesByEntityId.put(entity.id, sprite);
                     // The test-mode actor reuses this same BillboardRenderer instance - its
                     // position/region just get driven live instead of staying at the spawn point,
                     // so it never renders twice.
@@ -302,6 +374,8 @@ public final class PreviewApplication extends ApplicationAdapter {
             documentTextureTileset = nextTileset;
             documentSpriteAtlas = nextSpriteAtlas;
             documentSprites.addAll(nextSprites);
+            documentSpritesByEntityId.putAll(nextSpritesByEntityId);
+            dialogueManifest = nextDialogueManifest;
             applyLights(nextScene.getMap().lights);
 
             sceneMode = SceneMode.DOCUMENT_MAP;
@@ -340,6 +414,7 @@ public final class PreviewApplication extends ApplicationAdapter {
      * rejected ShowMap never leaves the currently visible scene's lighting half-changed. */
     private void applyLights(Array<MapLight> lights) {
         lighting.clearPointLights();
+        lightsById.clear();
         for (MapLight light : lights) {
             PointLightSource source = new PointLightSource(light.x, light.y, light.z,
                 new Color(light.colorR, light.colorG, light.colorB, 1f), light.intensity, light.range);
@@ -349,6 +424,7 @@ public final class PreviewApplication extends ApplicationAdapter {
                     light.innerAngle, light.outerAngle);
             }
             lighting.addPointLight(source);
+            lightsById.put(light.id, source);
         }
     }
 
@@ -482,6 +558,8 @@ public final class PreviewApplication extends ApplicationAdapter {
     private void disposeDocumentAssets() {
         for (BillboardRenderer sprite : documentSprites) sprite.dispose();
         documentSprites.clear();
+        documentSpritesByEntityId.clear();
+        dialogueManifest = null;
         if (documentScene != null) documentScene.dispose();
         if (documentModelCatalog != null) documentModelCatalog.dispose();
         if (documentTextureTileset != null) documentTextureTileset.dispose();
@@ -490,5 +568,79 @@ public final class PreviewApplication extends ApplicationAdapter {
         documentModelCatalog = null;
         documentTextureTileset = null;
         documentSpriteAtlas = null;
+    }
+
+    /** What a triggered event's actions actually do in the preview: log-only for actions with no
+     * meaningful preview-side effect (OPEN_DOOR, CHANGE_MAP - the latter is a future increment, see
+     * docs/plan.md), a live sprite reposition for MOVE_NPC, a live light toggle for TOGGLE_LIGHT, and
+     * an auto-played branch walk for START_DIALOGUE since there is no in-preview dialogue box (nor a
+     * translation catalog to render text from) yet. */
+    private final class PreviewEventHandler implements EventActionHandler {
+        @Override
+        public void onStartDialogue(String dialogueId) {
+            if (dialogueManifest == null) {
+                connection.send(new EventLogEntry("Dialog '" + dialogueId
+                    + "' gestartet, aber kein Dialogkatalog geladen"));
+                return;
+            }
+            Dialogue dialogue;
+            try {
+                dialogue = dialogueManifest.dialogue(dialogueId);
+            } catch (IllegalArgumentException e) {
+                connection.send(new EventLogEntry("Dialog '" + dialogueId + "' nicht im Katalog gefunden"));
+                return;
+            }
+            List<DialogueNode> visited = DialoguePlayback.play(dialogue, gameState);
+            StringBuilder log = new StringBuilder("Dialog '").append(dialogueId).append("': ");
+            for (int i = 0; i < visited.size(); i++) {
+                if (i > 0) log.append(" -> ");
+                DialogueNode node = visited.get(i);
+                log.append(node.id).append(" (").append(node.speakerId).append('/').append(node.textId).append(')');
+            }
+            connection.send(new EventLogEntry(log.toString()));
+        }
+
+        @Override
+        public void onMoveNpc(String entityId, int x, int z) {
+            BillboardRenderer sprite = documentSpritesByEntityId.get(entityId);
+            if (sprite == null) {
+                connection.send(new EventLogEntry("NPC '" + entityId
+                    + "' hat keinen sichtbaren Sprite auf der aktuellen Karte - Bewegung nur protokolliert: ("
+                    + x + ", " + z + ")"));
+                return;
+            }
+            TerrainSurface surface = new TerrainSurface(documentScene.getMap().tiles);
+            float worldX = x - 0.5f;
+            float worldZ = z - 0.5f;
+            sprite.setPosition(worldX, surface.heightAt(worldX, worldZ), worldZ);
+            connection.send(new EventLogEntry("NPC '" + entityId + "' bewegt nach (" + x + ", " + z + ")"));
+        }
+
+        @Override
+        public void onOpenDoor(String entityId, boolean open) {
+            connection.send(new EventLogEntry("Tür '" + entityId + "': " + (open ? "geöffnet" : "geschlossen")));
+        }
+
+        @Override
+        public void onChangeMap(String targetMap, int x, int z) {
+            connection.send(new EventLogEntry("Kartenwechsel zu '" + targetMap + "' bei (" + x + ", " + z
+                + ") - im Testmodus noch nicht ausgeführt"));
+        }
+
+        @Override
+        public void onSetFlag(String key, String value) {
+            connection.send(new EventLogEntry("Flag '" + key + "' = '" + value + "' gesetzt"));
+        }
+
+        @Override
+        public void onToggleLight(String lightId, boolean enabled) {
+            PointLightSource light = lightsById.get(lightId);
+            if (light == null) {
+                connection.send(new EventLogEntry("Licht '" + lightId + "' nicht gefunden"));
+                return;
+            }
+            light.enabled = enabled;
+            connection.send(new EventLogEntry("Licht '" + lightId + "': " + (enabled ? "an" : "aus")));
+        }
     }
 }
