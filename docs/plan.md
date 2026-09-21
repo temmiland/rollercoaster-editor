@@ -266,8 +266,15 @@ weder Originalquellen überschreiben noch den letzten gültigen Export beschädi
 - [x] Vorschau zeigt eine generische Szene, bis im Editor ein Projekt offen ist; `ShowGenericScene`/
   `ShowSampleLevel` schaltet um. Solange es keine Dokument-Karte gibt, steht `SampleScene`
   (das aus `example-game` kopierte Testfeld) für "ein Projekt ist offen".
-- [ ] Vorschau mit Spielkamera (statt freier Kamera) - noch offen, sinnvoll erst mit echtem
-  Karteninhalt aus dem Dokument statt der `SampleScene`.
+- [x] Vorschau mit Spielkamera, zusätzlich zur freien Kamera: Menü "Vorschau" schaltet per
+  Funksignal (`SetCameraMode`) zwischen beiden um, beide bleiben verfügbar. Die Spielkamera nutzt
+  dieselbe `PixelCamera`/`LowResTarget`-Pipeline wie `example-game` selbst - fester Anstellwinkel,
+  Bildausschnitt anhand einer Kartenebene, Pixelraster-Snapping, echtes Downsampling auf die
+  niedrig aufgelöste Zielauflösung und Hochskalieren. Sie blickt auf die Entity vom Typ "player"
+  (Konvention wie in `example-game`), ersatzweise auf denselben Punkt wie die freie Kamera. Da die
+  Vorschau keine Spielersteuerung hat, ist die Position statisch - Bewegung ist Sache eines
+  künftigen Testmodus. Picking bleibt an die freie Kamera gebunden und pausiert in der Spielkamera,
+  da deren Bildausgabe über einen separaten Renderpfad läuft.
 - [x] UI mit Assetliste und Kartenansicht: Texturen, Tilesets, Modelle und Sprite-Sheets lassen
   sich bearbeiten; Kartenwerkzeuge, Overlays, Props und Entities arbeiten direkt auf dem Dokument.
 
