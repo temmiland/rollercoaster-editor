@@ -484,8 +484,20 @@ Ein einfacher Übergang funktioniert in Vorschau und Export, sobald seine Runtim
   als `EventLogEntry` im Diagnosen-Panel zurück, da der Editor sonst keine Sicht auf
   vorschau-interne Effekte hätte. Mit echtem GL-Kontext verifiziert.
 - Diagnosen mit anklickbarer Map-Position beziehungsweise Asset-ID.
-- Fehlende Assets, doppelte IDs, ungültige Regionen, unbekannte
-  Versionen und unauflösbare Verweise werden vor dem Export erkannt.
+- [x] Fehlende Assets, doppelte IDs, ungültige Regionen, unbekannte Versionen und unauflösbare
+  Verweise werden vor dem Export erkannt: Doppelte IDs, Regionsgrenzen und Formatversionen waren
+  bereits an der richtigen Stelle abgedeckt - beim Registrieren im Dokument, beim Packen von
+  Tileset/Sprite-Atlas beziehungsweise durch die echten Engine-Parser, gegen die die
+  Asset-Pipeline-Tests laufen. Die eigentliche Lücke war, dass Kartenübergreifende Verweise
+  (Übergangs-Zielkarte, Event-Aktion `CHANGE_MAP`) beim Laden bewusst *nicht* geprüft werden -
+  Karten können sich unabhängig von ihrer Dateireihenfolge referenzieren -, und danach nichts
+  mehr nachprüft, ob eine von Hand bearbeitete oder beschädigte `project.json` einen toten Verweis
+  enthält. `ProjectValidation` (Dokumentmodul) wiederholt dieselben Prüfungen, die die
+  Platzieren-/Bearbeiten-Commands ohnehin schon einzeln durchsetzen, einmal gesammelt über das
+  ganze geladene Projekt. `ProjectController.validateProject()` ergänzt das um eine
+  Dateiexistenzprüfung für registrierte Textur-, Modell- und Sprite-Quellen, da nur der Controller
+  den tatsächlichen Projektpfad kennt. Menüpunkt "Datei ▸ Projekt validieren…" zeigt alle
+  gefundenen Probleme gesammelt an, statt beim ersten Fehler abzubrechen.
 - Example Game lädt das exportierte Paket ohne prozedurale `ExampleMap`-Sonderbehandlung.
 
 Abnahme: Der vollständige Zielablauf vom Einzelbild bis zur begehbaren Welt funktioniert.
