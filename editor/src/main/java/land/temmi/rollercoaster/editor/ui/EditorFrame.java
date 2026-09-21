@@ -50,6 +50,8 @@ import java.util.regex.Pattern;
 public final class EditorFrame extends JFrame {
     private static final DateTimeFormatter TIMESTAMP = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static final Pattern DIAGNOSTIC_ID_PATTERN = Pattern.compile("'([^']+)'");
+    private static final Pattern DIAGNOSTIC_PICK_PATTERN =
+        Pattern.compile("Pick: \\(([-\\d.]+), ([-\\d.]+), ([-\\d.]+)\\)");
 
     private final ProjectController projectController;
     private final RecentProjects recentProjects;
@@ -228,11 +230,13 @@ public final class EditorFrame extends JFrame {
         return panel;
     }
 
-    /** Every diagnostic line that names a specific asset writes its id in single quotes, the same
-     * convention every validation/error message in this codebase already uses - so this needs no
-     * per-source-type parsing, just the first quoted token on the clicked line. Tries the map side
-     * (a map itself, or a placement on whichever map is currently selected) before the project-
-     * level asset catalogs, and does nothing when the line names neither. */
+    /** A Pick line carries a world position instead of an id - checked first since "Pick:" never
+     * also contains a quoted id. Every other diagnostic line that names a specific asset writes
+     * its id in single quotes, the same convention every validation/error message in this
+     * codebase already uses - so that needs no per-source-type parsing, just the first quoted
+     * token on the clicked line. Tries the map side (a map itself, or a placement on whichever
+     * map is currently selected) before the project-level asset catalogs, and does nothing when
+     * the line names neither. */
     private void onDiagnosticLineClicked(Point point) {
         int offset = diagnostics.viewToModel2D(point);
         if (offset < 0) return;
@@ -241,6 +245,15 @@ public final class EditorFrame extends JFrame {
             int start = diagnostics.getLineStartOffset(line);
             int end = diagnostics.getLineEndOffset(line);
             String lineText = diagnostics.getText(start, end - start);
+
+            Matcher pick = DIAGNOSTIC_PICK_PATTERN.matcher(lineText);
+            if (pick.find()) {
+                float worldX = Float.parseFloat(pick.group(1));
+                float worldZ = Float.parseFloat(pick.group(3));
+                mapPanel.highlightWorldPosition(worldX, worldZ);
+                return;
+            }
+
             Matcher matcher = DIAGNOSTIC_ID_PATTERN.matcher(lineText);
             if (!matcher.find()) return;
             String id = matcher.group(1);

@@ -82,6 +82,7 @@ final class MapCanvas extends JPanel {
     private static final Color SELECTED_LIGHT_OUTLINE = new Color(255, 220, 40);
     private static final Color TRANSITION_COLOR = new Color(160, 100, 230);
     private static final Color EVENT_COLOR = new Color(255, 140, 0);
+    private static final Color PICK_HIGHLIGHT = new Color(255, 60, 220);
 
     private final StrokeListener strokeListener;
     private final HoverListener hoverListener;
@@ -107,6 +108,8 @@ final class MapCanvas extends JPanel {
     private String selectedLightInstanceId;
     private String selectedTransitionInstanceId;
     private String selectedEventInstanceId;
+    private Integer highlightX;
+    private Integer highlightZ;
     private boolean showTerrain = true;
     private boolean showGrid = true;
     private boolean showWalkability;
@@ -211,6 +214,22 @@ final class MapCanvas extends JPanel {
     void setSelectedEventInstanceId(String instanceId) {
         selectedEventInstanceId = instanceId;
         repaint();
+    }
+
+    /** Marks a single cell from a clicked Pick diagnostic - a diamond outline, distinct from every
+     * placement marker's shape/color, so it reads as "a moment in time", not another placement. */
+    void setHighlightPosition(Integer x, Integer z) {
+        highlightX = x;
+        highlightZ = z;
+        repaint();
+    }
+
+    Integer getHighlightX() {
+        return highlightX;
+    }
+
+    Integer getHighlightZ() {
+        return highlightZ;
     }
 
     void setTileWalkability(Map<String, Boolean> tileWalkability) {
@@ -496,7 +515,20 @@ final class MapCanvas extends JPanel {
                 drawEvent(g, event, event.instanceId.equals(selectedEventInstanceId));
             }
         }
+        if (highlightX != null && highlightZ != null) drawHighlight(g, highlightX, highlightZ);
         drawRectangle(g);
+    }
+
+    private static void drawHighlight(Graphics g, int x, int z) {
+        int cx = Math.round((x + 0.5f) * CELL_SIZE);
+        int cz = Math.round((z + 0.5f) * CELL_SIZE);
+        int r = CELL_SIZE / 2 - 2;
+        Graphics2D g2 = (Graphics2D) g;
+        java.awt.Stroke previousStroke = g2.getStroke();
+        g2.setStroke(new java.awt.BasicStroke(2.5f));
+        g.setColor(PICK_HIGHLIGHT);
+        g.drawOval(cx - r, cz - r, r * 2, r * 2);
+        g2.setStroke(previousStroke);
     }
 
     private void drawRectangle(Graphics g) {

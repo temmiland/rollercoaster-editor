@@ -1170,6 +1170,27 @@ final class MapPanel extends JPanel {
         };
     }
 
+    /** Marks the cell a clicked Pick diagnostic landed on, on the currently selected map's canvas
+     * - the world position always comes from whatever the preview last showed, which by
+     * convention is the currently selected map. A tile's stored world centre is (gridIndex -
+     * 0.5, gridIndex - 0.5) (see docs/plan.md's terrain contract), so this is that conversion's
+     * inverse, rounded to the nearest cell and clamped to the map's bounds. */
+    void highlightWorldPosition(float worldX, float worldZ) {
+        MapAsset selected = mapList.getSelectedValue();
+        if (selected == null) return;
+        int gridX = clamp(Math.round(worldX + 0.5f), 0, selected.width - 1);
+        int gridZ = clamp(Math.round(worldZ + 0.5f), 0, selected.depth - 1);
+        canvas.setHighlightPosition(gridX, gridZ);
+    }
+
+    MapCanvas getCanvas() {
+        return canvas;
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
     /** Jumps to a map or one of its placements by id - the map side of a clickable diagnostic
      * line (AssetsPanel.trySelect covers project-level catalogs instead). Placements are only
      * searched on the currently selected map, since instance ids aren't unique across maps and a

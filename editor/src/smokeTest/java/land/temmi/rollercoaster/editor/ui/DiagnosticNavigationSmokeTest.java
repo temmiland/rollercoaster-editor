@@ -22,14 +22,20 @@ import java.util.regex.Pattern;
  * directly, the same way EditorFrame's click handler calls them. */
 public final class DiagnosticNavigationSmokeTest {
     private static final Pattern DIAGNOSTIC_ID_PATTERN = Pattern.compile("'([^']+)'");
+    private static final Pattern DIAGNOSTIC_PICK_PATTERN =
+        Pattern.compile("Pick: \\(([-\\d.]+), ([-\\d.]+), ([-\\d.]+)\\)");
 
     public static void main(String[] args) throws Exception {
         verifyFirstQuotedTokenExtraction();
+        verifyPickPatternExtraction();
         verifyAssetsPanelTrySelect();
         verifyMapPanelTrySelectPlacement();
-        System.out.println("PASS: the diagnostic id-in-quotes convention parses correctly, "
-            + "AssetsPanel.trySelect jumps to a project-level asset and switches tabs, and "
-            + "MapPanel.trySelectPlacement jumps to a map or a placement on the selected map");
+        verifyMapPanelHighlightWorldPosition();
+        System.out.println("PASS: the diagnostic id-in-quotes convention parses correctly, the Pick "
+            + "coordinate pattern extracts world X/Z, AssetsPanel.trySelect jumps to a project-level "
+            + "asset and switches tabs, MapPanel.trySelectPlacement jumps to a map or a placement on "
+            + "the selected map, and MapPanel.highlightWorldPosition converts a world Pick into a "
+            + "clamped, in-bounds grid cell");
     }
 
     private static void verifyFirstQuotedTokenExtraction() {
@@ -41,6 +47,19 @@ public final class DiagnosticNavigationSmokeTest {
 
         if (DIAGNOSTIC_ID_PATTERN.matcher("verbunden").find()) {
             throw new AssertionError("A status line with no quoted id should not match");
+        }
+    }
+
+    private static void verifyPickPatternExtraction() {
+        Matcher matcher = DIAGNOSTIC_PICK_PATTERN.matcher("14:23:05  Pick: (1.50, 0.00, -0.50)");
+        if (!matcher.find()) throw new AssertionError("Expected the Pick pattern to match");
+        if (Math.abs(Float.parseFloat(matcher.group(1)) - 1.50f) > 0.0001f
+            || Math.abs(Float.parseFloat(matcher.group(3)) - (-0.50f)) > 0.0001f) {
+            throw new AssertionError("Expected world X=1.50, Z=-0.50, got X=" + matcher.group(1) + ", Z=" + matcher.group(3));
+        }
+
+        if (DIAGNOSTIC_PICK_PATTERN.matcher("Event 'greet-event': Bedingungen nicht erfüllt").find()) {
+            throw new AssertionError("A non-Pick line should not match the Pick pattern");
         }
     }
 
@@ -93,6 +112,54 @@ public final class DiagnosticNavigationSmokeTest {
             throw new AssertionError("Expected trySelectPlacement to find the event on the selected map");
         }
         if (panel.trySelectPlacement("does-not-exist")) throw new AssertionError("Expected an unknown id to return false");
+    }
+
+    private static void verifyMapPanelHighlightWorldPosition() throws Exception {
+        Path projectDirectory = Files.createTempDirectory("diagnostic-navigation-highlight");
+        ProjectController controller = new ProjectController(() -> { });
+        controller.newProject(projectDirectory, "Scratch");
+        controller.importTexture(solidColorPng("grass", 16, 16, Color.GREEN), "grass");
+        controller.createTileset("overworld");
+        controller.addTile("overworld", "grass", "grass", null, true);
+        controller.createMap("valley", 2, 2, "overworld");
+        controller.paintTiles("valley", List.of(
+            new PaintTilesCommand.Edit(0, 0, null, "grass"), new PaintTilesCommand.Edit(1, 0, null, "grass"),
+            new PaintTilesCommand.Edit(0, 1, null, "grass"), new PaintTilesCommand.Edit(1, 1, null, "grass")));
+
+        MapPanel.PreviewMapRequester previewMapRequester = (a, b, c, d, e, f, g) -> CompletableFuture.completedFuture(null);
+        MapPanel.TestModeController testModeController = new MapPanel.TestModeController() {
+            @Override
+            public void triggerEvent(String eventInstanceId) {
+            }
+
+            @Override
+            public void resetFlags() {
+            }
+
+            @Override
+            public void setTimeOfDay(float hours) {
+            }
+        };
+        MapPanel panel = new MapPanel(controller, previewMapRequester, testModeController);
+        panel.refresh();
+        if (!panel.trySelectPlacement("valley")) throw new AssertionError("Expected to select the map first");
+
+        // Tile grid index gx's stored world centre is (gx - 0.5, gz - 0.5); a Pick landing there
+        // should round-trip to the exact same cell.
+        panel.highlightWorldPosition(0.5f, 0.5f);
+        if (!Integer.valueOf(1).equals(panel.getCanvas().getHighlightX())
+            || !Integer.valueOf(1).equals(panel.getCanvas().getHighlightZ())) {
+            throw new AssertionError("Expected world (0.5, 0.5) to highlight grid cell (1, 1), got ("
+                + panel.getCanvas().getHighlightX() + ", " + panel.getCanvas().getHighlightZ() + ")");
+        }
+
+        // Out-of-bounds world positions clamp to the map's edge instead of drawing off-canvas.
+        panel.highlightWorldPosition(50f, -50f);
+        if (!Integer.valueOf(1).equals(panel.getCanvas().getHighlightX())
+            || !Integer.valueOf(0).equals(panel.getCanvas().getHighlightZ())) {
+            throw new AssertionError("Expected an out-of-bounds pick to clamp to the map's edge, got ("
+                + panel.getCanvas().getHighlightX() + ", " + panel.getCanvas().getHighlightZ() + ")");
+        }
     }
 
     private static Path solidColorPng(String name, int width, int height, Color color) throws Exception {
