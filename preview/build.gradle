@@ -46,3 +46,10 @@ tasks.register('eventRuntimeSmokeTest', JavaExec) {
     classpath = sourceSets.smokeTest.runtimeClasspath
     mainClass = 'land.temmi.rollercoaster.editor.preview.EventRuntimeSmokeTest'
 }
+
+tasks.register('dialoguePlaybackSmokeTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks DialoguePlayback branch-following against a real Dialogue tree; no GL context involved.'
+    classpath = sourceSets.smokeTest.runtimeClasspath
+    mainClass = 'land.temmi.rollercoaster.editor.preview.DialoguePlaybackSmokeTest'
+}
