@@ -226,10 +226,121 @@ public final class ProtocolSmokeTest {
             }
         }
 
+        try (ServerSocket serverSocket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            int port = serverSocket.getLocalPort();
+            TriggerEvent[] received = new TriggerEvent[1];
+            Thread server = new Thread(() -> {
+                try (Socket socket = serverSocket.accept();
+                     MessageChannel channel = new MessageChannel(socket)) {
+                    channel.receive(); // Hello
+                    channel.send(new HelloAck(true, null));
+                    received[0] = (TriggerEvent) channel.receive();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            server.start();
+
+            try (Socket clientSocket = new Socket(InetAddress.getLoopbackAddress(), port);
+                 MessageChannel client = new MessageChannel(clientSocket)) {
+                client.send(new Hello(MessageChannel.PROTOCOL_VERSION));
+                client.receive(); // HelloAck
+                client.send(new TriggerEvent("event-1"));
+            }
+            server.join();
+
+            if (received[0] == null || !"event-1".equals(received[0].eventInstanceId)) {
+                throw new AssertionError("TriggerEvent lost data in transit");
+            }
+        }
+
+        try (ServerSocket serverSocket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            int port = serverSocket.getLocalPort();
+            ResetFlags[] received = new ResetFlags[1];
+            Thread server = new Thread(() -> {
+                try (Socket socket = serverSocket.accept();
+                     MessageChannel channel = new MessageChannel(socket)) {
+                    channel.receive(); // Hello
+                    channel.send(new HelloAck(true, null));
+                    received[0] = (ResetFlags) channel.receive();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            server.start();
+
+            try (Socket clientSocket = new Socket(InetAddress.getLoopbackAddress(), port);
+                 MessageChannel client = new MessageChannel(clientSocket)) {
+                client.send(new Hello(MessageChannel.PROTOCOL_VERSION));
+                client.receive(); // HelloAck
+                client.send(new ResetFlags());
+            }
+            server.join();
+
+            if (received[0] == null) throw new AssertionError("ResetFlags did not arrive");
+        }
+
+        try (ServerSocket serverSocket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            int port = serverSocket.getLocalPort();
+            SetTimeOfDay[] received = new SetTimeOfDay[1];
+            Thread server = new Thread(() -> {
+                try (Socket socket = serverSocket.accept();
+                     MessageChannel channel = new MessageChannel(socket)) {
+                    channel.receive(); // Hello
+                    channel.send(new HelloAck(true, null));
+                    received[0] = (SetTimeOfDay) channel.receive();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            server.start();
+
+            try (Socket clientSocket = new Socket(InetAddress.getLoopbackAddress(), port);
+                 MessageChannel client = new MessageChannel(clientSocket)) {
+                client.send(new Hello(MessageChannel.PROTOCOL_VERSION));
+                client.receive(); // HelloAck
+                client.send(new SetTimeOfDay(9.5f));
+            }
+            server.join();
+
+            if (received[0] == null || Math.abs(received[0].hours - 9.5f) > 0.0001f) {
+                throw new AssertionError("SetTimeOfDay lost data in transit");
+            }
+        }
+
+        try (ServerSocket serverSocket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            int port = serverSocket.getLocalPort();
+            EventLogEntry[] received = new EventLogEntry[1];
+            Thread server = new Thread(() -> {
+                try (Socket socket = serverSocket.accept();
+                     MessageChannel channel = new MessageChannel(socket)) {
+                    channel.receive(); // Hello
+                    channel.send(new HelloAck(true, null));
+                    channel.send(new EventLogEntry("Flag met-npc = true gesetzt"));
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            server.start();
+
+            try (Socket clientSocket = new Socket(InetAddress.getLoopbackAddress(), port);
+                 MessageChannel client = new MessageChannel(clientSocket)) {
+                client.send(new Hello(MessageChannel.PROTOCOL_VERSION));
+                client.receive(); // HelloAck
+                received[0] = (EventLogEntry) client.receive();
+            }
+            server.join();
+
+            if (received[0] == null || !"Flag met-npc = true gesetzt".equals(received[0].message)) {
+                throw new AssertionError("EventLogEntry lost data in transit");
+            }
+        }
+
         System.out.println("PASS: Hello/HelloAck roundtrip over a loopback socket, version mismatch rejected with a "
             + "reason, scene-switch messages roundtrip after the handshake, a preview-to-editor PickResult, "
             + "a ComputeModelBounds/ModelBoundsResult roundtrip, a ShowMap/ShowMapResult roundtrip, "
-            + "a SetCameraMode roundtrip, and a SetTestMode roundtrip");
+            + "a SetCameraMode roundtrip, a SetTestMode roundtrip, a TriggerEvent roundtrip, a ResetFlags "
+            + "roundtrip, a SetTimeOfDay roundtrip, and a preview-to-editor EventLogEntry roundtrip");
     }
 
     /** Mirrors the editor's half of the handshake: one connection, one Hello, one reply. */
