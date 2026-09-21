@@ -466,8 +466,23 @@ Ein einfacher Übergang funktioniert in Vorschau und Export, sobald seine Runtim
 - [x] Testlauf arbeitet auf einer Kopie; Bewegung und Gameplay verändern das Quelldokument nicht:
   Die Vorschau liest ausschließlich bereits exportierte Dateien und schreibt nie in `project.json`
   - das gilt unverändert auch für den Testmodus, der rein auf der geladenen `WorldScene` operiert.
-- Event- und Dialogabläufe einzeln auslösen, Flags zurücksetzen und Tageszeit sowie Lichtzustände
-  für reproduzierbare Tests vorgeben.
+- [x] Event- und Dialogabläufe einzeln auslösen, Flags zurücksetzen und Tageszeit sowie
+  Lichtzustände für reproduzierbare Tests vorgeben: `GameState`/`ConditionEvaluator`/
+  `EventDispatcher`/`EventActionHandler` (Engine, neues Laufzeitstück im `event`-Paket) prüfen
+  Bedingungen und reichen Aktionen an einen Handler weiter - reine Mechanik, die Interpretation
+  bleibt beim Aufrufer, genau wie beim Datenmodell selbst. Der "Auslösen"-Knopf in der
+  Ereignisliste sendet die gewählte Instanz-ID unabhängig vom authored Trigger; die Vorschau
+  wertet SET_FLAG in ihrem eigenen `GameState` aus, verschiebt bei MOVE_NPC den passenden
+  Sprite, schaltet bei TOGGLE_LIGHT das zugehörige `PointLightSource` (per Lichter-ID verfolgt,
+  da die Engine-Klasse selbst keine trägt), und lässt bei START_DIALOGUE `DialoguePlayback` den
+  Dialogbaum automatisch entlang der ersten zutreffenden Antwort abgehen - ein Ersatz für einen
+  echten Dialogdialog, den es ohne Übersetzungskatalog ohnehin nicht sinnvoll geben kann.
+  OPEN_DOOR und CHANGE_MAP werden nur protokolliert; ein echter Kartenwechsel im Testmodus ist
+  der nächste offene Punkt. "Flags zurücksetzen" leert den Testzustand, ein Tageszeit-Feld setzt
+  Uhrzeit und damit Beleuchtung direkt - Lichter selbst sind bereits über das gewöhnliche
+  Bearbeiten-und-Live-Vorschau-Dokumentfeld reproduzierbar steuerbar. Jede Auswirkung meldet sich
+  als `EventLogEntry` im Diagnosen-Panel zurück, da der Editor sonst keine Sicht auf
+  vorschau-interne Effekte hätte. Mit echtem GL-Kontext verifiziert.
 - Diagnosen mit anklickbarer Map-Position beziehungsweise Asset-ID.
 - Fehlende Assets, doppelte IDs, ungültige Regionen, unbekannte
   Versionen und unauflösbare Verweise werden vor dem Export erkannt.
