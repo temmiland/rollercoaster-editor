@@ -483,7 +483,18 @@ Ein einfacher Übergang funktioniert in Vorschau und Export, sobald seine Runtim
   Bearbeiten-und-Live-Vorschau-Dokumentfeld reproduzierbar steuerbar. Jede Auswirkung meldet sich
   als `EventLogEntry` im Diagnosen-Panel zurück, da der Editor sonst keine Sicht auf
   vorschau-interne Effekte hätte. Mit echtem GL-Kontext verifiziert.
-- Diagnosen mit anklickbarer Map-Position beziehungsweise Asset-ID.
+- [x] Diagnosen mit anklickbarer Asset-ID: Jede Validierungs- und Fehlermeldung in diesem
+  Projekt nennt die betroffene ID bereits in einfachen Anführungszeichen - ein Klick auf eine
+  Diagnosen-Zeile extrahiert das erste gequotete Token und versucht es erst über
+  `MapPanel.trySelectPlacement` (die Karte selbst oder eine Platzierung auf der aktuell
+  gewählten Karte) und dann über `AssetsPanel.trySelect` (die projektweiten Kataloge, samt
+  Tab-Wechsel) aufzulösen - keine nachrichtenspezifische Sonderbehandlung nötig. Platzierungen
+  werden bewusst nur auf der aktuell gewählten Karte gesucht, da Instanz-IDs kartenübergreifend
+  nicht eindeutig sind und eine Diagnosezeile selbst keine Karten-ID mitführt.
+- Anklickbare Map-Position (etwa bei einem `Pick`-Diagnoseeintrag, um die getroffene Stelle auf
+  der 2D-Kartenansicht zu markieren) ist noch offen - das erfordert eine Umrechnung von der
+  Weltposition der Vorschau in Canvas-Pixelkoordinaten, die von der Asset-ID-Auflösung unabhängig
+  ist.
 - [x] Fehlende Assets, doppelte IDs, ungültige Regionen, unbekannte Versionen und unauflösbare
   Verweise werden vor dem Export erkannt: Doppelte IDs, Regionsgrenzen und Formatversionen waren
   bereits an der richtigen Stelle abgedeckt - beim Registrieren im Dokument, beim Packen von
