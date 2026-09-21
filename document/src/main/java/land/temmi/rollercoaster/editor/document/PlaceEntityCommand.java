@@ -16,6 +16,7 @@ public final class PlaceEntityCommand implements Command {
         if (entity.spriteId != null && document.findSprite(entity.spriteId) == null) {
             throw new IllegalArgumentException("Entity '" + entity.instanceId + "' references unknown sprite '" + entity.spriteId + "'");
         }
+        EntityPropertyValidation.requireValid(document, map, entity);
         map.requireEntityPosition(entity);
         map.addEntity(entity);
     }

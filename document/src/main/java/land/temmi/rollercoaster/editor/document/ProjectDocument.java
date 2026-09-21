@@ -14,6 +14,7 @@ public final class ProjectDocument {
     private final List<ModelAsset> models = new ArrayList<>();
     private final List<SpriteAsset> sprites = new ArrayList<>();
     private final List<DialogueAsset> dialogues = new ArrayList<>();
+    private final List<EntityTypeAsset> entityTypes = new ArrayList<>();
     private final List<MapAsset> maps = new ArrayList<>();
 
     public ProjectDocument(String name) {
@@ -229,6 +230,52 @@ public final class ProjectDocument {
             }
         }
         throw new IllegalArgumentException("No such dialogue: " + id);
+    }
+
+    public List<EntityTypeAsset> getEntityTypes() {
+        return Collections.unmodifiableList(entityTypes);
+    }
+
+    public EntityTypeAsset findEntityType(String id) {
+        for (EntityTypeAsset entityType : entityTypes) {
+            if (entityType.id.equals(id)) return entityType;
+        }
+        return null;
+    }
+
+    void addEntityType(EntityTypeAsset entityType) {
+        if (findEntityType(entityType.id) != null) {
+            throw new IllegalArgumentException("Duplicate entity type id: " + entityType.id);
+        }
+        entityTypes.add(entityType);
+    }
+
+    void removeEntityType(String id) {
+        List<String> placements = new ArrayList<>();
+        for (MapAsset map : maps) {
+            for (MapEntityAsset entity : map.getEntities()) {
+                if (id.equals(entity.type)) placements.add("'" + entity.instanceId + "' on map '" + map.id + "'");
+            }
+        }
+        if (!placements.isEmpty()) {
+            throw new IllegalArgumentException("Entity type '" + id + "' is still used by " + String.join(", ", placements));
+        }
+        if (!entityTypes.removeIf(entityType -> entityType.id.equals(id))) {
+            throw new IllegalArgumentException("No such entity type: " + id);
+        }
+    }
+
+    void replaceEntityType(String id, EntityTypeAsset replacement) {
+        if (replacement == null || !id.equals(replacement.id)) {
+            throw new IllegalArgumentException("Replacement entity type must keep ID '" + id + "'");
+        }
+        for (int i = 0; i < entityTypes.size(); i++) {
+            if (entityTypes.get(i).id.equals(id)) {
+                entityTypes.set(i, replacement);
+                return;
+            }
+        }
+        throw new IllegalArgumentException("No such entity type: " + id);
     }
 
     public List<MapAsset> getMaps() {

@@ -5,7 +5,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /** Checks undo/redo, dirty tracking and the project.json roundtrip; no GL context involved. */
 public final class DocumentSmokeTest {
@@ -26,10 +28,11 @@ public final class DocumentSmokeTest {
         verifyTransitionCommandsAndRoundtrip();
         verifyDialogueCommandsAndRoundtrip();
         verifyEventCommandsAndRoundtrip();
+        verifyEntityTypeCommandsAndRoundtrip();
         System.out.println("PASS: undo/redo, dirty tracking after a branching edit, an atomic project.json "
             + "roundtrip across a moved directory, texture/tileset commands with referential integrity, "
             + "model import/export, map terrain painting, prop placement, map lighting, map transitions, "
-            + "dialogue trees, and map events");
+            + "dialogue trees, map events, and entity type schemas");
     }
 
     private static void verifyUndoRedoAndDirtyTracking() {
@@ -830,6 +833,142 @@ public final class DocumentSmokeTest {
         if (reloaded.getActions().get(0).type != EventActionAsset.Type.START_DIALOGUE
             || !"npc-1-intro".equals(reloaded.getActions().get(0).targetId)) {
             throw new AssertionError("Event action did not round-trip");
+        }
+    }
+
+    private static void verifyEntityTypeCommandsAndRoundtrip() throws IOException {
+        ProjectDocument document = new ProjectDocument("Typisierte Welt");
+        CommandHistory history = new CommandHistory(document);
+        document.addTexture(new TextureAsset("grass", "grass.png"));
+        TilesetAsset tileset = new TilesetAsset("overworld");
+        tileset.addTile(new TileEntry("grass", "grass", true));
+        document.addTileset(tileset);
+        history.perform(new CreateMapCommand("valley", 4, 3, "overworld"));
+        history.perform(new CreateMapCommand("cave", 3, 3, "overworld"));
+        MapAsset valley = document.findMap("valley");
+        history.perform(new PlaceLightCommand("valley", new MapLightAsset("lamp-1", 1f, 1.5f, 1f, 1f, 1f, 1f, 1f, 4f, true)));
+        history.perform(new RegisterDialogueCommand(new DialogueAsset("npc-1-intro", "greet",
+            List.of(new DialogueNodeAsset("greet", "npc-1", "dialogue.greet", null, List.of())))));
+        history.perform(new PlaceEntityCommand("valley", new MapEntityAsset("leader", "npc", null, 0, 0)));
+
+        // Unregistered types are unaffected: no schema, no properties, exactly as before.
+        history.perform(new PlaceEntityCommand("valley", new MapEntityAsset("player-start", "player", null, 1, 0)));
+        if (valley.findEntity("player-start") == null) throw new AssertionError("Free-form entity placement did not apply");
+
+        EntityTypeAsset npcType = new EntityTypeAsset("npc", List.of(
+            new EntityPropertyDefinition("greeting", EntityPropertyDefinition.Type.TEXT, true),
+            new EntityPropertyDefinition("homeMap", EntityPropertyDefinition.Type.MAP_REFERENCE, false),
+            new EntityPropertyDefinition("dialogueId", EntityPropertyDefinition.Type.DIALOGUE_REFERENCE, false),
+            new EntityPropertyDefinition("lampId", EntityPropertyDefinition.Type.LIGHT_REFERENCE, false),
+            new EntityPropertyDefinition("leaderId", EntityPropertyDefinition.Type.ENTITY_REFERENCE, false),
+            new EntityPropertyDefinition("patrolRadius", EntityPropertyDefinition.Type.NUMBER, false),
+            new EntityPropertyDefinition("hostile", EntityPropertyDefinition.Type.BOOLEAN, false)));
+
+        try {
+            new EntityTypeAsset("npc", List.of(
+                new EntityPropertyDefinition("greeting", EntityPropertyDefinition.Type.TEXT, true),
+                new EntityPropertyDefinition("greeting", EntityPropertyDefinition.Type.NUMBER, false)));
+            throw new AssertionError("A schema with a duplicate property key should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: property keys must be unique within a type.
+        }
+
+        history.perform(new RegisterEntityTypeCommand(npcType));
+        if (document.findEntityType("npc") == null) throw new AssertionError("Entity type registration did not apply");
+
+        try {
+            history.perform(new PlaceEntityCommand("valley",
+                new MapEntityAsset("npc-1", "npc", null, 2, 0)));
+            throw new AssertionError("Placing an npc without its required 'greeting' property should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: 'greeting' is required.
+        }
+
+        Map<String, String> badReference = new LinkedHashMap<>();
+        badReference.put("greeting", "Hallo!");
+        badReference.put("homeMap", "unknown-map");
+        try {
+            history.perform(new PlaceEntityCommand("valley", new MapEntityAsset("npc-1", "npc", null, 2, 0, badReference)));
+            throw new AssertionError("A homeMap referencing an unknown map should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: "unknown-map" is not a registered map.
+        }
+
+        Map<String, String> badNumber = new LinkedHashMap<>();
+        badNumber.put("greeting", "Hallo!");
+        badNumber.put("patrolRadius", "not-a-number");
+        try {
+            history.perform(new PlaceEntityCommand("valley", new MapEntityAsset("npc-1", "npc", null, 2, 0, badNumber)));
+            throw new AssertionError("A non-numeric patrolRadius should fail");
+        } catch (IllegalArgumentException expected) {
+            // Expected: patrolRadius must parse as a number.
+        }
+
+        Map<String, String> properties = new LinkedHashMap<>();
+        properties.put("greeting", "Hallo!");
+        properties.put("homeMap", "cave");
+        properties.put("dialogueId", "npc-1-intro");
+        properties.put("lampId", "lamp-1");
+        properties.put("leaderId", "leader");
+        properties.put("patrolRadius", "3.5");
+        properties.put("hostile", "false");
+        MapEntityAsset npc = new MapEntityAsset("npc-1", "npc", null, 2, 0, properties);
+        history.perform(new PlaceEntityCommand("valley", npc));
+        if (!"Hallo!".equals(valley.findEntity("npc-1").getProperties().get("greeting"))) {
+            throw new AssertionError("Entity property did not apply");
+        }
+
+        Map<String, String> updatedProperties = new LinkedHashMap<>(properties);
+        updatedProperties.put("greeting", "Servus!");
+        history.perform(new UpdateEntityCommand("valley", npc,
+            new MapEntityAsset("npc-1", "npc", null, 2, 0, updatedProperties)));
+        if (!"Servus!".equals(valley.findEntity("npc-1").getProperties().get("greeting"))) {
+            throw new AssertionError("Entity property update did not apply");
+        }
+        history.undo();
+        if (!"Hallo!".equals(valley.findEntity("npc-1").getProperties().get("greeting"))) {
+            throw new AssertionError("Undo did not restore the previous properties");
+        }
+
+        try {
+            document.removeEntityType("npc");
+            throw new AssertionError("Removing an entity type still used by placed entities should fail");
+        } catch (IllegalArgumentException expected) {
+            if (!expected.getMessage().contains("npc-1") || !expected.getMessage().contains("leader")) {
+                throw new AssertionError("The blocked removal should list every affected entity", expected);
+            }
+        }
+
+        EntityTypeAsset renamed = new EntityTypeAsset("npc", List.of(
+            new EntityPropertyDefinition("greeting", EntityPropertyDefinition.Type.TEXT, false)));
+        history.perform(new UpdateEntityTypeCommand(npcType, renamed));
+        if (document.findEntityType("npc").getProperties().size() != 1) {
+            throw new AssertionError("Entity type update did not apply");
+        }
+        history.undo();
+        if (document.findEntityType("npc").getProperties().size() != 7) {
+            throw new AssertionError("Undo did not restore the previous entity type");
+        }
+
+        Path directory = Files.createTempDirectory("trackside-editor-project-entity-types");
+        ProjectFile.save(document, directory);
+        ProjectDocument reloaded = ProjectFile.load(directory);
+        EntityTypeAsset reloadedType = reloaded.findEntityType("npc");
+        if (reloadedType == null || reloadedType.getProperties().size() != 7) {
+            throw new AssertionError("Entity type did not round-trip");
+        }
+        EntityPropertyDefinition reloadedGreeting = reloadedType.findProperty("greeting");
+        if (reloadedGreeting == null || reloadedGreeting.type != EntityPropertyDefinition.Type.TEXT || !reloadedGreeting.required) {
+            throw new AssertionError("Entity property definition did not round-trip");
+        }
+        MapEntityAsset reloadedNpc = reloaded.findMap("valley").findEntity("npc-1");
+        if (reloadedNpc == null || !"Hallo!".equals(reloadedNpc.getProperties().get("greeting"))
+            || !"cave".equals(reloadedNpc.getProperties().get("homeMap"))
+            || !"3.5".equals(reloadedNpc.getProperties().get("patrolRadius"))) {
+            throw new AssertionError("Entity properties did not round-trip");
+        }
+        if (!reloaded.findMap("valley").findEntity("player-start").getProperties().isEmpty()) {
+            throw new AssertionError("An unregistered-type entity should round-trip with no properties");
         }
     }
 

@@ -12,7 +12,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /** Reads and writes project.json. Saves are atomic: write a sibling temp file, then rename over the target. */
 public final class ProjectFile {
@@ -144,6 +146,22 @@ public final class ProjectFile {
             }
         }
 
+        JsonValue entityTypes = root.get("entityTypes");
+        if (entityTypes != null) {
+            for (JsonValue entityType = entityTypes.child; entityType != null; entityType = entityType.next) {
+                List<EntityPropertyDefinition> properties = new ArrayList<>();
+                JsonValue propertyValues = entityType.get("properties");
+                if (propertyValues != null) {
+                    for (JsonValue property = propertyValues.child; property != null; property = property.next) {
+                        properties.add(new EntityPropertyDefinition(requireString(property, "key"),
+                            requireEnum(property, "type", EntityPropertyDefinition.Type.class),
+                            property.getBoolean("required", false)));
+                    }
+                }
+                document.addEntityType(new EntityTypeAsset(requireString(entityType, "id"), properties));
+            }
+        }
+
         JsonValue maps = root.get("maps");
         if (maps != null) {
             for (JsonValue mapValue = maps.child; mapValue != null; mapValue = mapValue.next) {
@@ -192,9 +210,16 @@ public final class ProjectFile {
                 JsonValue entities = mapValue.get("entities");
                 if (entities != null) {
                     for (JsonValue entity = entities.child; entity != null; entity = entity.next) {
+                        Map<String, String> properties = new LinkedHashMap<>();
+                        JsonValue propertyValues = entity.get("properties");
+                        if (propertyValues != null) {
+                            for (JsonValue property = propertyValues.child; property != null; property = property.next) {
+                                properties.put(property.name, property.asString());
+                            }
+                        }
                         MapEntityAsset mapEntity = new MapEntityAsset(requireString(entity, "instanceId"),
                             requireString(entity, "type"), entity.getString("sprite", null),
-                            entity.getInt("x"), entity.getInt("z"));
+                            entity.getInt("x"), entity.getInt("z"), properties);
                         map.requireEntityPosition(mapEntity);
                         map.addEntity(mapEntity);
                     }
@@ -436,6 +461,23 @@ public final class ProjectFile {
         }
         writer.pop();
 
+        writer.array("entityTypes");
+        for (EntityTypeAsset entityType : document.getEntityTypes()) {
+            writer.object();
+            writer.set("id", entityType.id);
+            writer.array("properties");
+            for (EntityPropertyDefinition property : entityType.getProperties()) {
+                writer.object();
+                writer.set("key", property.key);
+                writer.set("type", property.type.name().toLowerCase(java.util.Locale.ROOT));
+                writer.set("required", property.required);
+                writer.pop();
+            }
+            writer.pop();
+            writer.pop();
+        }
+        writer.pop();
+
         writer.array("maps");
         for (MapAsset map : document.getMaps()) {
             writer.object();
@@ -491,6 +533,13 @@ public final class ProjectFile {
                 if (entity.spriteId != null) writer.set("sprite", entity.spriteId);
                 writer.set("x", entity.x);
                 writer.set("z", entity.z);
+                if (!entity.getProperties().isEmpty()) {
+                    writer.object("properties");
+                    for (Map.Entry<String, String> property : entity.getProperties().entrySet()) {
+                        writer.set(property.getKey(), property.getValue());
+                    }
+                    writer.pop();
+                }
                 writer.pop();
             }
             writer.pop();

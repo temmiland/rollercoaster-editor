@@ -22,6 +22,7 @@ public final class UpdateEntityCommand implements Command {
             throw new IllegalArgumentException("Entity '" + replacement.instanceId
                 + "' references unknown sprite '" + replacement.spriteId + "'");
         }
+        EntityPropertyValidation.requireValid(document, map, replacement);
         map.requireEntityPosition(replacement);
         map.replaceEntity(previous.instanceId, replacement);
     }
