@@ -395,10 +395,29 @@ Steilkanten und gesperrte Flächen verhalten sich genauso wie im exportierten Sp
   auf sie zeigt. Die Kartenansicht markiert Übergänge als eigenes Symbol, eine Instanzliste erlaubt
   Bearbeiten von Position, Zielkarte und Zielposition. Das tatsächliche Auslösen beim Betreten der
   Kachel ist Sache des Spiels beziehungsweise eines künftigen Testmodus, nicht des Editors.
-- Dialoge mit Sprecher-, Text-, Porträt- und Antwortknoten anlegen; Verzweigungen, Bedingungen
-  und Übersetzungs-IDs prüfen.
-- Events mit Auslösern, Bedingungen und Aktionen verknüpfen; Dialoge, Kartenwechsel, Flags,
-  NPCs, Türen und Lichtquellen als Ziele unterstützen.
+- [x] Dialoge mit Sprecher-, Text-, Porträt- und Antwortknoten anlegen; Verzweigungen und
+  Bedingungen prüfen: `Dialogue`/`DialogueNode`/`DialogueResponse` (Engine, neues `dialogue`-Paket)
+  sind reine Daten, projektweit über eine `DialogueManifest`-Datei registriert - wie Modelle und
+  Sprites, nicht kartengebunden. Sprünge zwischen Knoten werden schon beim Anlegen gegen die
+  Knotenmenge desselben Dialogs geprüft, da anders als bei Kartenübergängen keine Ladereihenfolge
+  im Spiel ist. Der Editor bekommt dafür einen eigenen "Dialoge"-Reiter mit verschachteltem
+  Knoten-/Antworten-/Bedingungseditor. Text-, Sprecher- und Porträt-Felder sind stabile IDs, die
+  das Spiel auflöst - ein Übersetzungskatalog mit Prüfung auf fehlende Sprachvarianten existiert im
+  Projekt noch nicht und ist damit bewusst nicht Teil dieser Prüfung.
+- [x] Events mit Auslösern, Bedingungen und Aktionen verknüpfen; Dialoge, Kartenwechsel, Flags,
+  NPCs, Türen und Lichtquellen als Ziele unterstützen: `GameEvent`/`EventTrigger`/`Condition`/`Action`
+  (Engine, neues `event`-Paket) sind reine Daten pro Karte, spiegelbildlich zu Props/Entities/
+  Lights/Transitions. Auslöser: Kartenstart, Interaktion (mit einer Entity), Fläche betreten,
+  Zeitwechsel. Bedingungen: Flag, Variable, Tageszeit, je mit Vergleichsoperator. Aktionen: Dialog
+  starten, NPC bewegen, Tür öffnen (als Entity-Ziel), Karte wechseln, Flag setzen, Licht schalten.
+  Der Editor prüft beim Platzieren und Bearbeiten jede Referenz - Entity, Licht, Dialog oder
+  Zielkarte - gegen die tatsächlich vorhandenen Assets, mit derselben Ladereihenfolge-Rücksicht wie
+  bei Übergängen (Zielkarten werden nur interaktiv geprüft, nicht beim Laden). Die Kartenansicht
+  markiert nur Flächen-Trigger, da Kartenstart/Interaktion/Zeitwechsel keine Kachelposition haben;
+  alle Events einer Karte erscheinen zusätzlich in einer eigenen Liste mit Formular-Editor. Flags
+  sind freie Strings ohne eigene Registrierung - ein Flag-Katalog wäre eine eigene, größere
+  Änderung. Das tatsächliche Auswerten von Bedingungen und Ausführen von Aktionen ist Sache des
+  Spiels beziehungsweise eines künftigen Testmodus, nicht des Editors.
 - [x] Punkt- und Spotlichter pro Karte bearbeiten: `MapLight` (Engine) und `MapLoader` lesen ein
   optionales `lights`-Array, spiegelbildlich zu Props/Entities - der Aufrufer entscheidet, was
   daraus wird, genau wie bei Entities. Der Editor prüft das gemeinsame 8-Licht-Budget der Engine
