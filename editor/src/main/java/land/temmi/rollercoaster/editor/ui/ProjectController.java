@@ -48,6 +48,7 @@ import land.temmi.rollercoaster.editor.document.PlaceEntityCommand;
 import land.temmi.rollercoaster.editor.document.PlaceTransitionCommand;
 import land.temmi.rollercoaster.editor.document.ProjectDocument;
 import land.temmi.rollercoaster.editor.document.ProjectFile;
+import land.temmi.rollercoaster.editor.document.ProjectValidation;
 import land.temmi.rollercoaster.editor.document.RemoveMapCommand;
 import land.temmi.rollercoaster.editor.document.RemoveModelCommand;
 import land.temmi.rollercoaster.editor.document.RemoveLightCommand;
@@ -625,6 +626,38 @@ public final class ProjectController {
         }
         DialogueManifestExport.write(entries, catalogsDirectory());
         return catalogsDirectory().resolve(DialogueManifestExport.FILE_NAME);
+    }
+
+    /** Re-checks every cross-reference the interactive Place/Update commands already enforce one
+     * at a time, in bulk (see {@link ProjectValidation}), plus every registered source file's
+     * presence on disk - the two ways a project can go stale without the editor's own placement
+     * commands ever seeing it happen: a hand-edited or corrupted project.json, or a source file
+     * deleted outside the editor. Returns every problem found; empty means the project is ready
+     * to export. */
+    public List<String> validateProject() {
+        requireOpen();
+        List<String> problems = new ArrayList<>(ProjectValidation.findProblems(history.getDocument()));
+        for (TextureAsset texture : getTextures()) {
+            if (!Files.isRegularFile(texturesDirectory().resolve(texture.fileName))) {
+                problems.add("Textur '" + texture.id + "': Datei fehlt (" + texture.fileName + ")");
+            }
+        }
+        for (ModelAsset model : getModels()) {
+            if (!Files.isRegularFile(modelsDirectory().resolve(model.fileName))) {
+                problems.add("Modell '" + model.id + "': Datei fehlt (" + model.fileName + ")");
+            }
+            for (String dependencyFileName : model.getDependencyFileNames()) {
+                if (!Files.isRegularFile(modelsDirectory().resolve(dependencyFileName))) {
+                    problems.add("Modell '" + model.id + "': abhängige Datei fehlt (" + dependencyFileName + ")");
+                }
+            }
+        }
+        for (SpriteAsset sprite : getSprites()) {
+            if (!Files.isRegularFile(spritesDirectory().resolve(sprite.fileName))) {
+                problems.add("Sprite '" + sprite.id + "': Datei fehlt (" + sprite.fileName + ")");
+            }
+        }
+        return problems;
     }
 
     private static List<DialogueManifestExport.Condition> toDialogueConditions(List<ConditionAsset> conditions) {

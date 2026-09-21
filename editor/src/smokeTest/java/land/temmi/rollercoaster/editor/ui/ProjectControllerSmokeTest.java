@@ -49,11 +49,13 @@ public final class ProjectControllerSmokeTest {
         verifyModelImportAndExport();
         verifySpriteImportAndExport();
         verifyMapCreationPaintingAndExport();
+        verifyValidateProjectCatchesMissingFiles();
         System.out.println("PASS: ProjectController new/rename/save/undo/redo, autosave detection and restore, "
             + "saveAs isolation, a texture-import-to-tileset-export roundtrip read back by the real parser, "
             + "a separately packed side texture, a model import/export roundtrip, "
             + "a sprite-sheet import/export roundtrip, "
-            + "and a map creation/paint/export roundtrip read back by the real MapLoader parser");
+            + "a map creation/paint/export roundtrip read back by the real MapLoader parser, "
+            + "and a pre-export validation sweep that catches a source file deleted outside the editor");
     }
 
     private static void verifyNewRenameSaveUndoRedo() throws IOException {
@@ -376,6 +378,26 @@ public final class ProjectControllerSmokeTest {
             // Expected: requireOpen() guards every mutating operation.
         } catch (IOException e) {
             throw new AssertionError("Expected IllegalStateException, not IOException", e);
+        }
+    }
+
+    /** ProjectValidation (document module) already covers dangling cross-references; this checks
+     * the part only ProjectController can, since only it knows the project's actual directory on
+     * disk - a source file removed by something other than the editor. */
+    private static void verifyValidateProjectCatchesMissingFiles() throws IOException {
+        Path projectDirectory = Files.createTempDirectory("trackside-editor-controller-validate");
+        ProjectController controller = new ProjectController(() -> { });
+        controller.newProject(projectDirectory, "Fragile World");
+
+        TextureAsset grass = controller.importTexture(solidColorPng("grass", 16, 16, Color.GREEN), "grass");
+        if (!controller.validateProject().isEmpty()) {
+            throw new AssertionError("A freshly imported texture should not be reported missing");
+        }
+
+        Files.delete(projectDirectory.resolve("sources/textures/" + grass.fileName));
+        List<String> problems = controller.validateProject();
+        if (problems.size() != 1 || !problems.get(0).contains(grass.id) || !problems.get(0).contains(grass.fileName)) {
+            throw new AssertionError("Expected one problem naming the missing texture file, got " + problems);
         }
     }
 }

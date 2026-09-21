@@ -53,6 +53,7 @@ public final class EditorFrame extends JFrame {
     private final JMenu recentMenu = new JMenu("Zuletzt geöffnet");
     private final JMenuItem saveMenuItem = new JMenuItem("Speichern");
     private final JMenuItem saveAsMenuItem = new JMenuItem("Speichern unter…");
+    private final JMenuItem validateMenuItem = new JMenuItem("Projekt validieren…");
     private final JMenuItem undoMenuItem = new JMenuItem("Rückgängig");
     private final JMenuItem redoMenuItem = new JMenuItem("Wiederholen");
     private final AssetsPanel assetsPanel;
@@ -121,6 +122,7 @@ public final class EditorFrame extends JFrame {
         saveMenuItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_S, shortcutMask));
         saveMenuItem.addActionListener(e -> onSave());
         saveAsMenuItem.addActionListener(e -> onSaveAs());
+        validateMenuItem.addActionListener(e -> onValidateProject());
         JMenuItem exit = new JMenuItem("Beenden");
         exit.addActionListener(e -> dispatchEvent(new WindowEvent(this, WindowEvent.WINDOW_CLOSING)));
 
@@ -129,6 +131,8 @@ public final class EditorFrame extends JFrame {
         fileMenu.addSeparator();
         fileMenu.add(saveMenuItem);
         fileMenu.add(saveAsMenuItem);
+        fileMenu.addSeparator();
+        fileMenu.add(validateMenuItem);
         fileMenu.addSeparator();
         fileMenu.add(recentMenu);
         fileMenu.addSeparator();
@@ -290,6 +294,20 @@ public final class EditorFrame extends JFrame {
         }
     }
 
+    private void onValidateProject() {
+        List<String> problems = projectController.validateProject();
+        if (problems.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Keine Probleme gefunden.", "Projekt validieren",
+                JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        JTextArea list = new JTextArea(String.join("\n", problems));
+        list.setEditable(false);
+        list.setRows(Math.min(problems.size(), 15));
+        JOptionPane.showMessageDialog(this, new JScrollPane(list),
+            problems.size() + " Problem(e) gefunden", JOptionPane.WARNING_MESSAGE);
+    }
+
     private void onUndo() {
         projectController.undo();
     }
@@ -346,6 +364,7 @@ public final class EditorFrame extends JFrame {
 
         saveMenuItem.setEnabled(open);
         saveAsMenuItem.setEnabled(open);
+        validateMenuItem.setEnabled(open);
         undoMenuItem.setEnabled(projectController.canUndo());
         redoMenuItem.setEnabled(projectController.canRedo());
 
