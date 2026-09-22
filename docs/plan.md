@@ -3,11 +3,15 @@
 Status: Phase 1-6 sind umgesetzt - Projektkern, Karten, Modelle, Sprite-Atlanten,
 tile-gebundene Entities mit Schemas, Lichter, Übergänge, Dialoge, Events, Testmodus,
 Event-/Dialogausführung, Vorab-Validierung, anklickbare Diagnosen, ein Example Game ohne
-prozedurale Kartensonderbehandlung, ein gemessenes Lasttest-/Reaktionszeitbudget, eine verifizierte
-native macOS-Distribution (Windows/Linux nur strukturell vorbereitet) und ein auf einem echten
-Android-Emulator geprüftes Example Game (iOS-Simulatortest an dieser Maschine blockiert). Der
-Editor ist ein eigenes Repository neben `rollercoaster`, `example-game` und `trackside`.
-Trackside-Inhalte sind zunächst außerhalb des Arbeitsumfangs.
+prozedurale Kartensonderbehandlung, ein gemessener und - nachträglich, unabhängig von der
+Referenzgröße gewünscht - umgesetzter inkrementeller Chunk-Rebuild, eine verifizierte native
+macOS-Distribution (Windows/Linux nur strukturell vorbereitet, dazu CI-Workflows für alle drei
+Zielsysteme in allen betroffenen Repositories, noch ungetestet ohne GitHub-Remote), ein auf einem
+echten Android-Emulator geprüftes Example Game mit sichtbarer virtueller Steuerung auf Mobilplatt-
+formen (derselbe Fund auf Android auch in `trackside` behoben) und ein iOS-Simulator, der inzwischen
+funktioniert, dessen Build hier aber nur die Geräte-Architektur erzeugt - ein tatsächlicher Test auf
+Simulator oder Gerät steht noch aus. Der Editor ist ein eigenes Repository neben `rollercoaster`,
+`example-game` und `trackside`. Trackside-Inhalte sind zunächst außerhalb des Arbeitsumfangs.
 
 ## Ziel und erster vollständiger Arbeitsablauf
 
@@ -537,27 +541,57 @@ Speichern/Öffnen und Export/Laden erhalten Geometrie, Platzierung, Höhe und Ko
   `LoadTestSmokeTest` (`editor`-Modul) baut eine Referenzkarte von 128x128 Kacheln (8x8
   `ChunkMesher.CHUNK_SIZE`-Chunks) mit 256 verteilten Props über dieselbe echte `ProjectController`/
   `PreviewProcess`-Pipeline wie der Editor und misst den vollständigen Export-/Neulade-Zyklus, den
-  jeder einzelne Pinselstrich heute auslöst. Ergebnis: ein Kaltstart kostet 111ms, ein einzelner
-  Pinselstrich im Mittel 30ms (16-62ms über 20 Wiederholungen) - deutlich innerhalb des ohnehin
-  bestehenden 180ms-Debounce-Fensters der Live-Vorschau (`MapPanel.livePreviewTimer`). Ein
-  inkrementeller Neuaufbau nur der betroffenen Chunks - `ChunkMesher`, `WorldSceneLoader` und
-  `WorldScene` bieten dafür aktuell keine API, jede Änderung baut die komplette Szene neu auf - ist
-  bei dieser Referenzgröße durch Messung nicht gerechtfertigt und bleibt zurückgestellt, bis ein
-  reales Projekt sie überschreitet; das wäre sonst Komplexität ohne belegten Bedarf. Ressourcenfreigabe
-  beim Reimport ist bereits korrekt: `PreviewApplication.disposeDocumentAssets()` verwirft die alte
-  Szene erst, nachdem die neue erfolgreich aufgebaut wurde, und `ModelBoundsService.compute()` gibt
-  seinen temporären Scene-Import in einem `finally` frei. Der Lasttest prüft das zusätzlich mit acht
-  aufeinanderfolgenden Wechseln zwischen der großen Karte und einer winzigen zweiten Karte über
-  dieselbe Verbindung, ohne Fehlschlag oder Verbindungsabbruch.
+  jeder einzelne Pinselstrich damals auslöste - deutlich innerhalb des ohnehin bestehenden
+  180ms-Debounce-Fensters der Live-Vorschau (`MapPanel.livePreviewTimer`), also durch Messung nicht
+  gerechtfertigt. Trotzdem nachträglich umgesetzt (nicht mehr durch die Referenzgröße begründet,
+  sondern unabhängig davon gewünscht): `ChunkMesher.buildChunk` meshed einen einzelnen Chunk über
+  denselben Code wie `build` (`appendChunk`, geteilt zwischen beiden), `PreviewApplication.
+  loadDocumentScene` remesht bei einer `ShowMap`-Anfrage für die bereits gezeigte Karte nur die
+  Chunks, die die vom Editor gemeldeten geänderten Zellen betreffen könnten - die eigene Zelle plus
+  alle vier Nachbarn, da eine Randzelle auch die Wandflächen des Nachbarchunks mitbestimmt
+  (`ChunkMesher.appendSide` liest über die Chunkgrenze) - und übernimmt Tileset, Modellkatalog und
+  jedes unveränderte Chunk-Modell unverändert vom aktuell gezeigten `WorldScene`, statt sie neu zu
+  bauen. `WorldScene.disposeExcept`/ein zusätzlicher Konstruktor mit `notOwnedByThisScene` sorgen
+  dafür, dass ein übernommenes Chunk-Modell nie doppelt freigegeben wird - weder wenn die alte Szene
+  verworfen wird, noch wenn der Aufbau der neuen Szene selbst fehlschlägt (z. B. beim Platzieren
+  eines Props), da `WorldScene`s eigene Konstruktor-Fehlerbehandlung sonst blind alles in `chunks`
+  freigeben würde, einschließlich geliehener, anderswo noch gebrauchter Modelle. Da `MapPanel` beim
+  Sammeln der geänderten Zellen bewusst nicht zwischen einem reinen Terrain-Pinselstrich und jeder
+  anderen Dokumentänderung unterscheidet (fehleranfällig, an vielen Stellen zu pflegen), verlässt
+  sich `PreviewApplication` nicht auf diese Zusicherung: Eine inkrementelle Anfrage, die fehlschlägt
+  - etwa weil ein neu platziertes Prop ein Modell referenziert, das der wiederverwendete Katalog
+  noch nicht kennt - wird automatisch einmal als vollständiger Neuaufbau wiederholt, statt einen
+  Fehler zu melden. `IncrementalChunkRebuildSmokeTest` (`editor`-Modul) prüft das gegen einen echten
+  Vorschau-Subprozess: eine inkrementelle Aktualisierung rendert pixelgleich zu einem vollständigen
+  Neuaufbau derselben geänderten Karte (per echtem Screenshot verglichen, nicht durch Lesen des
+  Codes angenommen - dabei zwei echte Fehler gefunden: ein wiederverwendetes Chunk-Modell zeigte auf
+  eine bereits freigegebene Textur, und `WorldScene`s eigene Fehlerbehandlung gab geliehene Modelle
+  frei, die eine andere, noch aktuelle Szene brauchte), zwanzig aufeinanderfolgende inkrementelle
+  Änderungen laufen ohne Fehlschlag oder Verbindungsabbruch, ein Kartenwechsel weg und zurück
+  rendert weiterhin korrekt, und eine absichtlich "falsch" als inkrementell markierte Anfrage mit
+  einem neuen Modell erholt sich über den automatischen Neuaufbau. `LoadTestSmokeTest` misst den
+  tatsächlichen Gewinn direkt gegen dieselbe Referenzkarte: inkrementelle Ticks liegen je nach Lauf
+  bei Faktor 1,4-1,9 schneller im Mittel als ein vollständiger Neuaufbau - real, aber bescheiden,
+  weil `loadDocumentScene` die komplette Kartendatei bei jeder Anfrage weiterhin neu einliest
+  (`MapLoader.load`), inkrementell oder nicht; nur das Chunk-Meshing selbst wird übersprungen. Ein
+  Testlauf mit einer 512x512-Karte (nicht als dauerhafte Referenzgröße behalten, um reguläre
+  Testläufe nicht zu verlangsamen) zeigt denselben Faktor statt eines mit der Kartengröße wachsenden
+  - das unadressierte Parsing skaliert mit der Kartengröße und dominiert die verbleibende Zeit
+  zunehmend, je kleiner der eingesparte Meshing-Anteil wird. Ressourcenfreigabe beim Reimport war
+  bereits vor dieser Änderung korrekt: `PreviewApplication.disposeDocumentAssets()` verwirft die
+  alte Szene erst, nachdem die neue erfolgreich aufgebaut wurde, und `ModelBoundsService.compute()`
+  gibt seinen temporären Scene-Import in einem `finally` frei.
 - [x] Culling-Grenzen nach Änderungen aktualisieren; Assetlisten bei Bedarf virtualisieren:
-  `WorldScene`s Bounds-Array wird ausschließlich beim vollständigen Szenenaufbau (Konstruktor)
-  beziehungsweise bei `applyTransform` neu berechnet - das ist bereits lückenlos, weil jede Änderung
-  heute ohnehin die ganze Szene neu aufbaut (siehe oben); eine gesonderte Invalidierung wäre erst
-  mit einer inkrementellen Mutation nötig, die bewusst zurückgestellt ist. `AssetsPanel` benutzt
-  bereits gewöhnliche `JList`/`DefaultListModel` (zeichnet nur sichtbare Zeilen) mit einem eigenen
-  Thumbnail-Cache; ein Messlauf mit 1500 importierten Texturen zeigt `refresh()`-Kosten von 0-2ms
-  pro Aufruf. Eine eigene Virtualisierung wäre bei den hier realistischen Katalogumfängen
-  unbegründeter Mehraufwand und bleibt aus demselben Grund wie oben zurückgestellt.
+  `WorldScene`s Bounds-Array wird ausschließlich beim Szenenaufbau (Konstruktor) beziehungsweise bei
+  `applyTransform` neu berechnet. Das bleibt auch nach dem inkrementellen Chunk-Rebuild oben
+  lückenlos: Jede `ShowMap`-Antwort - egal ob vollständig oder inkrementell - baut eine neue
+  `WorldScene` über denselben Konstruktor, der für jeden Chunk (übernommen oder frisch gemesht) eine
+  eigene `ModelInstance` samt Bounds erzeugt; es gibt keinen Codepfad, der ein bestehendes
+  `WorldScene`-Objekt nachträglich mutiert, ohne dass seine Bounds mit aufgebaut würden. `AssetsPanel`
+  benutzt bereits gewöhnliche `JList`/`DefaultListModel` (zeichnet nur sichtbare Zeilen) mit einem
+  eigenen Thumbnail-Cache; ein Messlauf mit 1500 importierten Texturen zeigt `refresh()`-Kosten von
+  0-2ms pro Aufruf. Eine eigene Virtualisierung wäre bei den hier realistischen Katalogumfängen
+  unbegründeter Mehraufwand und bleibt zurückgestellt.
 - [x] Lasttests mit größeren Karten, vielen Props und wiederholtem Projektwechsel:
   `LoadTestSmokeTest` (siehe oben, `:editor:loadTestSmokeTest`) ist der dauerhafte Lasttest - er
   bleibt im Projekt, um dieselbe Messung nach künftigen Änderungen zu wiederholen, statt eine
