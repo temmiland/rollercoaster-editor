@@ -1,10 +1,12 @@
 # Rollercoaster Editor — Umsetzungsplan
 
-Status: Phase 1-5 sind umgesetzt - Projektkern, Karten, Modelle, Sprite-Atlanten,
+Status: Phase 1-6 sind umgesetzt - Projektkern, Karten, Modelle, Sprite-Atlanten,
 tile-gebundene Entities mit Schemas, Lichter, Übergänge, Dialoge, Events, Testmodus,
-Event-/Dialogausführung, Vorab-Validierung, anklickbare Diagnosen und ein Example Game ohne
-prozedurale Kartensonderbehandlung. Phase 6 (größere Projekte und Distribution) steht noch aus.
-Der Editor ist ein eigenes Repository neben `rollercoaster`, `example-game` und `trackside`.
+Event-/Dialogausführung, Vorab-Validierung, anklickbare Diagnosen, ein Example Game ohne
+prozedurale Kartensonderbehandlung, ein gemessenes Lasttest-/Reaktionszeitbudget, eine verifizierte
+native macOS-Distribution (Windows/Linux nur strukturell vorbereitet) und ein auf einem echten
+Android-Emulator geprüftes Example Game (iOS-Simulatortest an dieser Maschine blockiert). Der
+Editor ist ein eigenes Repository neben `rollercoaster`, `example-game` und `trackside`.
 Trackside-Inhalte sind zunächst außerhalb des Arbeitsumfangs.
 
 ## Ziel und erster vollständiger Arbeitsablauf
@@ -581,8 +583,26 @@ Speichern/Öffnen und Export/Laden erhalten Geometrie, Platzierung, Höhe und Ko
   richten sich nach dem erkannten Host-Betriebssystem) und bewusst **nicht** gebaut oder geprüft -
   diese Maschine ist ein Mac; ein Windows- oder Linux-Build/-Test braucht einen entsprechenden
   Build-Rechner oder eine CI-Matrix, die es in diesem Projekt noch nicht gibt.
-- Exportiertes Paket auch über Android und iOS des Example Game testen; tatsächliche
-  Geräte-/Simulatorergebnisse getrennt von erfolgreichen Kompilierungen dokumentieren.
+- [x] Exportiertes Paket auch über Android und iOS des Example Game testen; tatsächliche
+  Geräte-/Simulatorergebnisse getrennt von erfolgreichen Kompilierungen dokumentieren: Android auf
+  einem echten Emulator (`Medium_Phone_API_36.1`, API 36) geprüft - und dabei ein echter, bis dahin
+  unbemerkter Fehler gefunden, den eine erfolgreiche Kompilierung nicht zeigt: `platforms/android/
+  build.gradle` deklarierte nie `gdx-platform`-Android-Natives (nur Desktop hatte das), also fehlte
+  `libgdx.so` im APK vollständig und die App stürzte bei jedem Start sofort mit
+  `UnsatisfiedLinkError` ab - kompilierte, installierte und startete augenscheinlich, lief aber nie.
+  Behoben nach dem etablierten libGDX-Gradle-Rezept: eine `natives`-Konfiguration mit den vier
+  Android-ABI-Klassifizierern plus ein `copyAndroidNatives`-Task, der ihre `.so`-Dateien nach
+  `libs/<abi>/` entpackt, das über `jniLibs.srcDirs` ins APK einfließt. Mit demselben Emulator erneut
+  geprüft: App bleibt am Leben, `ExampleGame` protokolliert echte Renderframes über einen echten
+  GLES-3.1-Kontext, und ein Screenshot zeigt exakt dieselbe Szene wie die Desktop-Renderprüfungen -
+  Wegkreuz, Haus, Straßenlaterne, Spielersprite. iOS ließ sich in dieser Umgebung nicht auf dieselbe
+  Art abschließend prüfen: `xcrun simctl` hängt hier unabhängig vom Projekt dauerhaft, auch nach
+  einem Neustart des CoreSimulator-Diensts - ein Umgebungsproblem dieser Maschine, kein Befund am
+  Code. `platforms/ios` selbst kompiliert (siehe `trackside`s bereits verifizierter signierter
+  Geräte-Build auf demselben RoboVM-Weg); ein tatsächlicher Start auf Simulator oder Gerät bleibt
+  offen, bis diese Maschine einen funktionierenden Simulator hat oder ein echtes Gerät angeschlossen
+  wird - bewusst nicht als geprüft ausgegeben, obwohl der Build durchläuft, genau die Unterscheidung,
+  die dieser Punkt verlangt.
 
 ## Prüfstrategie und Abschlusskriterien
 
