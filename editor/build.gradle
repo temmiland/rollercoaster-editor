@@ -71,3 +71,14 @@ tasks.register('loadTestSmokeTest', JavaExec) {
         systemProperty 'trackside.editor.previewClasspath', sourceSets.smokeTest.runtimeClasspath.asPath
     }
 }
+
+tasks.register('incrementalChunkRebuildSmokeTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks that an incremental chunk update renders pixel-identical to a full rebuild, and survives repeated edits and map switches, over a real preview subprocess.'
+    classpath = sourceSets.smokeTest.runtimeClasspath
+    mainClass = 'land.temmi.rollercoaster.editor.ui.IncrementalChunkRebuildSmokeTest'
+    args sampleGltfPath
+    doFirst {
+        systemProperty 'trackside.editor.previewClasspath', sourceSets.smokeTest.runtimeClasspath.asPath
+    }
+}
