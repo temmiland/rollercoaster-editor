@@ -14,6 +14,7 @@ import javax.swing.JPanel;
 import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
+import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
@@ -24,7 +25,9 @@ import land.temmi.rollercoaster.editor.protocol.CameraMode;
 import land.temmi.rollercoaster.editor.protocol.ModelBoundsResult;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
+import java.awt.GraphicsEnvironment;
 import java.awt.Point;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
@@ -52,9 +55,13 @@ public final class EditorFrame extends JFrame {
     private static final Pattern DIAGNOSTIC_ID_PATTERN = Pattern.compile("'([^']+)'");
     private static final Pattern DIAGNOSTIC_PICK_PATTERN =
         Pattern.compile("Pick: \\(([-\\d.]+), ([-\\d.]+), ([-\\d.]+)\\)");
+    private static final int MAP_TAB_INDEX = 0;
+    private static final int ASSETS_TAB_INDEX = 1;
+    private static final Rectangle DEFAULT_WINDOW_BOUNDS = new Rectangle(0, 0, 1100, 720);
 
     private final ProjectController projectController;
     private final RecentProjects recentProjects;
+    private final EditorWindowState windowState;
 
     private final JLabel statusLabel = new JLabel("Vorschau: getrennt");
     private final JTextArea diagnostics = new JTextArea();
@@ -65,11 +72,17 @@ public final class EditorFrame extends JFrame {
     private final JMenuItem validateMenuItem = new JMenuItem("Projekt validieren…");
     private final JMenuItem undoMenuItem = new JMenuItem("Rückgängig");
     private final JMenuItem redoMenuItem = new JMenuItem("Wiederholen");
+    private final JCheckBoxMenuItem diagnosticsVisibleItem = new JCheckBoxMenuItem("Diagnosen anzeigen", true);
     private final AssetsPanel assetsPanel;
     private final MapPanel mapPanel;
+    private JTabbedPane centerTabs;
+    private JSplitPane contentSplit;
+    private JPanel diagnosticsPanel;
+    private int diagnosticsDividerSize;
+    private int lastDiagnosticsDividerLocation = -1;
 
     public EditorFrame(Runnable onRestartPreviewRequested, ProjectController projectController,
-                       RecentProjects recentProjects,
+                       RecentProjects recentProjects, EditorWindowState windowState,
                        Function<String, CompletableFuture<ModelBoundsResult>> modelBoundsComputer,
                        MapPanel.PreviewMapRequester previewMapRequester,
                        Consumer<CameraMode> onCameraModeChanged,
@@ -80,6 +93,7 @@ public final class EditorFrame extends JFrame {
         super("Rollercoaster Editor");
         this.projectController = projectController;
         this.recentProjects = recentProjects;
+        this.windowState = windowState;
         this.assetsPanel = new AssetsPanel(projectController, modelBoundsComputer);
         this.mapPanel = new MapPanel(projectController, previewMapRequester,
             new MapPanel.TestModeController() {
@@ -104,6 +118,7 @@ public final class EditorFrame extends JFrame {
             @Override
             public void windowClosing(WindowEvent e) {
                 if (confirmDiscardIfDirty()) {
+                    saveWindowState();
                     dispose();
                     System.exit(0);
                 }
@@ -115,8 +130,58 @@ public final class EditorFrame extends JFrame {
         add(buildContent(), BorderLayout.CENTER);
         add(buildStatusBar(), BorderLayout.SOUTH);
 
-        setSize(1280, 800);
-        setLocationRelativeTo(null);
+        restoreWindowState();
+    }
+
+    /** Restores everything that can be applied before the frame is shown (bounds, extended
+     * state, selected tab, diagnostics visibility); the diagnostics divider needs the frame's
+     * real size, so that part is deferred until after the pending setVisible(true) runs. */
+    private void restoreWindowState() {
+        Rectangle savedBounds = windowState.getWindowBounds();
+        if (savedBounds != null) {
+            setBounds(clampToScreen(savedBounds));
+        } else {
+            setSize(DEFAULT_WINDOW_BOUNDS.width, DEFAULT_WINDOW_BOUNDS.height);
+            setLocationRelativeTo(null);
+        }
+        setExtendedState(windowState.getExtendedState());
+
+        centerTabs.setSelectedIndex(
+            Math.min(windowState.getSelectedTab("center", MAP_TAB_INDEX), centerTabs.getTabCount() - 1));
+
+        boolean diagnosticsVisible = windowState.getFlag("diagnosticsVisible", true);
+        diagnosticsVisibleItem.setSelected(diagnosticsVisible);
+        if (!diagnosticsVisible) setDiagnosticsVisible(false);
+
+        SwingUtilities.invokeLater(() -> {
+            if (!diagnosticsVisibleItem.isSelected()) return;
+            int location = windowState.getDividerLocation("diagnostics", -1);
+            if (location > 0) contentSplit.setDividerLocation(location);
+        });
+    }
+
+    private void saveWindowState() {
+        int extendedState = getExtendedState();
+        windowState.putExtendedState(extendedState);
+        if ((extendedState & MAXIMIZED_BOTH) == 0) windowState.putWindowBounds(getBounds());
+
+        windowState.putSelectedTab("center", centerTabs.getSelectedIndex());
+        windowState.putFlag("diagnosticsVisible", diagnosticsVisibleItem.isSelected());
+        int dividerLocation = diagnosticsVisibleItem.isSelected()
+            ? contentSplit.getDividerLocation() : lastDiagnosticsDividerLocation;
+        if (dividerLocation > 0) windowState.putDividerLocation("diagnostics", dividerLocation);
+    }
+
+    /** A window position saved on a bigger or differently arranged screen must not reopen
+     * partly or fully off-screen - the exact failure mode a small-monitor user would hit after
+     * using the editor on a larger display first. */
+    private static Rectangle clampToScreen(Rectangle bounds) {
+        Rectangle screen = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        int width = Math.min(bounds.width, screen.width);
+        int height = Math.min(bounds.height, screen.height);
+        int x = Math.max(screen.x, Math.min(bounds.x, screen.x + screen.width - width));
+        int y = Math.max(screen.y, Math.min(bounds.y, screen.y + screen.height - height));
+        return new Rectangle(x, y, width, height);
     }
 
     private JMenuBar buildMenuBar(Runnable onRestartPreviewRequested, Consumer<CameraMode> onCameraModeChanged,
@@ -155,6 +220,10 @@ public final class EditorFrame extends JFrame {
         editMenu.add(undoMenuItem);
         editMenu.add(redoMenuItem);
 
+        JMenu viewMenu = new JMenu("Ansicht");
+        diagnosticsVisibleItem.addActionListener(e -> setDiagnosticsVisible(diagnosticsVisibleItem.isSelected()));
+        viewMenu.add(diagnosticsVisibleItem);
+
         JMenu previewMenu = new JMenu("Vorschau");
         JMenuItem restart = new JMenuItem("Neu verbinden");
         restart.addActionListener(e -> onRestartPreviewRequested.run());
@@ -177,42 +246,23 @@ public final class EditorFrame extends JFrame {
         JMenuBar menuBar = new JMenuBar();
         menuBar.add(fileMenu);
         menuBar.add(editMenu);
+        menuBar.add(viewMenu);
         menuBar.add(previewMenu);
         return menuBar;
     }
 
     private JSplitPane buildContent() {
-        JPanel properties = buildPropertiesPanel();
-        JPanel diagnosticsPanel = buildDiagnosticsPanel();
+        centerTabs = new JTabbedPane();
+        centerTabs.addTab("Karte", mapPanel);
+        centerTabs.addTab("Assets", assetsPanel);
 
-        JSplitPane rightSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, properties, diagnosticsPanel);
-        rightSplit.setResizeWeight(0.4);
+        diagnosticsPanel = buildDiagnosticsPanel();
 
-        JSplitPane centerSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, assetsPanel, mapPanel);
-        centerSplit.setResizeWeight(0.3);
-
-        JSplitPane mainSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, centerSplit, rightSplit);
-        mainSplit.setResizeWeight(0.7);
-        return mainSplit;
-    }
-
-    private JPanel buildPropertiesPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Eigenschaften"));
-
-        JPanel form = new JPanel(new FlowLayout(FlowLayout.LEADING));
-        form.add(new JLabel("Projektname:"));
-        projectNameField.setColumns(20);
-        projectNameField.addActionListener(e -> commitNameEdit());
-        projectNameField.addFocusListener(new FocusAdapter() {
-            @Override
-            public void focusLost(FocusEvent e) {
-                commitNameEdit();
-            }
-        });
-        form.add(projectNameField);
-        panel.add(form, BorderLayout.NORTH);
-        return panel;
+        contentSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, centerTabs, diagnosticsPanel);
+        contentSplit.setResizeWeight(1.0);
+        contentSplit.setOneTouchExpandable(true);
+        diagnosticsDividerSize = contentSplit.getDividerSize();
+        return contentSplit;
     }
 
     private JPanel buildDiagnosticsPanel() {
@@ -228,6 +278,23 @@ public final class EditorFrame extends JFrame {
         });
         panel.add(new JScrollPane(diagnostics), BorderLayout.CENTER);
         return panel;
+    }
+
+    /** Collapses the diagnostics log to zero height instead of leaving it a thin, useless strip -
+     * most sessions don't need it open, and on a small monitor its permanent share of the window
+     * is exactly the kind of space this panel used to waste. */
+    private void setDiagnosticsVisible(boolean visible) {
+        if (visible) {
+            contentSplit.setBottomComponent(diagnosticsPanel);
+            contentSplit.setDividerSize(diagnosticsDividerSize);
+            contentSplit.setDividerLocation(lastDiagnosticsDividerLocation > 0
+                ? lastDiagnosticsDividerLocation : (int) (getHeight() * 0.7));
+        } else {
+            lastDiagnosticsDividerLocation = contentSplit.getDividerLocation();
+            contentSplit.setBottomComponent(null);
+            contentSplit.setDividerSize(0);
+        }
+        contentSplit.revalidate();
     }
 
     /** A Pick line carries a world position instead of an id - checked first since "Pick:" never
@@ -251,13 +318,18 @@ public final class EditorFrame extends JFrame {
                 float worldX = Float.parseFloat(pick.group(1));
                 float worldZ = Float.parseFloat(pick.group(3));
                 mapPanel.highlightWorldPosition(worldX, worldZ);
+                centerTabs.setSelectedIndex(MAP_TAB_INDEX);
                 return;
             }
 
             Matcher matcher = DIAGNOSTIC_ID_PATTERN.matcher(lineText);
             if (!matcher.find()) return;
             String id = matcher.group(1);
-            if (!mapPanel.trySelectPlacement(id)) assetsPanel.trySelect(id);
+            if (mapPanel.trySelectPlacement(id)) {
+                centerTabs.setSelectedIndex(MAP_TAB_INDEX);
+            } else if (assetsPanel.trySelect(id)) {
+                centerTabs.setSelectedIndex(ASSETS_TAB_INDEX);
+            }
         } catch (BadLocationException ignored) {
             // The click landed past the current text (e.g. a trailing blank line) - nothing to resolve.
         }
@@ -265,6 +337,16 @@ public final class EditorFrame extends JFrame {
 
     private JPanel buildStatusBar() {
         JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        bar.add(new JLabel("Projekt:"));
+        projectNameField.setColumns(18);
+        projectNameField.addActionListener(e -> commitNameEdit());
+        projectNameField.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent e) {
+                commitNameEdit();
+            }
+        });
+        bar.add(projectNameField);
         bar.add(statusLabel);
         return bar;
     }

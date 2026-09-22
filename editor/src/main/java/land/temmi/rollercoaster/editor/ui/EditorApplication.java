@@ -12,6 +12,7 @@ public final class EditorApplication {
             ProjectController[] projectController = new ProjectController[1];
             EditorFrame[] frame = new EditorFrame[1];
             RecentProjects recentProjects = new RecentProjects();
+            EditorWindowState windowState = new EditorWindowState();
 
             projectController[0] = new ProjectController(() -> {
                 frame[0].refreshProjectUi();
@@ -19,6 +20,7 @@ public final class EditorApplication {
             });
 
             frame[0] = new EditorFrame(() -> previewProcess[0].restart(), projectController[0], recentProjects,
+                windowState,
                 path -> previewProcess[0].computeModelBounds(path),
                 (mapFilePath, width, depth, tilesetManifestFilePath, modelManifestFilePath, spriteManifestFilePath,
                  dialogueManifestFilePath, dirtyCellXs, dirtyCellZs) ->
