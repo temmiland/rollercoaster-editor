@@ -155,7 +155,8 @@ public final class ProtocolSmokeTest {
                 client.send(new Hello(MessageChannel.PROTOCOL_VERSION));
                 client.receive(); // HelloAck
                 client.send(new ShowMap("/tmp/valley.json", 3, 2, "/tmp/catalogs/overworld.json",
-                    "/tmp/catalogs/models.json", "/tmp/catalogs/sprites.json", "/tmp/catalogs/dialogues.json"));
+                    "/tmp/catalogs/models.json", "/tmp/catalogs/sprites.json", "/tmp/catalogs/dialogues.json",
+                    new int[] {1, 2}, new int[] {0, 1}));
                 result = (ShowMapResult) client.receive();
             }
             server.join();
@@ -165,7 +166,11 @@ public final class ProtocolSmokeTest {
                 || !"/tmp/catalogs/overworld.json".equals(received[0].tilesetManifestFilePath)
                 || !"/tmp/catalogs/models.json".equals(received[0].modelManifestFilePath)
                 || !"/tmp/catalogs/sprites.json".equals(received[0].spriteManifestFilePath)
-                || !"/tmp/catalogs/dialogues.json".equals(received[0].dialogueManifestFilePath)) {
+                || !"/tmp/catalogs/dialogues.json".equals(received[0].dialogueManifestFilePath)
+                || received[0].dirtyCellXs == null || received[0].dirtyCellXs.length != 2
+                || received[0].dirtyCellXs[0] != 1 || received[0].dirtyCellXs[1] != 2
+                || received[0].dirtyCellZs == null || received[0].dirtyCellZs.length != 2
+                || received[0].dirtyCellZs[0] != 0 || received[0].dirtyCellZs[1] != 1) {
                 throw new AssertionError("ShowMap lost data in transit");
             }
             if (!result.success) throw new AssertionError("ShowMapResult lost data in transit");
