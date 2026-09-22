@@ -22,7 +22,10 @@ import java.util.concurrent.TimeUnit;
 /**
  * Measures full-map export/reload latency at a reference project size, over the real live-preview
  * protocol - this is the "vor Phase 6" measurement docs/plan.md asks for before deciding how much
- * incremental-rebuild work bullet 1 actually needs. Run with :editor:loadTestSmokeTest.
+ * incremental-rebuild work bullet 1 actually needs. Also measures the incremental update
+ * MapPanel/PreviewApplication now send for a same-map paint stroke, against the exact same
+ * reference map, so the two can be compared directly rather than trusted by reasoning alone. Run
+ * with :editor:loadTestSmokeTest.
  *
  * <p>Reference size: 128x128 tiles (8x8 ChunkMesher.CHUNK_SIZE-16 chunks) with a prop every 8
  * tiles (256 props) - well beyond anything built by hand in this project so far, but still a
@@ -129,6 +132,38 @@ public final class LoadTestSmokeTest {
             System.out.println("Single-tile-edit live-preview ticks over " + LIVE_PREVIEW_TICKS + " repeats: min="
                 + min + "ms avg=" + (total / LIVE_PREVIEW_TICKS) + "ms max=" + max + "ms (each is a full "
                 + "re-export + full WorldSceneLoader/ChunkMesher rebuild of the whole map)");
+
+            // Same ticks, same reference map, but as the incremental update MapPanel now sends for
+            // a same-map paint stroke - only the touched cell's chunk (and its boundary neighbour)
+            // get remeshed, everything else (all other chunks, every one of the 256 props, the
+            // tileset and model catalog) is reused from the scene the previous tick already built.
+            long[] incrementalTickMs = new long[LIVE_PREVIEW_TICKS];
+            for (int i = 0; i < LIVE_PREVIEW_TICKS; i++) {
+                int x = (i * 37) % MAP_SIZE;
+                int z = (i * 53) % MAP_SIZE;
+                controller.paintTiles("valley", List.of(new PaintTilesCommand.Edit(x, z, "grass", "grass")));
+
+                long tickStart = System.nanoTime();
+                Path tickMapFile = controller.exportMap("valley");
+                ShowMapResult tick = process.showMap(tickMapFile.toAbsolutePath().toString(), MAP_SIZE, MAP_SIZE,
+                    tilesetFile.toAbsolutePath().toString(), modelsFile.toAbsolutePath().toString(), null, null,
+                    new int[] {x}, new int[] {z})
+                    .get(60, TimeUnit.SECONDS);
+                incrementalTickMs[i] = (System.nanoTime() - tickStart) / 1_000_000;
+                if (!tick.success) throw new AssertionError("Incremental tick " + i + " ShowMap failed: " + tick.errorMessage);
+            }
+            long incrementalTotal = 0, incrementalMax = 0, incrementalMin = Long.MAX_VALUE;
+            for (long ms : incrementalTickMs) {
+                incrementalTotal += ms;
+                incrementalMax = Math.max(incrementalMax, ms);
+                incrementalMin = Math.min(incrementalMin, ms);
+            }
+            long incrementalAvg = incrementalTotal / LIVE_PREVIEW_TICKS;
+            long fullAvg = total / LIVE_PREVIEW_TICKS;
+            System.out.println("Incremental single-tile-edit ticks over " + LIVE_PREVIEW_TICKS + " repeats: min="
+                + incrementalMin + "ms avg=" + incrementalAvg + "ms max=" + incrementalMax + "ms ("
+                + (fullAvg == 0 ? "n/a" : String.format(java.util.Locale.ROOT, "%.1fx faster on average than full rebuild",
+                    fullAvg / (double) Math.max(1, incrementalAvg))) + ")");
 
             // Repeated switching between very differently sized scenes is where a resource-
             // cleanup ordering bug would most likely surface: shrinking after a large scene, then
