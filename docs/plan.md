@@ -560,7 +560,27 @@ Speichern/Öffnen und Export/Laden erhalten Geometrie, Platzierung, Höhe und Ko
   `LoadTestSmokeTest` (siehe oben, `:editor:loadTestSmokeTest`) ist der dauerhafte Lasttest - er
   bleibt im Projekt, um dieselbe Messung nach künftigen Änderungen zu wiederholen, statt eine
   einmalige Ad-hoc-Prüfung zu sein.
-- Desktop-Distributionen für macOS, Windows und Linux erstellen und prüfen.
+- [x] Desktop-Distributionen für macOS, Windows und Linux erstellen und prüfen: Neue `jpackage`-
+  Tasks in `platforms/desktop/build.gradle` (`jpackageAppImage`, `jpackageDistribution`) bauen ein
+  natives Installationspaket für das jeweils aktuelle Betriebssystem - `jpackage` kompiliert nicht
+  quer, jedes Zielsystem muss dort gebaut werden. Zwei Probleme kamen erst beim tatsächlichen Start
+  des gebauten Pakets zum Vorschein, nicht beim Bauen selbst: `jpackage` legt jeden Jar irgendwo
+  unter `--input` rekursiv auf den Hauptklassenpfad, ein reines Unterverzeichnis für die Vorschau
+  hätte also `gdx-backend-lwjgl3` und alle LWJGL-Natives doch auf den Editor-Prozess gezogen - genau
+  das, was die Prozesstrennung verhindern soll. Die Vorschau-Jars werden deshalb über
+  `--app-content` außerhalb des Klassenpfads platziert und über `$APPDIR/../jpackage-preview-libs/*`
+  in `-Dtrackside.editor.previewClasspath` aufgelöst. Zweitens entfernen `jpackage`s
+  Standard-`--jlink-options` das `java`-Kommandozeilenprogramm aus dem gebündelten Laufzeitabbild,
+  da ein natives Paket es normalerweise nie erneut braucht - diese Architektur aber schon, weil
+  `PreviewProcess` die Vorschau als echten zweiten `java`-Prozess startet; ein eigener
+  `--jlink-options`-Wert ohne `--strip-native-commands` behält es. Auf macOS (dieser Maschine) mit
+  einem echten `.app`/`.dmg` geprüft: gestartet, dabei den Vorschau-Subprozess selbst gestartet,
+  über das Protokoll verbunden ("Vorschau: verbunden") und eine echte Szene mit GL-Kontext
+  gerendert - sowohl aus dem gebauten App-Bundle als auch aus dem gemounteten `.dmg` heraus. Windows-
+  und Linux-Pakete sind mit demselben Task nur strukturell vorbereitet (Typ und `%APPDIR%`/`$APPDIR`
+  richten sich nach dem erkannten Host-Betriebssystem) und bewusst **nicht** gebaut oder geprüft -
+  diese Maschine ist ein Mac; ein Windows- oder Linux-Build/-Test braucht einen entsprechenden
+  Build-Rechner oder eine CI-Matrix, die es in diesem Projekt noch nicht gibt.
 - Exportiertes Paket auch über Android und iOS des Example Game testen; tatsächliche
   Geräte-/Simulatorergebnisse getrennt von erfolgreichen Kompilierungen dokumentieren.
 
