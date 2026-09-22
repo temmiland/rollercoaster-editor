@@ -60,3 +60,14 @@ tasks.register('previewProcessSmokeTest', JavaExec) {
         systemProperty 'trackside.editor.previewClasspath', sourceSets.smokeTest.runtimeClasspath.asPath
     }
 }
+
+tasks.register('loadTestSmokeTest', JavaExec) {
+    group = 'verification'
+    description = 'Measures full-map export/reload latency at a reference project size over the live preview protocol.'
+    classpath = sourceSets.smokeTest.runtimeClasspath
+    mainClass = 'land.temmi.rollercoaster.editor.ui.LoadTestSmokeTest'
+    args sampleGltfPath
+    doFirst {
+        systemProperty 'trackside.editor.previewClasspath', sourceSets.smokeTest.runtimeClasspath.asPath
+    }
+}
