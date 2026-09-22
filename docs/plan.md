@@ -1,9 +1,11 @@
 # Rollercoaster Editor — Umsetzungsplan
 
-Status: Phase 1-4 sind umgesetzt - Projektkern, Karten, Modelle, Sprite-Atlanten,
-tile-gebundene Entities mit Schemas, Lichter, Übergänge, Dialoge und Events. Phase 5
-(Testmodus) steht noch aus. Der Editor ist ein eigenes Repository neben `rollercoaster`,
-`example-game` und `trackside`. Trackside-Inhalte sind zunächst außerhalb des Arbeitsumfangs.
+Status: Phase 1-5 sind umgesetzt - Projektkern, Karten, Modelle, Sprite-Atlanten,
+tile-gebundene Entities mit Schemas, Lichter, Übergänge, Dialoge, Events, Testmodus,
+Event-/Dialogausführung, Vorab-Validierung, anklickbare Diagnosen und ein Example Game ohne
+prozedurale Kartensonderbehandlung. Phase 6 (größere Projekte und Distribution) steht noch aus.
+Der Editor ist ein eigenes Repository neben `rollercoaster`, `example-game` und `trackside`.
+Trackside-Inhalte sind zunächst außerhalb des Arbeitsumfangs.
 
 ## Ziel und erster vollständiger Arbeitsablauf
 
@@ -510,7 +512,17 @@ Ein einfacher Übergang funktioniert in Vorschau und Export, sobald seine Runtim
   Dateiexistenzprüfung für registrierte Textur-, Modell- und Sprite-Quellen, da nur der Controller
   den tatsächlichen Projektpfad kennt. Menüpunkt "Datei ▸ Projekt validieren…" zeigt alle
   gefundenen Probleme gesammelt an, statt beim ersten Fehler abzubrechen.
-- Example Game lädt das exportierte Paket ohne prozedurale `ExampleMap`-Sonderbehandlung.
+- [x] Example Game lädt das exportierte Paket ohne prozedurale `ExampleMap`-Sonderbehandlung:
+  `ExampleMap.createScene()` (`example-game`) baute sein Tileset bisher aus hartcodierten
+  Java-Farben, obwohl `testfield.json` bereits über den echten `MapLoader` geladen wurde - nur die
+  Kachel-**Optik** kam nicht aus einem echten Export. Jetzt lädt `TextureTileset` ein echtes,
+  gepacktes `overworld.json`/`overworld.png` (dieselbe Klasse, die auch die Editor-Vorschau nutzt),
+  mit denselben sechs Kachel-IDs und derselben Begehbarkeit wie zuvor. Mit `compileJava`, der
+  vollständigen Testsuite und allen drei Render-Smoke-Tests (`renderSmokeTest`,
+  `lightingSmokeTest`, `worldSmokeTest`) sowie einem echten Screenshot verifiziert. `example-game`
+  hatte zum Zeitpunkt dieser Änderung ein umfangreiches, nicht committetes Paket-Rename im
+  Gange; die Änderung wurde bewusst nicht selbst committet, sondern zur Durchsicht zusammen mit
+  diesem Rename belassen.
 
 Abnahme: Der vollständige Zielablauf vom Einzelbild bis zur begehbaren Welt funktioniert.
 Speichern/Öffnen und Export/Laden erhalten Geometrie, Platzierung, Höhe und Kollision.
