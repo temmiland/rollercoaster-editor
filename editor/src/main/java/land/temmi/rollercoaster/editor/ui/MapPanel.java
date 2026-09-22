@@ -60,6 +60,12 @@ import java.util.function.Function;
 
 /** Map list plus the 2D terrain view: create/remove/export a map, paint its tiles and collision. */
 final class MapPanel extends JPanel {
+    private static final int PLACEMENT_TAB_PROPS = 0;
+    private static final int PLACEMENT_TAB_ENTITIES = 1;
+    private static final int PLACEMENT_TAB_LIGHTS = 2;
+    private static final int PLACEMENT_TAB_TRANSITIONS = 3;
+    private static final int PLACEMENT_TAB_EVENTS = 4;
+
     /**
      * Fire-and-forget from the UI's side; the returned future carries success/failure back.
      * dirtyCellXs/Zs are an optional optimization hint (null for an ordinary full rebuild) - see
@@ -100,6 +106,7 @@ final class MapPanel extends JPanel {
     private final JList<MapTransitionAsset> placedTransitionsList = new JList<>(placedTransitionsListModel);
     private final DefaultListModel<GameEventAsset> placedEventsListModel = new DefaultListModel<>();
     private final JList<GameEventAsset> placedEventsList = new JList<>(placedEventsListModel);
+    private final JTabbedPane placementTabs = new JTabbedPane();
     private final MapCanvas canvas;
     private final JToggleButton tileTool = new JToggleButton("Kacheln malen", true);
     private final JToggleButton eraseTileTool = new JToggleButton("Kacheln löschen");
@@ -339,9 +346,10 @@ final class MapPanel extends JPanel {
 
     private JPanel buildMapListPanel() {
         JPanel panel = new JPanel(new BorderLayout());
-        panel.setPreferredSize(new Dimension(200, 0));
+        panel.setPreferredSize(new Dimension(220, 0));
 
         JPanel mapListPanel = new JPanel(new BorderLayout());
+        mapListPanel.setBorder(BorderFactory.createTitledBorder("Karten"));
         mapListPanel.add(new JScrollPane(mapList), BorderLayout.CENTER);
 
         JButton newMap = new JButton("Neu…");
@@ -366,7 +374,6 @@ final class MapPanel extends JPanel {
         mapListPanel.add(buttons, BorderLayout.SOUTH);
 
         JPanel propsPanel = new JPanel(new BorderLayout());
-        propsPanel.setBorder(BorderFactory.createTitledBorder("Platzierte Props"));
         propsPanel.add(new JScrollPane(placedPropsList), BorderLayout.CENTER);
         JButton removeProp = new JButton("Löschen");
         removeProp.addActionListener(e -> onRemoveProp());
@@ -381,7 +388,6 @@ final class MapPanel extends JPanel {
         propsPanel.add(propsButtons, BorderLayout.SOUTH);
 
         JPanel entitiesPanel = new JPanel(new BorderLayout());
-        entitiesPanel.setBorder(BorderFactory.createTitledBorder("Startpunkte & NPCs"));
         entitiesPanel.add(new JScrollPane(placedEntitiesList), BorderLayout.CENTER);
         JButton removeEntity = new JButton("Löschen");
         removeEntity.addActionListener(e -> onRemoveEntity());
@@ -393,7 +399,6 @@ final class MapPanel extends JPanel {
         entitiesPanel.add(entityButtons, BorderLayout.SOUTH);
 
         JPanel lightsPanel = new JPanel(new BorderLayout());
-        lightsPanel.setBorder(BorderFactory.createTitledBorder("Lichter"));
         lightsPanel.add(new JScrollPane(placedLightsList), BorderLayout.CENTER);
         JButton removeLight = new JButton("Löschen");
         removeLight.addActionListener(e -> onRemoveLight());
@@ -405,7 +410,6 @@ final class MapPanel extends JPanel {
         lightsPanel.add(lightButtons, BorderLayout.SOUTH);
 
         JPanel transitionsPanel = new JPanel(new BorderLayout());
-        transitionsPanel.setBorder(BorderFactory.createTitledBorder("Übergänge"));
         transitionsPanel.add(new JScrollPane(placedTransitionsList), BorderLayout.CENTER);
         JButton removeTransition = new JButton("Löschen");
         removeTransition.addActionListener(e -> onRemoveTransition());
@@ -417,7 +421,6 @@ final class MapPanel extends JPanel {
         transitionsPanel.add(transitionButtons, BorderLayout.SOUTH);
 
         JPanel eventsPanel = new JPanel(new BorderLayout());
-        eventsPanel.setBorder(BorderFactory.createTitledBorder("Ereignisse"));
         eventsPanel.add(new JScrollPane(placedEventsList), BorderLayout.CENTER);
         JButton addEvent = new JButton("Hinzufügen…");
         addEvent.addActionListener(e -> onAddEvent());
@@ -435,16 +438,14 @@ final class MapPanel extends JPanel {
         eventsPanel.add(eventButtons, BorderLayout.SOUTH);
         eventsPanel.add(buildTestModePanel(), BorderLayout.NORTH);
 
-        JSplitPane transitionsAndEvents = new JSplitPane(JSplitPane.VERTICAL_SPLIT, transitionsPanel, eventsPanel);
-        transitionsAndEvents.setResizeWeight(0.5);
-        JSplitPane lightsAndTransitions = new JSplitPane(JSplitPane.VERTICAL_SPLIT, lightsPanel, transitionsAndEvents);
-        lightsAndTransitions.setResizeWeight(0.34);
-        JSplitPane entityAndLights = new JSplitPane(JSplitPane.VERTICAL_SPLIT, entitiesPanel, lightsAndTransitions);
-        entityAndLights.setResizeWeight(0.25);
-        JSplitPane placements = new JSplitPane(JSplitPane.VERTICAL_SPLIT, propsPanel, entityAndLights);
-        placements.setResizeWeight(0.2);
-        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mapListPanel, placements);
-        split.setResizeWeight(0.35);
+        placementTabs.addTab("Props", propsPanel);
+        placementTabs.addTab("Start/NPCs", entitiesPanel);
+        placementTabs.addTab("Lichter", lightsPanel);
+        placementTabs.addTab("Übergänge", transitionsPanel);
+        placementTabs.addTab("Ereignisse", eventsPanel);
+
+        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mapListPanel, placementTabs);
+        split.setResizeWeight(0.3);
         panel.add(split, BorderLayout.CENTER);
         return panel;
     }
@@ -452,28 +453,35 @@ final class MapPanel extends JPanel {
     private JPanel buildCenterPanel() {
         JPanel panel = new JPanel(new BorderLayout());
 
-        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        toolbar.add(tileTool);
-        toolbar.add(eraseTileTool);
-        toolbar.add(pickTileTool);
-        toolbar.add(fillTileTool);
-        toolbar.add(rectangleTileTool);
-        toolbar.add(copyTileTool);
-        toolbar.add(pasteTileTool);
-        toolbar.add(collisionTool);
-        toolbar.add(terrainTool);
-        toolbar.add(propsTool);
-        toolbar.add(entitiesTool);
-        toolbar.add(lightsTool);
-        toolbar.add(transitionsTool);
-        toolbar.add(new JLabel("Level:"));
-        toolbar.add(levelSpinner);
-        toolbar.add(shapeCombo);
-        toolbar.add(terrainOverlay);
-        toolbar.add(gridOverlay);
-        toolbar.add(walkabilityOverlay);
-        toolbar.add(edgesOverlay);
-        toolbar.add(manualCollisionOverlay);
+        JPanel toolsRow = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 2));
+        toolsRow.add(tileTool);
+        toolsRow.add(eraseTileTool);
+        toolsRow.add(pickTileTool);
+        toolsRow.add(fillTileTool);
+        toolsRow.add(rectangleTileTool);
+        toolsRow.add(copyTileTool);
+        toolsRow.add(pasteTileTool);
+        toolsRow.add(collisionTool);
+        toolsRow.add(terrainTool);
+        toolsRow.add(propsTool);
+        toolsRow.add(entitiesTool);
+        toolsRow.add(lightsTool);
+        toolsRow.add(transitionsTool);
+
+        JPanel optionsRow = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 2));
+        optionsRow.add(new JLabel("Level:"));
+        optionsRow.add(levelSpinner);
+        optionsRow.add(shapeCombo);
+        optionsRow.add(terrainOverlay);
+        optionsRow.add(gridOverlay);
+        optionsRow.add(walkabilityOverlay);
+        optionsRow.add(edgesOverlay);
+        optionsRow.add(manualCollisionOverlay);
+
+        JPanel toolbar = new JPanel();
+        toolbar.setLayout(new javax.swing.BoxLayout(toolbar, javax.swing.BoxLayout.Y_AXIS));
+        toolbar.add(toolsRow);
+        toolbar.add(optionsRow);
         panel.add(toolbar, BorderLayout.NORTH);
 
         JTabbedPane palettePanel = new JTabbedPane();
@@ -1252,6 +1260,7 @@ final class MapPanel extends JPanel {
     private void selectEvent(String instanceId) {
         for (int i = 0; i < placedEventsListModel.size(); i++) {
             if (placedEventsListModel.get(i).instanceId.equals(instanceId)) {
+                placementTabs.setSelectedIndex(PLACEMENT_TAB_EVENTS);
                 placedEventsList.setSelectedIndex(i);
                 return;
             }
@@ -1261,6 +1270,7 @@ final class MapPanel extends JPanel {
     private void selectProp(String instanceId) {
         for (int i = 0; i < placedPropsListModel.size(); i++) {
             if (placedPropsListModel.get(i).instanceId.equals(instanceId)) {
+                placementTabs.setSelectedIndex(PLACEMENT_TAB_PROPS);
                 placedPropsList.setSelectedIndex(i);
                 return;
             }
@@ -1270,6 +1280,7 @@ final class MapPanel extends JPanel {
     private void selectEntity(String instanceId) {
         for (int i = 0; i < placedEntitiesListModel.size(); i++) {
             if (placedEntitiesListModel.get(i).instanceId.equals(instanceId)) {
+                placementTabs.setSelectedIndex(PLACEMENT_TAB_ENTITIES);
                 placedEntitiesList.setSelectedIndex(i);
                 return;
             }
@@ -1279,6 +1290,7 @@ final class MapPanel extends JPanel {
     private void selectLight(String instanceId) {
         for (int i = 0; i < placedLightsListModel.size(); i++) {
             if (placedLightsListModel.get(i).instanceId.equals(instanceId)) {
+                placementTabs.setSelectedIndex(PLACEMENT_TAB_LIGHTS);
                 placedLightsList.setSelectedIndex(i);
                 return;
             }
@@ -1288,6 +1300,7 @@ final class MapPanel extends JPanel {
     private void selectTransition(String instanceId) {
         for (int i = 0; i < placedTransitionsListModel.size(); i++) {
             if (placedTransitionsListModel.get(i).instanceId.equals(instanceId)) {
+                placementTabs.setSelectedIndex(PLACEMENT_TAB_TRANSITIONS);
                 placedTransitionsList.setSelectedIndex(i);
                 return;
             }
