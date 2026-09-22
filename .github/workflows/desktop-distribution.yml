@@ -1,0 +1,63 @@
+name: Desktop distribution
+
+# Builds the native jpackage installer for each OS jpackage itself can target. jpackage never
+# cross-compiles - a Windows installer has to be built on Windows, a Linux one on Linux - so this
+# is exactly the coverage a single macOS development machine can't provide on its own.
+#
+# Assumes the rollercoaster engine lives in a sibling repository under the same GitHub owner,
+# matching this project's composite build (settings.gradle: includeBuild('../rollercoaster')).
+# Adjust the "repository:" line below if that's not where it ends up.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out rollercoaster-editor
+        uses: actions/checkout@v4
+        with:
+          path: rollercoaster-editor
+
+      - name: Check out rollercoaster (composite build dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/rollercoaster
+          path: rollercoaster
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # jpackage's --type deb bundler shells out to fakeroot; Ubuntu runners don't have it by
+      # default.
+      - name: Install fakeroot (Linux deb bundler)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot
+
+      # jpackage's --type msi bundler shells out to the WiX Toolset; Windows runners don't have
+      # it by default.
+      - name: Install WiX Toolset (Windows msi bundler)
+        if: runner.os == 'Windows'
+        run: choco install wixtoolset -y
+
+      - name: Build the native distribution
+        working-directory: rollercoaster-editor
+        run: ./gradlew :platforms:desktop:jpackageDistribution --no-daemon
+
+      - name: Upload the distribution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rollercoaster-editor-${{ matrix.os }}
+          path: rollercoaster-editor/platforms/desktop/build/jpackage-output/**
+          if-no-files-found: error
