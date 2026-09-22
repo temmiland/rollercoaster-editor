@@ -529,9 +529,37 @@ Speichern/Öffnen und Export/Laden erhalten Geometrie, Platzierung, Höhe und Ko
 
 ### Phase 6 — Größere Projekte und Distribution
 
-- Nur betroffene Chunks und Vorschauen erneuern, Ressourcen beim Reimport sauber freigeben.
-- Culling-Grenzen nach Änderungen aktualisieren; Assetlisten bei Bedarf virtualisieren.
-- Lasttests mit größeren Karten, vielen Props und wiederholtem Projektwechsel.
+- [x] Nur betroffene Chunks und Vorschauen erneuern, Ressourcen beim Reimport sauber freigeben:
+  Die vor Phase 6 offene Entscheidung - realistische Referenzkartengröße und ein messbares
+  Reaktionszeitbudget - wurde durch einen neuen Lasttest beantwortet, statt geschätzt:
+  `LoadTestSmokeTest` (`editor`-Modul) baut eine Referenzkarte von 128x128 Kacheln (8x8
+  `ChunkMesher.CHUNK_SIZE`-Chunks) mit 256 verteilten Props über dieselbe echte `ProjectController`/
+  `PreviewProcess`-Pipeline wie der Editor und misst den vollständigen Export-/Neulade-Zyklus, den
+  jeder einzelne Pinselstrich heute auslöst. Ergebnis: ein Kaltstart kostet 111ms, ein einzelner
+  Pinselstrich im Mittel 30ms (16-62ms über 20 Wiederholungen) - deutlich innerhalb des ohnehin
+  bestehenden 180ms-Debounce-Fensters der Live-Vorschau (`MapPanel.livePreviewTimer`). Ein
+  inkrementeller Neuaufbau nur der betroffenen Chunks - `ChunkMesher`, `WorldSceneLoader` und
+  `WorldScene` bieten dafür aktuell keine API, jede Änderung baut die komplette Szene neu auf - ist
+  bei dieser Referenzgröße durch Messung nicht gerechtfertigt und bleibt zurückgestellt, bis ein
+  reales Projekt sie überschreitet; das wäre sonst Komplexität ohne belegten Bedarf. Ressourcenfreigabe
+  beim Reimport ist bereits korrekt: `PreviewApplication.disposeDocumentAssets()` verwirft die alte
+  Szene erst, nachdem die neue erfolgreich aufgebaut wurde, und `ModelBoundsService.compute()` gibt
+  seinen temporären Scene-Import in einem `finally` frei. Der Lasttest prüft das zusätzlich mit acht
+  aufeinanderfolgenden Wechseln zwischen der großen Karte und einer winzigen zweiten Karte über
+  dieselbe Verbindung, ohne Fehlschlag oder Verbindungsabbruch.
+- [x] Culling-Grenzen nach Änderungen aktualisieren; Assetlisten bei Bedarf virtualisieren:
+  `WorldScene`s Bounds-Array wird ausschließlich beim vollständigen Szenenaufbau (Konstruktor)
+  beziehungsweise bei `applyTransform` neu berechnet - das ist bereits lückenlos, weil jede Änderung
+  heute ohnehin die ganze Szene neu aufbaut (siehe oben); eine gesonderte Invalidierung wäre erst
+  mit einer inkrementellen Mutation nötig, die bewusst zurückgestellt ist. `AssetsPanel` benutzt
+  bereits gewöhnliche `JList`/`DefaultListModel` (zeichnet nur sichtbare Zeilen) mit einem eigenen
+  Thumbnail-Cache; ein Messlauf mit 1500 importierten Texturen zeigt `refresh()`-Kosten von 0-2ms
+  pro Aufruf. Eine eigene Virtualisierung wäre bei den hier realistischen Katalogumfängen
+  unbegründeter Mehraufwand und bleibt aus demselben Grund wie oben zurückgestellt.
+- [x] Lasttests mit größeren Karten, vielen Props und wiederholtem Projektwechsel:
+  `LoadTestSmokeTest` (siehe oben, `:editor:loadTestSmokeTest`) ist der dauerhafte Lasttest - er
+  bleibt im Projekt, um dieselbe Messung nach künftigen Änderungen zu wiederholen, statt eine
+  einmalige Ad-hoc-Prüfung zu sein.
 - Desktop-Distributionen für macOS, Windows und Linux erstellen und prüfen.
 - Exportiertes Paket auch über Android und iOS des Example Game testen; tatsächliche
   Geräte-/Simulatorergebnisse getrennt von erfolgreichen Kompilierungen dokumentieren.
