@@ -27,3 +27,68 @@ tasks.named('run', JavaExec) {
         systemProperty 'trackside.editor.previewClasspath', files.collect { it.absolutePath }.join(File.pathSeparator)
     }
 }
+
+// --- Native distribution (jpackage) ---
+//
+// jpackage's generated native launcher puts every jar found anywhere under --input on the main
+// app's classpath, recursively - verified empirically, since a subfolder there still ended up in
+// the launcher's app.classpath. That would put gdx-backend-lwjgl3 and every LWJGL native on the
+// editor's own JVM, exactly what the process split forbids. So the preview's jars are instead
+// passed as --app-content: copied into the bundle, but never scanned for the classpath.
+// EditorLauncher resolves that folder at runtime through jpackage's $APPDIR/%APPDIR%
+// substitution in --java-options, the same way :run resolves it at build time through an
+// absolute Gradle path.
+def jpackagePreviewLibs = layout.buildDirectory.dir('jpackage-preview-libs')
+def jpackageOutput = layout.buildDirectory.dir('jpackage-output')
+
+tasks.register('assembleJpackagePreviewLibs', Sync) {
+    group = 'distribution'
+    description = 'Lays out the preview classpath as extra app-content, kept off the main app classpath.'
+    dependsOn previewJarTask
+    inputs.files(previewRuntimeClasspath)
+    from(previewJarTask.map { it.outputs.files })
+    from(previewRuntimeClasspath)
+    into(jpackagePreviewLibs)
+}
+
+def currentOs = org.gradle.internal.os.OperatingSystem.current()
+def installerType = currentOs.windows ? 'msi' : (currentOs.macOsX ? 'dmg' : 'deb')
+def appdirVar = currentOs.windows ? '%APPDIR%' : '$APPDIR'
+// macOS requires a CFBundleVersion whose first component is 1-9; "0.1.0" is a valid project
+// version but not a valid app-version there, so the packaged app gets its own fixed version.
+def jpackageAppVersion = currentOs.macOsX ? '1.0.0' : version.toString()
+
+/** Registers a jpackage Exec task producing the given --type into its own output subfolder. */
+def registerJpackageTask = { String taskName, String type ->
+    tasks.register(taskName, Exec) {
+        group = 'distribution'
+        dependsOn tasks.named('installDist'), tasks.named('assembleJpackagePreviewLibs')
+        def outDir = jpackageOutput.map { it.dir(type) }
+        doFirst {
+            project.delete(outDir.get())
+            outDir.get().asFile.mkdirs()
+        }
+        commandLine 'jpackage',
+            '--type', type,
+            '--name', 'Rollercoaster Editor',
+            '--app-version', jpackageAppVersion,
+            '--input', tasks.named('installDist').map { new File(it.destinationDir, 'lib') }.get().absolutePath,
+            '--app-content', jpackagePreviewLibs.get().asFile.absolutePath,
+            '--main-jar', "desktop-${version}.jar",
+            '--main-class', 'land.temmi.rollercoaster.editor.desktop.EditorLauncher',
+            '--dest', outDir.get().asFile.absolutePath,
+            // --app-content lands as a sibling of $APPDIR (the app/ folder holding the
+            // classpath jars), not inside it - confirmed by inspecting the built app image.
+            '--java-options', "-Dtrackside.editor.previewClasspath=${appdirVar}/../jpackage-preview-libs/*",
+            // PreviewProcess.launchCommand() shells out to "$java.home/bin/java" to spawn the
+            // preview as a real second process (see docs/plan.md's process-split rationale) -
+            // jpackage's default jlink options strip that binary out of the bundled runtime,
+            // since a packaged app normally never needs to relaunch java itself. This one does.
+            '--jlink-options', '--strip-debug --no-man-pages --no-header-files'
+    }
+}
+
+// A raw app image is the fastest way to check the launch actually works before wrapping it into
+// a real installer; jpackageDistribution below produces the installer this OS can build.
+registerJpackageTask('jpackageAppImage', 'app-image')
+registerJpackageTask('jpackageDistribution', installerType)
