@@ -42,6 +42,8 @@ public final class MessageChannel implements Closeable {
         json.addClassTag("resetFlags", ResetFlags.class);
         json.addClassTag("setTimeOfDay", SetTimeOfDay.class);
         json.addClassTag("eventLogEntry", EventLogEntry.class);
+        json.addClassTag("captureScreenshot", CaptureScreenshot.class);
+        json.addClassTag("captureScreenshotResult", CaptureScreenshotResult.class);
         in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
         out = new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8);
     }
