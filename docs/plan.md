@@ -10,8 +10,11 @@ Zielsysteme in allen betroffenen Repositories, noch ungetestet ohne GitHub-Remot
 echten Android-Emulator geprüftes Example Game mit sichtbarer virtueller Steuerung auf Mobilplatt-
 formen (derselbe Fund auf Android auch in `trackside` behoben) und ein iOS-Simulator, der inzwischen
 funktioniert, dessen Build hier aber nur die Geräte-Architektur erzeugt - ein tatsächlicher Test auf
-Simulator oder Gerät steht noch aus. Der Editor ist ein eigenes Repository neben `rollercoaster`,
-`example-game` und `trackside`. Trackside-Inhalte sind zunächst außerhalb des Arbeitsumfangs.
+Simulator oder Gerät steht noch aus, sowie eine für kleinere Monitore überarbeitete Editor-Ober-
+fläche (Assets/Karte als Tabs statt festem Split, ein einklappbares Diagnosen-Dock, eine entschachtelte
+Platzierungsliste, eine umbruchsichere Werkzeugleiste, persistierter Fensterzustand). Der Editor ist
+ein eigenes Repository neben `rollercoaster`, `example-game` und `trackside`. Trackside-Inhalte sind
+zunächst außerhalb des Arbeitsumfangs.
 
 ## Ziel und erster vollständiger Arbeitsablauf
 
@@ -637,6 +640,49 @@ Speichern/Öffnen und Export/Laden erhalten Geometrie, Platzierung, Höhe und Ko
   offen, bis diese Maschine einen funktionierenden Simulator hat oder ein echtes Gerät angeschlossen
   wird - bewusst nicht als geprüft ausgegeben, obwohl der Build durchläuft, genau die Unterscheidung,
   die dieser Punkt verlangt.
+
+## UI-Bereinigung für kleinere Monitore
+
+Die Editor-Oberfläche wuchs über Phase 1-6 organisch mit: `EditorFrame` hielt vier Bereiche
+permanent nebeneinander offen (Assets, Karte, ein "Eigenschaften"-Panel mit nur einem Textfeld,
+die Diagnosen), und `MapPanel`s linke Spalte stapelte fünf verschachtelte vertikale
+`JSplitPane`s (Props, Entities, Lichter, Übergänge, Ereignisse) in einer festen 200px-Spalte
+übereinander - auf einem kleinen Bildschirm blieb von jeder Liste nur ein paar Zeilen sichtbar,
+und die Standardgröße von 1280x800 füllte viele Laptop-Displays bereits randvoll, bevor der
+Nutzer überhaupt etwas geöffnet hatte. Die Malwerkzeugleiste zeigte außerdem alle 21 Werkzeuge
+und Optionen in einer einzigen Zeile gleichzeitig, unabhängig vom aktiven Werkzeug.
+
+Umgesetzt: Assets und Karte sind jetzt Tabs statt eines festen Splits und teilen sich die volle
+Fensterbreite; die Diagnosen sitzen in einem einklappbaren unteren Dock (Menü Ansicht ->
+"Diagnosen anzeigen"); das Projektnamensfeld zog in die Statusleiste, da es kein eigenes Panel
+braucht. `MapPanel`s fünf verschachtelte Splits wurden durch eine einzelne Tab-Gruppe ersetzt -
+jede Liste bekommt jetzt die volle verfügbare Höhe statt eines erzwungenen Streifens. Die
+Malwerkzeugleiste teilt sich in eine Werkzeug- und eine Optionen-Zeile, beide über ein neues
+`WrapLayout` (misst die tatsächlich umgebrochene Höhe statt der Ein-Zeilen-Breite von
+`FlowLayout`), damit auf schmalen Fenstern nichts abgeschnitten wird statt nur zu hoffen, dass
+es nicht passiert. Klickbare Diagnosen wechseln jetzt zusätzlich auf den Tab, der das Ergebnis
+enthält - vorher reichte `trySelectPlacement`/`trySelect` allein, weil beide Panels ohnehin
+sichtbar waren.
+
+Fensterposition/-größe, der gewählte Tab, Sichtbarkeit und Trennerposition des Diagnosen-Docks
+werden über `EditorWindowState` persistiert (dasselbe `java.util.prefs`-Muster wie
+`RecentProjects`), beim Wiederherstellen auf den aktuellen Bildschirm geklemmt, damit ein auf
+einem größeren Monitor gespeichertes Fenster nicht teilweise außerhalb eines kleineren wieder
+aufgeht. Die Standardgröße ohne gespeicherten Zustand sank von 1280x800 auf 1100x720.
+
+Verifiziert über einen echten Lauf von `:platforms:desktop:run` mit echter Vorschau-Verbindung
+und echten Bildschirmfotos (nicht nur durch Lesen des Layout-Codes): Tab-Wechsel Karte/Assets
+funktioniert, die zweizeilige Werkzeugleiste wird vollständig ohne Abschneiden dargestellt, die
+linke Spalte zeigt nur noch die Kartenliste plus eine Tab-Gruppe statt sechs gleichzeitig
+gequetschter Listen, und das Projektnamensfeld erscheint korrekt in der Statusleiste. Die Session
+endete durch ein Schließen der Vorschau-Verbindung außerhalb dieser Änderung, bevor auch der
+Diagnosen-Dock-Umschalter und die Divider-Persistenz live geprüft werden konnten - beide sind
+durch denselben, bereits verifizierten `JSplitPane`-Mechanismus abgedeckt, den auch der
+Karte/Assets-Tab-Wechsel nutzt, aber ein eigener Sichttest dafür steht noch aus. Bewusst nicht
+angefasst: `AssetsPanel`s eigene interne Tabs/Splits (bereits zweistufig statt fünffach
+verschachtelt) und die festen Pixelgrößen einzelner Dialog-Editierformulare (z. B.
+Dialog-Antworten/-Bedingungen) - beides geringere Priorität, da nicht Teil des permanenten
+Platzkonflikts im Hauptfenster.
 
 ## Prüfstrategie und Abschlusskriterien
 
