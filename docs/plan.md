@@ -676,9 +676,10 @@ funktioniert, die zweizeilige Werkzeugleiste wird vollständig ohne Abschneiden 
 linke Spalte zeigt nur noch die Kartenliste plus eine Tab-Gruppe statt sechs gleichzeitig
 gequetschter Listen, und das Projektnamensfeld erscheint korrekt in der Statusleiste. Die Session
 endete durch ein Schließen der Vorschau-Verbindung außerhalb dieser Änderung, bevor auch der
-Diagnosen-Dock-Umschalter und die Divider-Persistenz live geprüft werden konnten - beide sind
-durch denselben, bereits verifizierten `JSplitPane`-Mechanismus abgedeckt, den auch der
-Karte/Assets-Tab-Wechsel nutzt, aber ein eigener Sichttest dafür steht noch aus. Bewusst nicht
+Diagnosen-Dock-Umschalter und die Divider-Persistenz live geprüft werden konnten - das wurde in
+einem zweiten Lauf nachgeholt: Einklappen kollabiert den Dock auf null Höhe, Ausklappen stellt die
+vorherige Trennerposition wieder her, und nach vollständigem Beenden und Neustart waren Fenster-
+größe/-position, der gewählte Tab und die Dock-Höhe exakt wiederhergestellt. Bewusst nicht
 angefasst: `AssetsPanel`s eigene interne Tabs/Splits (bereits zweistufig statt fünffach
 verschachtelt) und die festen Pixelgrößen einzelner Dialog-Editierformulare (z. B.
 Dialog-Antworten/-Bedingungen) - beides geringere Priorität, da nicht Teil des permanenten
