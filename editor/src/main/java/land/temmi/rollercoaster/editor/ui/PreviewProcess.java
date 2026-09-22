@@ -1,6 +1,8 @@
 package land.temmi.rollercoaster.editor.ui;
 
 import land.temmi.rollercoaster.editor.protocol.CameraMode;
+import land.temmi.rollercoaster.editor.protocol.CaptureScreenshot;
+import land.temmi.rollercoaster.editor.protocol.CaptureScreenshotResult;
 import land.temmi.rollercoaster.editor.protocol.ComputeModelBounds;
 import land.temmi.rollercoaster.editor.protocol.EventLogEntry;
 import land.temmi.rollercoaster.editor.protocol.Hello;
@@ -55,6 +57,7 @@ public final class PreviewProcess {
     private volatile boolean levelOpen;
     private volatile CompletableFuture<ModelBoundsResult> pendingBoundsRequest;
     private volatile CompletableFuture<ShowMapResult> pendingShowMapRequest;
+    private volatile CompletableFuture<CaptureScreenshotResult> pendingScreenshotRequest;
     private volatile ShowMap latestShowMap;
     private volatile CameraMode cameraMode = CameraMode.FREE;
     private volatile boolean testMode = false;
@@ -155,9 +158,24 @@ public final class PreviewProcess {
     public CompletableFuture<ShowMapResult> showMap(String mapFilePath, int width, int depth,
                                                     String tilesetManifestFilePath, String modelManifestFilePath,
                                                     String spriteManifestFilePath, String dialogueManifestFilePath) {
+        return showMap(mapFilePath, width, depth, tilesetManifestFilePath, modelManifestFilePath,
+            spriteManifestFilePath, dialogueManifestFilePath, null, null);
+    }
+
+    /**
+     * Same as the six-argument overload, plus an optimization hint: dirtyCellXs/Zs names the cells
+     * a paint stroke actually touched since the map currently shown was last sent, so the preview
+     * may remesh just the terrain chunks that could affect instead of the whole map - see ShowMap's
+     * own doc comment for the exact contract. Pass null for both (or use the six-arg overload) for
+     * an ordinary full rebuild - switching maps, or any non-terrain change, always needs one anyway.
+     */
+    public CompletableFuture<ShowMapResult> showMap(String mapFilePath, int width, int depth,
+                                                    String tilesetManifestFilePath, String modelManifestFilePath,
+                                                    String spriteManifestFilePath, String dialogueManifestFilePath,
+                                                    int[] dirtyCellXs, int[] dirtyCellZs) {
         CompletableFuture<ShowMapResult> future = new CompletableFuture<>();
         ShowMap request = new ShowMap(mapFilePath, width, depth, tilesetManifestFilePath,
-            modelManifestFilePath, spriteManifestFilePath, dialogueManifestFilePath);
+            modelManifestFilePath, spriteManifestFilePath, dialogueManifestFilePath, dirtyCellXs, dirtyCellZs);
         latestShowMap = request;
         MessageChannel current = channel;
         if (current == null) {
@@ -173,6 +191,25 @@ public final class PreviewProcess {
             current.send(request);
         } catch (IOException e) {
             pendingShowMapRequest = null;
+            future.completeExceptionally(e);
+        }
+        return future;
+    }
+
+    /** Test-only hook (see CaptureScreenshot's own doc comment): asks the preview to write its
+     * current frame to a PNG at the given path. */
+    public CompletableFuture<CaptureScreenshotResult> captureScreenshot(String outputPath) {
+        CompletableFuture<CaptureScreenshotResult> future = new CompletableFuture<>();
+        MessageChannel current = channel;
+        if (current == null) {
+            future.completeExceptionally(new IOException("Preview is not connected"));
+            return future;
+        }
+        pendingScreenshotRequest = future;
+        try {
+            current.send(new CaptureScreenshot(outputPath));
+        } catch (IOException e) {
+            pendingScreenshotRequest = null;
             future.completeExceptionally(e);
         }
         return future;
@@ -317,6 +354,10 @@ public final class PreviewProcess {
                     if (future != null) future.complete((ShowMapResult) incoming);
                 } else if (incoming instanceof EventLogEntry) {
                     eventLogListener.onEventLog(((EventLogEntry) incoming).message);
+                } else if (incoming instanceof CaptureScreenshotResult) {
+                    CompletableFuture<CaptureScreenshotResult> future = pendingScreenshotRequest;
+                    pendingScreenshotRequest = null;
+                    if (future != null) future.complete((CaptureScreenshotResult) incoming);
                 }
             }
             listener.onPreviewStatusChanged(Status.DISCONNECTED, "Preview closed the connection");
@@ -330,6 +371,11 @@ public final class PreviewProcess {
             CompletableFuture<ShowMapResult> showMapFuture = pendingShowMapRequest;
             pendingShowMapRequest = null;
             if (showMapFuture != null) showMapFuture.completeExceptionally(new IOException("Preview disconnected"));
+            CompletableFuture<CaptureScreenshotResult> screenshotFuture = pendingScreenshotRequest;
+            pendingScreenshotRequest = null;
+            if (screenshotFuture != null) {
+                screenshotFuture.completeExceptionally(new IOException("Preview disconnected"));
+            }
         }
     }
 

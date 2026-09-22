@@ -7,6 +7,8 @@ import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
+import com.badlogic.gdx.graphics.Pixmap;
+import com.badlogic.gdx.graphics.PixmapIO;
 import com.badlogic.gdx.graphics.VertexAttributes.Usage;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g3d.Material;
@@ -26,6 +28,8 @@ import land.temmi.rollercoaster.asset.SpriteAtlas;
 import land.temmi.rollercoaster.asset.SpriteDefinition;
 import land.temmi.rollercoaster.asset.SpriteManifest;
 import land.temmi.rollercoaster.editor.protocol.CameraMode;
+import land.temmi.rollercoaster.editor.protocol.CaptureScreenshot;
+import land.temmi.rollercoaster.editor.protocol.CaptureScreenshotResult;
 import land.temmi.rollercoaster.editor.protocol.ComputeModelBounds;
 import land.temmi.rollercoaster.editor.protocol.EventLogEntry;
 import land.temmi.rollercoaster.editor.protocol.PickResult;
@@ -59,8 +63,11 @@ import land.temmi.rollercoaster.render.LowResTarget;
 import land.temmi.rollercoaster.render.PixelCamera;
 import land.temmi.rollercoaster.render.PointLightSource;
 import land.temmi.rollercoaster.render.WorldShaderProvider;
+import land.temmi.rollercoaster.world.ChunkMesher;
+import land.temmi.rollercoaster.world.LoadedMap;
 import land.temmi.rollercoaster.world.MapEntity;
 import land.temmi.rollercoaster.world.MapLight;
+import land.temmi.rollercoaster.world.MapLoader;
 import land.temmi.rollercoaster.world.TerrainRules;
 import land.temmi.rollercoaster.world.TerrainSurface;
 import land.temmi.rollercoaster.world.TileMap;
@@ -68,7 +75,6 @@ import land.temmi.rollercoaster.world.TileSurface;
 import land.temmi.rollercoaster.world.Tileset;
 import land.temmi.rollercoaster.world.TextureTileset;
 import land.temmi.rollercoaster.world.WorldScene;
-import land.temmi.rollercoaster.world.WorldSceneLoader;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -134,6 +140,15 @@ public final class PreviewApplication extends ApplicationAdapter {
     private final Array<BillboardRenderer> documentSprites = new Array<>();
     private final Map<String, BillboardRenderer> documentSpritesByEntityId = new HashMap<>();
     private final Vector3 spriteRight = new Vector3();
+
+    /** The map file documentScene was last built from, and which chunk model backs each of its
+     * chunks - both needed to tell whether a ShowMap's dirtyCellXs/Zs can reuse most of the
+     * current scene instead of remeshing the whole map. See loadDocumentScene. */
+    private String documentMapFilePath;
+    private final Map<Long, Model> documentChunkModelsByOrigin = new HashMap<>();
+
+    /** Set by a CaptureScreenshot message, consumed at the end of the next render() - see there. */
+    private volatile String pendingScreenshotPath;
 
     /** Test-mode event/dialogue execution: GameState is the flags/variables/time an EventDispatcher
      * checks conditions against; lightsById lets a TOGGLE_LIGHT action reach the live light it means,
@@ -217,6 +232,9 @@ public final class PreviewApplication extends ApplicationAdapter {
                 connection.send(new EventLogEntry(String.format(java.util.Locale.ROOT,
                     "Tageszeit auf %.1f Uhr gesetzt", hours)));
             });
+        } else if (message instanceof CaptureScreenshot) {
+            String path = ((CaptureScreenshot) message).outputPath;
+            Gdx.app.postRunnable(() -> pendingScreenshotPath = path);
         }
     }
 
@@ -301,12 +319,35 @@ public final class PreviewApplication extends ApplicationAdapter {
             new TerrainSurface(levelScene.getMap().tiles), 12f, 12f));
     }
 
-    /** Builds a real WorldScene from an exported map file - the tool that closes Phase 3's "does
-     * this ramp actually let a player reach the plateau" question, not just a colored 2D grid. */
+    /**
+     * Builds a real WorldScene from an exported map file - the tool that closes Phase 3's "does
+     * this ramp actually let a player reach the plateau" question, not just a colored 2D grid.
+     *
+     * <p>Tries an incremental update first when the request asks for one, but never trusts the
+     * editor's dirtyCellXs/Zs as a guarantee that nothing else changed - if reusing the current
+     * tileset/catalog/chunks turns out to be wrong (for example, a prop referencing a model the
+     * reused catalog does not have, because the editor sent dirtyCellXs alongside an unrelated
+     * change it did not mean to imply was terrain-only), that attempt fails and this retries once
+     * as an ordinary full rebuild, which cannot suffer from that class of problem. So an editor
+     * that is occasionally too optimistic about what counts as "only terrain changed" degrades to
+     * a slower frame instead of a broken preview.
+     */
     private ShowMapResult showDocumentMap(ShowMap request) {
+        ShowMapResult result = attemptShowDocumentMap(request, isIncrementalUpdate(request));
+        if (!result.success && isIncrementalUpdate(request)) {
+            result = attemptShowDocumentMap(request, false);
+        }
+        return result;
+    }
+
+    private ShowMapResult attemptShowDocumentMap(ShowMap request, boolean reuseTilesetAndCatalog) {
         TextureTileset nextTileset = null;
         ModelCatalog nextCatalog = null;
         WorldScene nextScene = null;
+        // Chunk models loadDocumentScene reused from the currently shown (not yet replaced) scene -
+        // if anything below fails before the swap, the failure cleanup must exclude these from
+        // disposal, since the still-current documentScene still owns and needs them.
+        java.util.Set<Model> nextReusedChunkModels = java.util.Collections.emptySet();
         SpriteAtlas nextSpriteAtlas = null;
         Array<BillboardRenderer> nextSprites = new Array<>();
         Map<String, BillboardRenderer> nextSpritesByEntityId = new HashMap<>();
@@ -320,10 +361,17 @@ public final class PreviewApplication extends ApplicationAdapter {
             if (request.tilesetManifestFilePath == null) {
                 throw new IllegalArgumentException("Map preview requires an exported tileset manifest");
             }
-            nextTileset = new TextureTileset(new FileHandle(request.tilesetManifestFilePath));
-            nextCatalog = loadModelCatalog(request.modelManifestFilePath);
-            nextScene = new WorldSceneLoader().load(new FileHandle(request.mapFilePath), nextTileset.getTileset(),
-                nextTileset.createMaterial(), nextCatalog);
+            if (reuseTilesetAndCatalog) {
+                nextTileset = documentTextureTileset;
+                nextCatalog = documentModelCatalog;
+            } else {
+                nextTileset = new TextureTileset(new FileHandle(request.tilesetManifestFilePath));
+                nextCatalog = loadModelCatalog(request.modelManifestFilePath);
+            }
+            DocumentSceneLoad sceneLoad = loadDocumentScene(request, nextTileset.getTileset(),
+                nextTileset.createMaterial(), nextCatalog, reuseTilesetAndCatalog);
+            nextScene = sceneLoad.scene;
+            nextReusedChunkModels = sceneLoad.reusedFromCurrentScene;
             if (nextScene.getMap().lights.size > LightingEnvironment.MAX_POINT_LIGHTS) {
                 throw new IllegalArgumentException("Map has " + nextScene.getMap().lights.size
                     + " lights, more than the engine's shared point/spot budget of "
@@ -368,7 +416,7 @@ public final class PreviewApplication extends ApplicationAdapter {
                 }
             }
 
-            disposeDocumentAssets();
+            disposeDocumentAssets(nextReusedChunkModels, reuseTilesetAndCatalog);
             documentScene = nextScene;
             documentModelCatalog = nextCatalog;
             documentTextureTileset = nextTileset;
@@ -377,6 +425,9 @@ public final class PreviewApplication extends ApplicationAdapter {
             documentSpritesByEntityId.putAll(nextSpritesByEntityId);
             dialogueManifest = nextDialogueManifest;
             applyLights(nextScene.getMap().lights);
+            documentMapFilePath = request.mapFilePath;
+            documentChunkModelsByOrigin.clear();
+            documentChunkModelsByOrigin.putAll(sceneLoad.modelsByOrigin);
 
             sceneMode = SceneMode.DOCUMENT_MAP;
             clickPicker.setTerrainSurface(new TerrainSurface(nextScene.getMap().tiles));
@@ -401,9 +452,15 @@ public final class PreviewApplication extends ApplicationAdapter {
             return ShowMapResult.ok();
         } catch (RuntimeException e) {
             for (BillboardRenderer sprite : nextSprites) sprite.dispose();
-            if (nextScene != null) nextScene.dispose();
-            if (nextCatalog != null) nextCatalog.dispose();
-            if (nextTileset != null) nextTileset.dispose();
+            // disposeExcept, not dispose: nextScene may hold chunk models reused from the still-
+            // current documentScene (the swap above never ran), which still needs them. Same
+            // reasoning for skipping nextCatalog/nextTileset when they ARE documentModelCatalog/
+            // documentTextureTileset (reuseTilesetAndCatalog) - the still-current scene needs those too.
+            if (nextScene != null) nextScene.disposeExcept(nextReusedChunkModels);
+            if (!reuseTilesetAndCatalog) {
+                if (nextCatalog != null) nextCatalog.dispose();
+                if (nextTileset != null) nextTileset.dispose();
+            }
             if (nextSpriteAtlas != null) nextSpriteAtlas.dispose();
             return ShowMapResult.ofError(e.getMessage());
         }
@@ -468,6 +525,26 @@ public final class PreviewApplication extends ApplicationAdapter {
             renderGameCamera();
         } else {
             renderFreeCamera();
+        }
+
+        if (pendingScreenshotPath != null) {
+            captureScreenshot(pendingScreenshotPath);
+            pendingScreenshotPath = null;
+        }
+    }
+
+    /** Grabs exactly what this frame just drew - deferred to the end of render() (see the
+     * pendingScreenshotPath field) so it never captures a half-drawn frame. */
+    private void captureScreenshot(String outputPath) {
+        Pixmap screenshot = Pixmap.createFromFrameBuffer(
+            0, 0, Gdx.graphics.getBackBufferWidth(), Gdx.graphics.getBackBufferHeight());
+        try {
+            PixmapIO.writePNG(Gdx.files.absolute(outputPath), screenshot, -1, true);
+            connection.send(CaptureScreenshotResult.ok());
+        } catch (RuntimeException e) {
+            connection.send(CaptureScreenshotResult.ofError(e.getMessage() == null ? e.toString() : e.getMessage()));
+        } finally {
+            screenshot.dispose();
         }
     }
 
@@ -556,18 +633,148 @@ public final class PreviewApplication extends ApplicationAdapter {
     }
 
     private void disposeDocumentAssets() {
+        disposeDocumentAssets(java.util.Collections.emptySet(), false);
+    }
+
+    /**
+     * {@code keepAliveChunks} lets a caller that is about to install a replacement scene reusing
+     * some of the current scene's unchanged chunk models exclude those from disposal here, since
+     * the replacement now owns them. {@code keepTilesetAndCatalog} does the same for
+     * documentTextureTileset/documentModelCatalog themselves, for a caller reusing those two
+     * outright rather than rebuilding them - a reused chunk model's Material still points at the
+     * tileset's Texture, and a reused prop instance still comes from the catalog, so disposing
+     * either here while the replacement scene still depends on them would leave it pointing at
+     * freed GL resources. Every other caller passes (empty set, false), identical to the plain
+     * no-arg overload.
+     */
+    private void disposeDocumentAssets(java.util.Set<Model> keepAliveChunks, boolean keepTilesetAndCatalog) {
         for (BillboardRenderer sprite : documentSprites) sprite.dispose();
         documentSprites.clear();
         documentSpritesByEntityId.clear();
         dialogueManifest = null;
-        if (documentScene != null) documentScene.dispose();
-        if (documentModelCatalog != null) documentModelCatalog.dispose();
-        if (documentTextureTileset != null) documentTextureTileset.dispose();
+        if (documentScene != null) documentScene.disposeExcept(keepAliveChunks);
+        if (!keepTilesetAndCatalog) {
+            if (documentModelCatalog != null) documentModelCatalog.dispose();
+            if (documentTextureTileset != null) documentTextureTileset.dispose();
+        }
         if (documentSpriteAtlas != null) documentSpriteAtlas.dispose();
         documentScene = null;
         documentModelCatalog = null;
         documentTextureTileset = null;
         documentSpriteAtlas = null;
+    }
+
+    /** True only when this request can reuse the currently shown scene's chunk models, tileset
+     * and model catalog instead of rebuilding them from scratch: same map file already being
+     * shown, and the editor reported which cells it actually touched since then. Shared by
+     * showDocumentMap (decides whether to reuse documentTextureTileset/documentModelCatalog
+     * outright) and loadDocumentScene (decides which chunks to remesh) so the two can never
+     * disagree about what "incremental" means for a given request. */
+    private boolean isIncrementalUpdate(ShowMap request) {
+        return documentScene != null && request.mapFilePath.equals(documentMapFilePath)
+            && request.dirtyCellXs != null && request.dirtyCellXs.length > 0
+            && request.dirtyCellZs != null && request.dirtyCellZs.length == request.dirtyCellXs.length;
+    }
+
+    /**
+     * A freshly loaded document scene, plus the bookkeeping the caller needs to dispose either
+     * scene safely if something goes wrong before the new one is actually installed: which of its
+     * chunk models were reused from the currently shown scene (still owned by that scene until the
+     * caller actually swaps it in - so they must never be disposed alongside a discarded attempt),
+     * and the full origin map the caller should install alongside the scene once it commits.
+     */
+    private static final class DocumentSceneLoad {
+        final WorldScene scene;
+        final java.util.Set<Model> reusedFromCurrentScene;
+        final Map<Long, Model> modelsByOrigin;
+
+        DocumentSceneLoad(WorldScene scene, java.util.Set<Model> reusedFromCurrentScene, Map<Long, Model> modelsByOrigin) {
+            this.scene = scene;
+            this.reusedFromCurrentScene = reusedFromCurrentScene;
+            this.modelsByOrigin = modelsByOrigin;
+        }
+    }
+
+    /**
+     * Loads the document scene. When {@code incremental} is true, reuses as many of the currently
+     * shown scene's chunk models as possible - full detail in ShowMap's own doc comment; the
+     * caller decides this the same way for the matching tileset/catalog reuse decision, so the
+     * two can never disagree within one attempt. Whether or not it takes that shortcut, this
+     * always returns a scene exactly as correct as a full WorldSceneLoader.load() would: the same
+     * fresh LoadedMap backs it (so terrain heights, props, entities, lights and collision are
+     * never stale), and reused chunk geometry is byte-identical to what remeshing it would have
+     * produced, since both paths share ChunkMesher.appendChunk.
+     *
+     * <p>Deliberately touches no instance state - documentScene is only read, never here replaced
+     * or disposed. The caller commits the result (documentMapFilePath, documentChunkModelsByOrigin,
+     * documentScene itself) only once it is certain the whole ShowMap request succeeds; until then,
+     * every model this returns is either brand new or still also owned by the untouched current
+     * scene, so the caller's own failure cleanup knows exactly what it may dispose.
+     */
+    private DocumentSceneLoad loadDocumentScene(ShowMap request, Tileset tileset, Material material,
+                                                ModelCatalog modelCatalog, boolean incremental) {
+        LoadedMap map = new MapLoader().load(new FileHandle(request.mapFilePath), tileset);
+
+        java.util.Set<Long> dirtyChunks = null;
+        if (incremental) {
+            dirtyChunks = new java.util.HashSet<>();
+            for (int i = 0; i < request.dirtyCellXs.length; i++) {
+                int x = request.dirtyCellXs[i];
+                int z = request.dirtyCellZs[i];
+                // A boundary cell's height/shape also feeds the neighbouring chunk's wall faces
+                // (ChunkMesher.appendSide reads across the chunk boundary), so that chunk needs
+                // remeshing too, even though none of its own cells changed.
+                markChunkDirty(dirtyChunks, map.tiles, x, z);
+                markChunkDirty(dirtyChunks, map.tiles, x - 1, z);
+                markChunkDirty(dirtyChunks, map.tiles, x + 1, z);
+                markChunkDirty(dirtyChunks, map.tiles, x, z - 1);
+                markChunkDirty(dirtyChunks, map.tiles, x, z + 1);
+            }
+        }
+
+        ChunkMesher mesher = new ChunkMesher();
+        Array<Model> chunkModels = new Array<>();
+        Map<Long, Model> nextModelsByOrigin = new HashMap<>();
+        java.util.Set<Model> reused = new java.util.HashSet<>();
+        try {
+            for (int z0 = 0; z0 < map.tiles.getDepth(); z0 += ChunkMesher.CHUNK_SIZE) {
+                for (int x0 = 0; x0 < map.tiles.getWidth(); x0 += ChunkMesher.CHUNK_SIZE) {
+                    long key = chunkOriginKey(x0, z0);
+                    Model model;
+                    if (incremental && !dirtyChunks.contains(key)) {
+                        model = documentChunkModelsByOrigin.get(key);
+                        if (model != null) reused.add(model);
+                    } else {
+                        model = mesher.buildChunk(map.tiles, material, x0, z0);
+                    }
+                    if (model != null) {
+                        chunkModels.add(model);
+                        nextModelsByOrigin.put(key, model);
+                    }
+                }
+            }
+            // reused is passed again here (not just kept for the caller's own cleanup): if
+            // constructing this scene fails while placing a prop, WorldScene's own internal
+            // failure cleanup must also know not to dispose models it borrowed rather than built.
+            WorldScene nextScene = new WorldScene(map, chunkModels, modelCatalog, reused);
+            return new DocumentSceneLoad(nextScene, reused, nextModelsByOrigin);
+        } catch (RuntimeException failure) {
+            for (Model model : chunkModels) {
+                if (!reused.contains(model)) model.dispose();
+            }
+            throw failure;
+        }
+    }
+
+    private static void markChunkDirty(java.util.Set<Long> dirty, TileMap tiles, int x, int z) {
+        if (!tiles.contains(x, z)) return;
+        int x0 = (x / ChunkMesher.CHUNK_SIZE) * ChunkMesher.CHUNK_SIZE;
+        int z0 = (z / ChunkMesher.CHUNK_SIZE) * ChunkMesher.CHUNK_SIZE;
+        dirty.add(chunkOriginKey(x0, z0));
+    }
+
+    private static long chunkOriginKey(int x0, int z0) {
+        return ((long) x0 << 32) | (z0 & 0xFFFFFFFFL);
     }
 
     /** What a triggered event's actions actually do in the preview: log-only for actions with no
