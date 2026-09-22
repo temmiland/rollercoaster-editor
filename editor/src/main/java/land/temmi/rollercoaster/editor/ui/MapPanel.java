@@ -60,11 +60,16 @@ import java.util.function.Function;
 
 /** Map list plus the 2D terrain view: create/remove/export a map, paint its tiles and collision. */
 final class MapPanel extends JPanel {
-    /** Fire-and-forget from the UI's side; the returned future carries success/failure back. */
+    /**
+     * Fire-and-forget from the UI's side; the returned future carries success/failure back.
+     * dirtyCellXs/Zs are an optional optimization hint (null for an ordinary full rebuild) - see
+     * ShowMap's own doc comment for the exact contract the preview applies to them.
+     */
     interface PreviewMapRequester {
         CompletableFuture<ShowMapResult> showMap(String mapFilePath, int width, int depth,
                                                  String tilesetManifestFilePath, String modelManifestFilePath,
-                                                 String spriteManifestFilePath, String dialogueManifestFilePath);
+                                                 String spriteManifestFilePath, String dialogueManifestFilePath,
+                                                 int[] dirtyCellXs, int[] dirtyCellZs);
     }
 
     /** Manual test-mode hooks: fire-and-forget, like PreviewProcess's own camera/test-mode setters. */
@@ -122,6 +127,12 @@ final class MapPanel extends JPanel {
     private boolean previewRequestInFlight;
     private String queuedPreviewMapId;
     private boolean queuedPreviewReportsErrors;
+    /** Cells a paint stroke touched since the last preview request was sent - an optimization
+     * hint only (see ShowMap's own doc comment): the preview never trusts it as a guarantee that
+     * nothing else changed, so accumulating a cell here that turns out to belong to a different
+     * map or a since-reverted edit costs at worst a slightly less optimal rebuild, never a wrong
+     * one. Cleared every time startQueuedPreview actually sends a request. */
+    private final java.util.Set<Long> queuedDirtyCellKeys = new java.util.HashSet<>();
 
     MapPanel(ProjectController projectController, PreviewMapRequester previewMapRequester,
             TestModeController testModeController) {
@@ -216,16 +227,19 @@ final class MapPanel extends JPanel {
         MapCanvas.StrokeListener strokeListener = new MapCanvas.StrokeListener() {
             @Override
             public void onTileStroke(String mapId, List<PaintTilesCommand.Edit> edits) {
+                for (PaintTilesCommand.Edit edit : edits) queueDirtyCell(edit.x, edit.z);
                 projectController.paintTiles(mapId, edits);
             }
 
             @Override
             public void onCollisionStroke(String mapId, List<PaintCollisionCommand.Edit> edits) {
+                for (PaintCollisionCommand.Edit edit : edits) queueDirtyCell(edit.x, edit.z);
                 projectController.paintCollision(mapId, edits);
             }
 
             @Override
             public void onTerrainStroke(String mapId, List<PaintTerrainCommand.Edit> edits) {
+                for (PaintTerrainCommand.Edit edit : edits) queueDirtyCell(edit.x, edit.z);
                 projectController.paintTerrain(mapId, edits);
             }
         };
@@ -1436,6 +1450,10 @@ final class MapPanel extends JPanel {
         queuedPreviewReportsErrors |= reportErrors;
     }
 
+    private void queueDirtyCell(int x, int z) {
+        queuedDirtyCellKeys.add(((long) x << 32) | (z & 0xFFFFFFFFL));
+    }
+
     private void startQueuedPreview() {
         if (previewRequestInFlight || queuedPreviewMapId == null) return;
 
@@ -1443,6 +1461,19 @@ final class MapPanel extends JPanel {
         boolean reportErrors = queuedPreviewReportsErrors;
         queuedPreviewMapId = null;
         queuedPreviewReportsErrors = false;
+        int[] dirtyCellXs = null;
+        int[] dirtyCellZs = null;
+        if (!queuedDirtyCellKeys.isEmpty()) {
+            dirtyCellXs = new int[queuedDirtyCellKeys.size()];
+            dirtyCellZs = new int[queuedDirtyCellKeys.size()];
+            int i = 0;
+            for (long key : queuedDirtyCellKeys) {
+                dirtyCellXs[i] = (int) (key >> 32);
+                dirtyCellZs[i] = (int) key;
+                i++;
+            }
+            queuedDirtyCellKeys.clear();
+        }
 
         MapAsset selected = mapList.getSelectedValue();
         if (selected == null || !selected.id.equals(mapId)) return;
@@ -1472,7 +1503,8 @@ final class MapPanel extends JPanel {
             tilesetManifestFile.toAbsolutePath().toString(),
             modelManifestFile == null ? null : modelManifestFile.toAbsolutePath().toString(),
             spriteManifestFile == null ? null : spriteManifestFile.toAbsolutePath().toString(),
-            dialogueManifestFile == null ? null : dialogueManifestFile.toAbsolutePath().toString())
+            dialogueManifestFile == null ? null : dialogueManifestFile.toAbsolutePath().toString(),
+            dirtyCellXs, dirtyCellZs)
             .whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
                 previewRequestInFlight = false;
                 if (reportErrors && error != null) {

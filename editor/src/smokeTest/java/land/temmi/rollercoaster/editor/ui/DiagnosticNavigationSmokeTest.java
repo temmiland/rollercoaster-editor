@@ -90,7 +90,7 @@ public final class DiagnosticNavigationSmokeTest {
         controller.placeEvent("valley", new GameEventAsset("greet-event", EventTriggerAsset.mapStart(), null,
             List.of(EventActionAsset.setFlag("greeted", "true"))));
 
-        MapPanel.PreviewMapRequester previewMapRequester = (a, b, c, d, e, f, g) -> CompletableFuture.completedFuture(null);
+        MapPanel.PreviewMapRequester previewMapRequester = (a, b, c, d, e, f, g, h, i) -> CompletableFuture.completedFuture(null);
         MapPanel.TestModeController testModeController = new MapPanel.TestModeController() {
             @Override
             public void triggerEvent(String eventInstanceId) {
@@ -126,7 +126,7 @@ public final class DiagnosticNavigationSmokeTest {
             new PaintTilesCommand.Edit(0, 0, null, "grass"), new PaintTilesCommand.Edit(1, 0, null, "grass"),
             new PaintTilesCommand.Edit(0, 1, null, "grass"), new PaintTilesCommand.Edit(1, 1, null, "grass")));
 
-        MapPanel.PreviewMapRequester previewMapRequester = (a, b, c, d, e, f, g) -> CompletableFuture.completedFuture(null);
+        MapPanel.PreviewMapRequester previewMapRequester = (a, b, c, d, e, f, g, h, i) -> CompletableFuture.completedFuture(null);
         MapPanel.TestModeController testModeController = new MapPanel.TestModeController() {
             @Override
             public void triggerEvent(String eventInstanceId) {

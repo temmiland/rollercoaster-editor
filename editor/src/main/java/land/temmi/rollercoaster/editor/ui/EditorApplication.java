@@ -21,9 +21,10 @@ public final class EditorApplication {
             frame[0] = new EditorFrame(() -> previewProcess[0].restart(), projectController[0], recentProjects,
                 path -> previewProcess[0].computeModelBounds(path),
                 (mapFilePath, width, depth, tilesetManifestFilePath, modelManifestFilePath, spriteManifestFilePath,
-                 dialogueManifestFilePath) ->
+                 dialogueManifestFilePath, dirtyCellXs, dirtyCellZs) ->
                     previewProcess[0].showMap(mapFilePath, width, depth, tilesetManifestFilePath,
-                        modelManifestFilePath, spriteManifestFilePath, dialogueManifestFilePath),
+                        modelManifestFilePath, spriteManifestFilePath, dialogueManifestFilePath,
+                        dirtyCellXs, dirtyCellZs),
                 mode -> previewProcess[0].setCameraMode(mode),
                 enabled -> previewProcess[0].setTestMode(enabled),
                 eventInstanceId -> previewProcess[0].triggerEvent(eventInstanceId),
