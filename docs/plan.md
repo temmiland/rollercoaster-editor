@@ -8,9 +8,12 @@ Referenzgröße gewünscht - umgesetzter inkrementeller Chunk-Rebuild, eine veri
 macOS-Distribution (Windows/Linux nur strukturell vorbereitet, dazu CI-Workflows für alle drei
 Zielsysteme in allen betroffenen Repositories, noch ungetestet ohne GitHub-Remote), ein auf einem
 echten Android-Emulator geprüftes Example Game mit sichtbarer virtueller Steuerung auf Mobilplatt-
-formen (derselbe Fund auf Android auch in `trackside` behoben), inzwischen auch auf einem echten
-iPhone geprüft (App läuft, rendert, Steuerknopf sichtbar - aber noch kein voller Bildschirm bei
-Notch/Dynamic Island und der Steuerknopf ist oval statt rund, beides noch offen), sowie eine für
+formen (derselbe Fund auf Android auch in `trackside` behoben), inzwischen zusätzlich auf einem
+echten iPhone und einem echten Android-Handy geprüft (App läuft, rendert echte Frames auf beiden) -
+dabei zwei noch offene, jetzt ursachengeklärte Fehler gefunden: kein voller Bildschirm bei
+Notch/Dynamic-Island/Kamera-Aussparung, und der virtuelle Steuerknopf landet wegen eines nach dem
+Letterboxing nie zurückgesetzten `glViewport` in `LowResTarget.blitToScreen()` in einem falschen
+Viewport (auf dem iPhone nur oval verzerrt, auf dem Android-Gerät ganz unsichtbar) - sowie eine für
 kleinere Monitore überarbeitete Editor-Oberfläche (Assets/Karte als Tabs statt festem Split, ein
 einklappbares Diagnosen-Dock, eine entschachtelte
 Platzierungsliste, eine umbruchsichere Werkzeugleiste, persistierter Fensterzustand). Der Editor ist
@@ -650,11 +653,24 @@ Speichern/Öffnen und Export/Laden erhalten Geometrie, Platzierung, Höhe und Ko
   gefunden, per echtem Screenshot vom Gerät (nicht nur aus dem Log geschlossen):
   - Das Spiel füllt auf einem Gerät mit Notch/Dynamic Island nicht den vollen Bildschirm - aktuell
     bleibt ein Rechteck innerhalb der sicheren Fläche statt bis an die Kanten zu gehen.
-  - `TouchpadRenderer`s virtueller Steuerknopf (`rollercoaster`-Engine) erscheint oval statt rund -
-    vermutlich verzerrt ihn die Pixel-Kamera-Skalierung, da er in Bildschirmkoordinaten mit einem
-    Radius gezeichnet wird, ohne das Seitenverhältnis der tatsächlichen Fenster-/Gerätegröße
-    auszugleichen.
+  - `TouchpadRenderer`s virtueller Steuerknopf (`rollercoaster`-Engine) erscheint oval statt rund.
   Beides noch nicht behoben, nur bestätigt und hier festgehalten.
+
+  Danach auch auf einem echten angeschlossenen Android-Handy geprüft (Motorola Moto G14, Android
+  14, `adb install` + `am start`, kein Emulator): App startet, rendert echte Frames über einen
+  echten GLES-3.2-Kontext in Geräteauflösung (1080x2400, davon vom System 110px oben für die
+  Kamera-Aussparung reserviert - passt zum bereits notierten Vollbild-Fehler, jetzt auch auf Android
+  statt nur iOS beobachtet). Der virtuelle Steuerknopf ist auf diesem Gerät aber nicht nur oval,
+  sondern in einem echten Screenshot überhaupt nicht sichtbar - und dabei fand sich die tatsächliche
+  Ursache statt nur einer Vermutung: `LowResTarget.blitToScreen()` setzt am Ende `glViewport(vpX,
+  vpY, targetW, targetH)` auf das kleinere, beim Letterboxing zentrierte Rechteck und setzt ihn
+  nie zurück. `ExampleGame.render()` ruft `touchpadRenderer.render()` direkt danach auf, aber
+  `TouchpadRenderer.render()` baut seine Projektion aus `Gdx.graphics.getWidth()/getHeight()` (der
+  vollen Fenstergröße) und zeichnet dann in diesen noch aktiven, kleineren/verschobenen Viewport
+  hinein - auf dem iPhone bei dünnem Letterboxing nur sichtbar verzerrt (oval), auf diesem
+  Android-Gerät bei deutlich größerem Letterboxing offenbar ganz außerhalb des sichtbaren Bereichs
+  verschoben. Betrifft nicht nur den Steuerknopf, sondern jeden Code, der nach `blitToScreen()`
+  noch in denselben Frame zeichnet, ohne den Viewport selbst zurückzusetzen. Noch nicht behoben.
 
 ## UI-Bereinigung für kleinere Monitore
 
