@@ -672,6 +672,15 @@ Speichern/Öffnen und Export/Laden erhalten Geometrie, Platzierung, Höhe und Ko
   verschoben. Betrifft nicht nur den Steuerknopf, sondern jeden Code, der nach `blitToScreen()`
   noch in denselben Frame zeichnet, ohne den Viewport selbst zurückzusetzen. Noch nicht behoben.
 
+  Auf demselben Android-Screenshot außerdem verstreute einzelne schwarze Punkte auf Terrain und
+  Weg entdeckt - unregelmäßig verteilt, nicht an ein sauberes Kachelraster gebunden. Naheliegendste,
+  aber noch nicht bestätigte Vermutung: Shadow Acne der Richtungs-Schattenkarte. `geometry.frag`s
+  `shadowVisibility()` hat zwar bereits einen hangneigungsabhängigen Bias und eine 3x3-PCF-Filterung,
+  aber die Tiefe wird in `shadow.frag` nur in zwei 8-Bit-Kanälen kodiert (`decodeDepth` liest
+  `encoded.r + encoded.g/255.0` zurück) - diese Quantisierung könnte bei bestimmten Sonnenwinkeln
+  einzelne Texel knapp falsch einordnen. Nicht weiter untersucht oder bestätigt, nur festgehalten,
+  da es sich beim bloßen Betrachten des Screenshots als eigener, dritter Fehler zeigte.
+
 ## UI-Bereinigung für kleinere Monitore
 
 Die Editor-Oberfläche wuchs über Phase 1-6 organisch mit: `EditorFrame` hielt vier Bereiche
