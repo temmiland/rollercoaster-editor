@@ -8,10 +8,11 @@ Referenzgröße gewünscht - umgesetzter inkrementeller Chunk-Rebuild, eine veri
 macOS-Distribution (Windows/Linux nur strukturell vorbereitet, dazu CI-Workflows für alle drei
 Zielsysteme in allen betroffenen Repositories, noch ungetestet ohne GitHub-Remote), ein auf einem
 echten Android-Emulator geprüftes Example Game mit sichtbarer virtueller Steuerung auf Mobilplatt-
-formen (derselbe Fund auf Android auch in `trackside` behoben) und ein iOS-Simulator, der inzwischen
-funktioniert, dessen Build hier aber nur die Geräte-Architektur erzeugt - ein tatsächlicher Test auf
-Simulator oder Gerät steht noch aus, sowie eine für kleinere Monitore überarbeitete Editor-Ober-
-fläche (Assets/Karte als Tabs statt festem Split, ein einklappbares Diagnosen-Dock, eine entschachtelte
+formen (derselbe Fund auf Android auch in `trackside` behoben), inzwischen auch auf einem echten
+iPhone geprüft (App läuft, rendert, Steuerknopf sichtbar - aber noch kein voller Bildschirm bei
+Notch/Dynamic Island und der Steuerknopf ist oval statt rund, beides noch offen), sowie eine für
+kleinere Monitore überarbeitete Editor-Oberfläche (Assets/Karte als Tabs statt festem Split, ein
+einklappbares Diagnosen-Dock, eine entschachtelte
 Platzierungsliste, eine umbruchsichere Werkzeugleiste, persistierter Fensterzustand). Der Editor ist
 ein eigenes Repository neben `rollercoaster`, `example-game` und `trackside`. Trackside-Inhalte sind
 zunächst außerhalb des Arbeitsumfangs.
@@ -640,6 +641,20 @@ Speichern/Öffnen und Export/Laden erhalten Geometrie, Platzierung, Höhe und Ko
   offen, bis diese Maschine einen funktionierenden Simulator hat oder ein echtes Gerät angeschlossen
   wird - bewusst nicht als geprüft ausgegeben, obwohl der Build durchläuft, genau die Unterscheidung,
   die dieser Punkt verlangt.
+
+  Inzwischen auf einem echten angeschlossenen iPhone 15 Pro geprüft (`example-game`, über
+  `:platforms:ios:launchIOSDevice -Probovm.device.udid=<UDID>` - nötig, weil `launchIOSDevice` mit
+  mehr als einem gekoppelten Gerät sonst mit "More than 1 device connected" abbricht): App startet,
+  rendert echte Frames über einen echten GLES-3.0-Kontext (ANGLE/Metal) in Geräteauflösung, Spieler-
+  sprite und virtueller Steuerknopf sind sichtbar. Dabei zwei echte, noch offene Darstellungsfehler
+  gefunden, per echtem Screenshot vom Gerät (nicht nur aus dem Log geschlossen):
+  - Das Spiel füllt auf einem Gerät mit Notch/Dynamic Island nicht den vollen Bildschirm - aktuell
+    bleibt ein Rechteck innerhalb der sicheren Fläche statt bis an die Kanten zu gehen.
+  - `TouchpadRenderer`s virtueller Steuerknopf (`rollercoaster`-Engine) erscheint oval statt rund -
+    vermutlich verzerrt ihn die Pixel-Kamera-Skalierung, da er in Bildschirmkoordinaten mit einem
+    Radius gezeichnet wird, ohne das Seitenverhältnis der tatsächlichen Fenster-/Gerätegröße
+    auszugleichen.
+  Beides noch nicht behoben, nur bestätigt und hier festgehalten.
 
 ## UI-Bereinigung für kleinere Monitore
 
