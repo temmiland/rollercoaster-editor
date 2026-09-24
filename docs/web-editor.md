@@ -3,6 +3,21 @@
 Ziel: den Editor als Web-App (auch auf dem iPad) betreiben. Projekte liegen in einem Git-Repo auf
 einer eigenen Gitea-Instanz; der Editor liest und schreibt sie über die Gitea-API.
 
+## Starten
+
+```sh
+./gradlew :web-preview:gdx_teavm_web_js_build   # Engine-Vorschau nach JavaScript übersetzen
+cd web
+npm install
+npm run dev -- --host                           # --host macht ihn im WLAN erreichbar, z. B. fürs iPad
+```
+
+Der Dev-Server liefert unter `/preview` die übersetzte Vorschau und unter `/demo-project` das
+Example Game aus dem Nachbar-Repo als Demo-Projekt (anderer Ordner über
+`ROLLERCOASTER_DEMO_PROJECT`). `npm run build` legt die Vorschau mit in `web/dist`.
+
+Oberfläche und Komponentenaufbau: `docs/web-editor-ux.md`.
+
 ## Vorschau
 
 `web-preview` übersetzt die Engine mit gdx-teavm nach JavaScript und rendert über WebGL 2 mit
