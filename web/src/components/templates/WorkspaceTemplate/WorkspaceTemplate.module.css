@@ -1,0 +1,50 @@
+.workspace {
+  display: flex;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.compact {
+  flex-direction: column;
+}
+
+.main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.panes {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.list {
+  flex: none;
+  width: var(--list-width);
+  min-height: 0;
+  border-right: 1px solid var(--color-border);
+}
+
+.compact .list {
+  flex: 1;
+  width: auto;
+  border-right: none;
+}
+
+.detail {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
