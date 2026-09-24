@@ -33,8 +33,15 @@ Von der Vorschau (an `window.parent`, immer mit `source: 'rollercoaster-preview'
 | `ready` | Vorschau ist gestartet und nimmt Nachrichten an |
 | `showMapResult` | `error` ist `null` oder die Fehlermeldung; bei Fehler bleibt die alte Karte sichtbar |
 
-## Offene Formatfrage
+## Dateiverweise
 
-Modell- und Sprite-Manifeste lösen ihre Quellen im Example Game relativ zur Classpath-Wurzel auf
-(`models/house.gltf`), im Editor-Export und in beiden Vorschauen relativ zum Manifest. Vor dem
-Web-Editor muss das Format sich auf eine Regel festlegen.
+Jede Manifest-Datei (Tileset, Modelle, Sprites) verweist auf ihre Dateien relativ zu ihrem eigenen
+Verzeichnis. Die Engine kennt keinen zweiten Auflösungsweg über die Classpath-Wurzel mehr; ein
+Katalog bleibt so zusammen mit seinen Dateien verschiebbar, egal ob er aus dem Classpath, von der
+Platte oder aus dem Speicher der Web-Vorschau kommt.
+
+## Projekt-Repo
+
+Der Editor bekommt ein (leeres oder bestehendes) Git-Repo und legt dort die gesamte Struktur an, die
+ein Spiel auf der Engine braucht: Quelldateien, Kataloge, Karten und Build-Infrastruktur. Ziel ist,
+dass ein vom Editor angelegtes Repo ohne Handarbeit baut und spielbar ist.
