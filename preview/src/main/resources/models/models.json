@@ -3,7 +3,7 @@
   "models": [
     {
       "id": "house",
-      "source": "gltf:models/house.gltf",
+      "source": "gltf:house.gltf",
       "anchor": [-0.5, 0, -0.5],
       "scale": 1,
       "height": 4,
@@ -12,7 +12,7 @@
     },
     {
       "id": "streetLamp",
-      "source": "gltf:models/street-lamp.gltf",
+      "source": "gltf:street-lamp.gltf",
       "anchor": [0, 0, 0],
       "scale": 1,
       "height": 2.9,
@@ -21,7 +21,7 @@
     },
     {
       "id": "suspensionBridge",
-      "source": "gltf:models/suspension-bridge.gltf",
+      "source": "gltf:suspension-bridge.gltf",
       "anchor": [0, -0.12, 0],
       "scale": 1,
       "height": 3.04,

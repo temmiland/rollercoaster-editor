@@ -3,10 +3,7 @@ package land.temmi.rollercoaster.editor.preview;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g3d.Material;
-import land.temmi.rollercoaster.asset.GltfModelFactory;
 import land.temmi.rollercoaster.asset.ModelCatalog;
-import land.temmi.rollercoaster.asset.ModelDefinition;
-import land.temmi.rollercoaster.asset.ModelManifest;
 import land.temmi.rollercoaster.world.TileSurface;
 import land.temmi.rollercoaster.world.Tileset;
 import land.temmi.rollercoaster.world.WorldScene;
@@ -28,13 +25,7 @@ final class SampleScene {
     }
 
     static Loaded load() {
-        ModelCatalog catalog = new ModelCatalog();
-        for (ModelDefinition definition : ModelManifest.load(Gdx.files.classpath("maps/models.json"))) {
-            if (!definition.source.startsWith("gltf:") && !definition.source.startsWith("glb:")) {
-                throw new IllegalArgumentException("Unknown model source: " + definition.source);
-            }
-            catalog.register(definition, new GltfModelFactory(definition));
-        }
+        ModelCatalog catalog = ModelCatalog.load(Gdx.files.classpath("models/models.json"));
         WorldScene scene = new WorldSceneLoader().load(
             Gdx.files.classpath("maps/testfield.json"), createTileset(), new Material(), catalog);
         return new Loaded(scene, catalog);

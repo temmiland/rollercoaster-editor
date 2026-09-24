@@ -21,9 +21,7 @@ import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.graphics.g3d.utils.shapebuilders.BoxShapeBuilder;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
-import land.temmi.rollercoaster.asset.GltfModelFactory;
 import land.temmi.rollercoaster.asset.ModelCatalog;
-import land.temmi.rollercoaster.asset.ModelManifest;
 import land.temmi.rollercoaster.asset.SpriteAtlas;
 import land.temmi.rollercoaster.asset.SpriteDefinition;
 import land.temmi.rollercoaster.asset.SpriteManifest;
@@ -383,7 +381,7 @@ public final class PreviewApplication extends ApplicationAdapter {
             if (request.spriteManifestFilePath != null) {
                 FileHandle manifestFile = new FileHandle(request.spriteManifestFilePath);
                 SpriteManifest manifest = SpriteManifest.load(manifestFile);
-                nextSpriteAtlas = new SpriteAtlas(manifestFile.parent().child(manifest.atlas));
+                nextSpriteAtlas = SpriteAtlas.load(manifestFile, manifest);
                 TerrainSurface surface = new TerrainSurface(nextScene.getMap().tiles);
                 for (land.temmi.rollercoaster.world.MapEntity entity : nextScene.getMap().entities) {
                     if (entity.sprite == null) continue;
@@ -504,15 +502,8 @@ public final class PreviewApplication extends ApplicationAdapter {
     }
 
     private static ModelCatalog loadModelCatalog(String modelManifestFilePath) {
-        ModelCatalog catalog = new ModelCatalog();
-        if (modelManifestFilePath == null) return catalog;
-        FileHandle manifestFile = new FileHandle(modelManifestFilePath);
-        for (land.temmi.rollercoaster.asset.ModelDefinition definition : ModelManifest.load(manifestFile)) {
-            int separator = definition.source.indexOf(':');
-            String relativePath = definition.source.substring(separator + 1);
-            catalog.register(definition, new GltfModelFactory(definition, manifestFile.parent().child(relativePath)));
-        }
-        return catalog;
+        if (modelManifestFilePath == null) return new ModelCatalog();
+        return ModelCatalog.load(new FileHandle(modelManifestFilePath));
     }
 
     @Override

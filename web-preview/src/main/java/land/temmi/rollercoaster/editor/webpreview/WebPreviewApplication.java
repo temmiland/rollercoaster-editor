@@ -12,10 +12,7 @@ import com.badlogic.gdx.graphics.g3d.utils.CameraInputController;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
 import land.temmi.rollercoaster.actor.Facing;
-import land.temmi.rollercoaster.asset.GltfModelFactory;
 import land.temmi.rollercoaster.asset.ModelCatalog;
-import land.temmi.rollercoaster.asset.ModelDefinition;
-import land.temmi.rollercoaster.asset.ModelManifest;
 import land.temmi.rollercoaster.asset.SpriteAtlas;
 import land.temmi.rollercoaster.asset.SpriteDefinition;
 import land.temmi.rollercoaster.asset.SpriteManifest;
@@ -115,19 +112,12 @@ final class WebPreviewApplication extends ApplicationAdapter {
     }
 
     private static ModelCatalog loadModelCatalog(MemoryFiles files, String models) {
-        ModelCatalog catalog = new ModelCatalog();
-        if (models == null) return catalog;
-        FileHandle manifestFile = files.get(models);
-        for (ModelDefinition definition : ModelManifest.load(manifestFile)) {
-            String relativePath = definition.source.substring(definition.source.indexOf(':') + 1);
-            catalog.register(definition, new GltfModelFactory(definition, manifestFile.parent().child(relativePath)));
-        }
-        return catalog;
+        return models == null ? new ModelCatalog() : ModelCatalog.load(files.get(models));
     }
 
     private void loadSprites(FileHandle manifestFile, Scene next) {
         SpriteManifest manifest = SpriteManifest.load(manifestFile);
-        next.spriteAtlas = new SpriteAtlas(manifestFile.parent().child(manifest.atlas));
+        next.spriteAtlas = SpriteAtlas.load(manifestFile, manifest);
         TerrainSurface surface = new TerrainSurface(next.world.getMap().tiles);
         for (MapEntity entity : next.world.getMap().entities) {
             if (entity.sprite == null) continue;
