@@ -1,0 +1,102 @@
+/* Design tokens. Components read only these, never raw values. */
+:root {
+  color-scheme: dark;
+
+  --color-bg: #111318;
+  --color-surface: #181b22;
+  --color-surface-raised: #20242d;
+  --color-surface-hover: #272c37;
+  --color-surface-selected: #2b3547;
+  --color-border: #2c313c;
+  --color-text: #e6e8ee;
+  --color-text-muted: #9aa1b0;
+  --color-accent: #6ea8ff;
+  --color-accent-contrast: #0b1220;
+  --color-danger: #ff7a7a;
+  --color-success: #6fd49a;
+  --color-warning: #f3c56b;
+  --color-scrim: rgb(0 0 0 / 50%);
+  --color-focus: #9cc4ff;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 999px;
+
+  --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-md: 15px;
+  --font-size-lg: 18px;
+  --font-size-xl: 22px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 550;
+  --font-weight-bold: 650;
+  --line-height: 1.4;
+
+  /* Minimum size of anything tappable; grows for touch below. */
+  --control-size: 32px;
+  --icon-size: 18px;
+
+  --nav-rail-width: 72px;
+  --nav-bar-height: 64px;
+  --app-bar-height: 52px;
+  --list-width: 300px;
+  --inspector-width: 320px;
+
+  --shadow-raised: 0 8px 24px rgb(0 0 0 / 35%);
+  --duration-fast: 120ms;
+  --duration-medium: 220ms;
+  --easing: cubic-bezier(0.2, 0, 0, 1);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+@media (pointer: coarse) {
+  :root {
+    --control-size: 44px;
+    --icon-size: 22px;
+    --font-size-sm: 14px;
+    --font-size-md: 16px;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --color-bg: #f4f5f8;
+    --color-surface: #ffffff;
+    --color-surface-raised: #ffffff;
+    --color-surface-hover: #eef0f4;
+    --color-surface-selected: #dde8fb;
+    --color-border: #dcdfe6;
+    --color-text: #1b1e25;
+    --color-text-muted: #5d6475;
+    --color-accent: #2f6fdb;
+    --color-accent-contrast: #ffffff;
+    --color-danger: #c73535;
+    --color-success: #1d8a4f;
+    --color-warning: #a36b00;
+    --color-scrim: rgb(0 0 0 / 30%);
+    --color-focus: #2f6fdb;
+    --shadow-raised: 0 8px 24px rgb(20 30 50 / 18%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-medium: 0ms;
+  }
+}
