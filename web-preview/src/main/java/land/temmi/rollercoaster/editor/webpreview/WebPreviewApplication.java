@@ -147,7 +147,10 @@ final class WebPreviewApplication extends ApplicationAdapter {
     private void frame(WorldScene world) {
         float cx = world.getMap().tiles.getWidth() / 2f;
         float cz = world.getMap().tiles.getDepth() / 2f;
-        float distance = Math.max(world.getMap().tiles.getWidth(), world.getMap().tiles.getDepth()) * 0.45f + 2f;
+        // The vertical field of view is fixed, so a portrait viewport needs more distance to fit the width.
+        float aspect = camera.viewportWidth / Math.max(1f, camera.viewportHeight);
+        float distance = (Math.max(world.getMap().tiles.getWidth(), world.getMap().tiles.getDepth()) * 0.45f + 2f)
+            * Math.max(1f, 1f / aspect);
         camera.position.set(cx + distance, distance, cz + distance);
         camera.lookAt(cx, 0f, cz);
         camera.up.set(Vector3.Y);
