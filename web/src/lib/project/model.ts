@@ -25,12 +25,23 @@ export interface MapAsset extends AssetBase {
   events: number
 }
 
+/** Pixel rectangle inside an atlas: x, y, width, height. */
+export type Region = readonly [number, number, number, number]
+
+export interface TileDefinition {
+  id: string
+  region: Region
+  /** Falls back to the top region when absent. */
+  side?: Region
+  walkable: boolean
+}
+
 export interface TilesetAsset extends AssetBase {
   kind: 'tilesets'
   texture: string
   tileWidth: number
   tileHeight: number
-  tiles: number
+  tiles: TileDefinition[]
 }
 
 export interface ModelAsset extends AssetBase {

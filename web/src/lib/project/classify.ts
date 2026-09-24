@@ -1,4 +1,4 @@
-import type { Asset, DialogueAsset, MapAsset, ModelAsset, SpriteAsset, TilesetAsset } from './model.ts'
+import type { Asset, DialogueAsset, MapAsset, ModelAsset, Region, SpriteAsset, TileDefinition, TilesetAsset } from './model.ts'
 
 type Json = Record<string, unknown>
 
@@ -57,8 +57,19 @@ function tilesetAsset(path: string, json: Json): TilesetAsset {
     texture: text(json.texture),
     tileWidth: number(tileSize[0]),
     tileHeight: number(tileSize[1]),
-    tiles: count(json.tiles),
+    tiles: array(json.tiles).filter(isObject).map(tileDefinition),
   }
+}
+
+function region(value: unknown): Region | undefined {
+  const [x, y, width, height] = array(value)
+  return [x, y, width, height].every((part) => typeof part === 'number')
+    ? [x as number, y as number, width as number, height as number]
+    : undefined
+}
+
+function tileDefinition(tile: Json): TileDefinition {
+  return { id: text(tile.id), region: region(tile.region) ?? [0, 0, 0, 0], side: region(tile.side), walkable: tile.walkable !== false }
 }
 
 function modelAsset(path: string, model: Json): ModelAsset {
