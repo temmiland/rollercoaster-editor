@@ -1,0 +1,26 @@
+.field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.icon {
+  position: absolute;
+  left: var(--space-3);
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.input {
+  padding-left: calc(var(--space-3) * 2 + var(--icon-size) * 0.8);
+  padding-right: var(--control-size);
+}
+
+.input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.clear {
+  position: absolute;
+  right: 0;
+}

@@ -1,0 +1,55 @@
+.item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 56px;
+  padding: var(--space-1) 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+  touch-action: manipulation;
+}
+
+.indicator {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  transition: background-color var(--duration-fast) var(--easing);
+}
+
+.item:hover .indicator {
+  background: var(--color-surface-hover);
+}
+
+.current {
+  color: var(--color-text);
+}
+
+.current .indicator,
+.current:hover .indicator {
+  background: var(--color-surface-selected);
+  color: var(--color-accent);
+}
+
+.count {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.label {
+  white-space: nowrap;
+}
