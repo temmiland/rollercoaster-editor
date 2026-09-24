@@ -1,0 +1,20 @@
+.navigation {
+  display: flex;
+  background: var(--color-surface);
+}
+
+.rail {
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: calc(var(--nav-rail-width) + var(--safe-left));
+  padding: calc(var(--space-4) + var(--safe-top)) 0 var(--space-4) var(--safe-left);
+  border-right: 1px solid var(--color-border);
+}
+
+.bar {
+  justify-content: space-around;
+  min-height: calc(var(--nav-bar-height) + var(--safe-bottom));
+  padding: var(--space-2) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  border-top: 1px solid var(--color-border);
+}
