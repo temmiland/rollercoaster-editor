@@ -18,6 +18,7 @@ include 'document'
 include 'asset-pipeline'
 include 'preview-protocol'
 include 'preview'
+include 'web-preview'
 include 'editor'
 include 'platforms:desktop'
 

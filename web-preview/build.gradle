@@ -1,0 +1,29 @@
+plugins {
+    id 'java'
+    id 'com.github.xpenatan.gdx-teavm' version '1.6.2'
+}
+
+group = 'land.temmi'
+version = '0.1.0'
+
+dependencies {
+    implementation 'land.temmi:rollercoaster:0.1.0'
+}
+
+gdxTeaVM {
+    classpathAssets('land/temmi/rollercoaster/render')
+
+    webDefaults {
+        mainClass = 'land.temmi.rollercoaster.editor.webpreview.WebPreviewLauncher'
+        htmlTitle = 'Rollercoaster Vorschau'
+        obfuscated = false
+    }
+
+    js {}
+}
+
+tasks.register('run') {
+    group = 'application'
+    description = 'Builds the web preview and serves it on http://localhost:8080.'
+    dependsOn 'gdx_teavm_web_js_run'
+}
